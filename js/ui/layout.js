@@ -1,0 +1,111 @@
+import { BOARD_SIZE, PHASES } from '../config/game-data.js';
+import { inBounds, samePos } from '../game/board-logic.js';
+
+export function pointInRect(px, py, rect) {
+  return px >= rect.x && py >= rect.y && px <= rect.x + rect.w && py <= rect.y + rect.h;
+}
+
+export function createLayoutTools({ canvas, ctx, state }) {
+  function resize() {
+    canvas.width = window.innerWidth * devicePixelRatio;
+    canvas.height = window.innerHeight * devicePixelRatio;
+    canvas.style.width = `${window.innerWidth}px`;
+    canvas.style.height = `${window.innerHeight}px`;
+    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  }
+
+  function getLayout() {
+    const sw = window.innerWidth;
+    const sh = window.innerHeight;
+    
+    const sidebarW = Math.max(340, Math.floor(sw * 0.26));
+    const rightW = sw - sidebarW;
+    const margin = 24;
+    
+    const availableW = rightW - margin * 2;
+    const availableH = sh - margin * 2;
+    const boardPixels = Math.floor(Math.min(availableW, availableH, 800));
+    const tileSize = Math.floor(boardPixels / BOARD_SIZE);
+    const boardW = tileSize * BOARD_SIZE;
+    const boardH = tileSize * BOARD_SIZE;
+    
+    const boardX = sidebarW + Math.floor((rightW - boardW) / 2);
+    const boardY = Math.floor((sh - boardH) / 2);
+
+    return {
+      sw,
+      sh,
+      sidebarW,
+      boardX,
+      boardY,
+      boardW,
+      boardH,
+      tileSize,
+      leftX: 16,
+      leftY: 16,
+      leftW: sidebarW - 32,
+      leftH: sh - 32,
+    };
+  }
+
+  function tileRect(layout, x, y) {
+    return {
+      x: layout.boardX + x * layout.tileSize,
+      y: layout.boardY + y * layout.tileSize,
+      w: layout.tileSize,
+      h: layout.tileSize,
+    };
+  }
+
+  function tileAt(layout, px, py) {
+    if (
+      px < layout.boardX ||
+      py < layout.boardY ||
+      px >= layout.boardX + layout.boardW ||
+      py >= layout.boardY + layout.boardH
+    ) {
+      return null;
+    }
+
+    const x = Math.floor((px - layout.boardX) / layout.tileSize);
+    const y = Math.floor((py - layout.boardY) / layout.tileSize);
+    return inBounds({ x, y }) ? { x, y } : null;
+  }
+
+  function hoveredTile() {
+    return tileAt(getLayout(), state.mouse.x, state.mouse.y);
+  }
+
+  function hoveredMonster() {
+    const tile = hoveredTile();
+    if (!tile) return null;
+    return state.game.monsters.find((monster) => monster.x === tile.x && monster.y === tile.y) || null;
+  }
+
+  function hoveredPlayer() {
+    const tile = hoveredTile();
+    return tile && samePos(tile, state.game.player);
+  }
+
+  function hoveredButton() {
+    return state.game.buttons.find((button) => pointInRect(state.mouse.x, state.mouse.y, button));
+  }
+
+  function hoveredDraggableDie() {
+    if (state.game.phase !== PHASES.ENERGY || state.game.busy) return null;
+    return state.game.diceRects.find((rect) => pointInRect(state.mouse.x, state.mouse.y, rect));
+  }
+
+  return {
+    getLayout,
+    hoveredButton,
+    hoveredDraggableDie,
+    hoveredMonster,
+    hoveredPlayer,
+    hoveredTile,
+    pointInRect,
+    resize,
+    tileAt,
+    tileRect,
+  };
+}

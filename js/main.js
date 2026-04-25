@@ -1,0 +1,38 @@
+import { createGameActions } from './game/game-actions.js';
+import { createGame, loadCardImages } from './game/game-factories.js';
+import { registerCanvasInput } from './ui/input.js';
+import { createLayoutTools } from './ui/layout.js';
+import { createRenderer } from './ui/renderer.js';
+
+const canvas = document.getElementById('game');
+if (!(canvas instanceof HTMLCanvasElement)) {
+  throw new Error('Canvas #game nao encontrado.');
+}
+
+const ctx = canvas.getContext('2d');
+if (!ctx) {
+  throw new Error('Contexto 2D nao disponivel.');
+}
+
+const state = {
+  game: createGame(),
+  mouse: { x: 0, y: 0 },
+  suppressClick: false,
+};
+
+const cardImages = loadCardImages();
+const actions = createGameActions(state);
+const layout = createLayoutTools({ canvas, ctx, state });
+const renderer = createRenderer({
+  canvas,
+  ctx,
+  cardImages,
+  state,
+  actions,
+  layout,
+});
+
+window.addEventListener('resize', layout.resize);
+layout.resize();
+registerCanvasInput({ canvas, state, actions, layout });
+renderer.start();
