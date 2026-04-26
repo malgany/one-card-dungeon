@@ -192,14 +192,39 @@ export function createDrawPrimitives({ ctx, state, cardImages }) {
       size,
       size,
       14,
-      isGhost ? 'rgba(15,23,42,0.42)' : hovered ? '#253149' : '#111827',
-      isGhost ? '#334155' : '#64748b'
+      isGhost ? 'rgba(255,255,255,0.1)' : hovered ? '#f1f5f9' : '#ffffff',
+      isGhost ? 'rgba(255,255,255,0.3)' : '#94a3b8'
     );
-    drawText(String(value), x + size / 2, y + size / 2 + 9, {
-      align: 'center',
-      font: `bold ${Math.floor(size * 0.55)}px Inter, sans-serif`,
-      color: isGhost ? '#64748b' : '#f8fafc',
-    });
+
+    ctx.fillStyle = isGhost ? 'rgba(255,255,255,0.2)' : '#0f172a';
+    const dotSize = size * 0.09;
+    const padding = size * 0.25;
+    const cx = x + size / 2;
+    const cy = y + size / 2;
+    const left = x + padding;
+    const right = x + size - padding;
+    const top = y + padding;
+    const bottom = y + size - padding;
+
+    const drawDot = (dx, dy) => {
+      ctx.beginPath();
+      ctx.arc(dx, dy, dotSize, 0, Math.PI * 2);
+      ctx.fill();
+    };
+
+    if (value === 1 || value === 3 || value === 5) drawDot(cx, cy);
+    if (value === 2 || value === 3 || value === 4 || value === 5 || value === 6) {
+      drawDot(left, top);
+      drawDot(right, bottom);
+    }
+    if (value === 4 || value === 5 || value === 6) {
+      drawDot(right, top);
+      drawDot(left, bottom);
+    }
+    if (value === 6) {
+      drawDot(left, cy);
+      drawDot(right, cy);
+    }
 
     if (
       !isGhost &&

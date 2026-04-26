@@ -159,13 +159,27 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       
       const btnW = w - 64;
       if (game.phase === PHASES.ENERGY) {
-        draw.drawButton(x + 32, cy, btnW, 56, 'Confirmar Energia', actions.confirmEnergy, {
-          fill: '#b45309', hoverFill: '#d97706', stroke: '#fcd34d',
-          disabled: game.busy || !actions.allDiceAssigned(),
-          font: 'bold 22px Inter, sans-serif', color: '#fffbeb',
-        });
-        
-        draw.drawText('Movimento: Reto = 2 vel | Diagonal = 3 vel', x + w / 2, cy + 78, { align: 'center', font: '13px Inter, sans-serif', color: '#fbbf24' });
+        if (actions.allDiceAssigned() && !game.energyConfirmStartTime) {
+          game.energyConfirmStartTime = performance.now();
+        }
+
+        if (game.energyConfirmStartTime) {
+          const elapsed = performance.now() - game.energyConfirmStartTime;
+          const remaining = Math.max(0, 5 - Math.floor(elapsed / 1000));
+
+          if (remaining === 0 && actions.allDiceAssigned() && !game.busy && !game.energyConfirmed) {
+            game.energyConfirmed = true; // prevent multiple calls
+            setTimeout(() => actions.confirmEnergy(), 0);
+          }
+
+          draw.drawButton(x + 32, cy, btnW, 56, String(remaining), () => {
+            if (actions.allDiceAssigned()) actions.confirmEnergy();
+          }, {
+            fill: '#b45309', hoverFill: '#d97706', stroke: '#fcd34d',
+            disabled: game.busy || !actions.allDiceAssigned(),
+            font: 'bold 28px Inter, sans-serif', color: '#fffbeb',
+          });
+        }
 
         if (game.draggingDie) {
           draw.drawDieToken(
@@ -175,17 +189,9 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
           );
         }
       } else if (game.phase === PHASES.HERO) {
-        draw.drawButton(x + 32, cy, btnW, 56, 'Encerrar Turno', actions.endHeroPhase, {
-          fill: '#7c2d12', hoverFill: '#9a3412', stroke: '#fdba74',
-          disabled: game.busy, font: 'bold 22px Inter, sans-serif',
-        });
-        
-        cy += 74;
         draw.drawText('Passe o mouse no herói para ver', x + w / 2, cy, { align: 'center', font: '14px Inter, sans-serif', color: '#94a3b8' });
         draw.drawText('movimento. Clique em inimigos', x + w / 2, cy + 20, { align: 'center', font: '14px Inter, sans-serif', color: '#94a3b8' });
         draw.drawText('destacados para atacar.', x + w / 2, cy + 40, { align: 'center', font: '14px Inter, sans-serif', color: '#94a3b8' });
-        
-        draw.drawText('Movimento: Reto = 2 vel | Diagonal = 3 vel', x + w / 2, cy + 65, { align: 'center', font: '13px Inter, sans-serif', color: '#fbbf24' });
       }
     }
 
@@ -375,7 +381,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     ctx.closePath();
 
     // Fill background (empty heart)
-    ctx.fillStyle = '#f8fafc'; // white/light-gray
+    ctx.fillStyle = '#4b5563'; // gray-600
     ctx.fill();
 
     // Fill red portion based on HP
@@ -419,46 +425,56 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     ctx.restore();
     
     // Turn Queue
-    if (!game.turnQueue || game.turnQueue.length === 0) return;
+    if (game.turnQueue && game.turnQueue.length > 0) {
+      const queueW = 48;
+      const queueSpacing = 16;
+      const queueY = bottomY + 26;
+      
+      let currentX = uiX + heartSize + 40;
+      const staticQueue = ['player', ...game.monsters.map(m => m.id)];
 
-    const queueW = 48;
-    const queueSpacing = 16;
-    const queueY = bottomY + 26;
-    
-    let currentX = uiX + heartSize + 40;
+      for (let i = 0; i < staticQueue.length; i++) {
+         const entityId = staticQueue[i];
+         let icon;
 
-    for (let i = 0; i < game.turnQueue.length; i++) {
-       const entityId = game.turnQueue[i];
-       let icon;
+         if (entityId === 'player') {
+            icon = '🧙';
+         } else {
+            const monster = game.monsters.find(m => m.id === entityId);
+            if (!monster) continue;
+            icon = monster.emoji;
+         }
 
-       if (entityId === 'player') {
-          icon = '🧙';
-       } else {
-          const monster = game.monsters.find(m => m.id === entityId);
-          if (!monster) continue;
-          icon = monster.emoji;
-       }
+         const isCurrent = (entityId === game.turnQueue[0]);
+         const bgColor = isCurrent ? '#4ade80' : '#111827';
+         const borderColor = '#64748b';
 
-       const isCurrent = i === 0;
-       const bgColor = isCurrent ? '#4ade80' : '#111827';
-       const borderColor = '#64748b';
+         const boxSize = isCurrent ? queueW + 8 : queueW;
+         const yOffset = isCurrent ? -4 : 0;
+         const bx = currentX;
+         
+         draw.roundRect(bx, queueY + yOffset, boxSize, boxSize, 8, bgColor, borderColor);
+         draw.drawText(icon, bx + boxSize / 2, queueY + yOffset + boxSize / 2 + 8, {
+            align: 'center', font: isCurrent ? '30px Inter' : '24px Inter'
+         });
 
-       const boxSize = isCurrent ? queueW + 8 : queueW;
-       const yOffset = isCurrent ? -4 : 0;
-       const bx = currentX;
-       
-       draw.roundRect(bx, queueY + yOffset, boxSize, boxSize, 8, bgColor, borderColor);
-       draw.drawText(icon, bx + boxSize / 2, queueY + yOffset + boxSize / 2 + 8, {
-          align: 'center', font: isCurrent ? '30px Inter' : '24px Inter'
-       });
+         draw.roundRect(bx - 8, queueY + yOffset - 8, 20, 20, 10, '#1f2937', borderColor);
+         draw.drawText(`${i + 1}`, bx + 2, queueY + yOffset + 6, {
+            align: 'center', font: 'bold 12px Inter, sans-serif', color: '#fff'
+         });
 
-       draw.roundRect(bx - 8, queueY + yOffset - 8, 20, 20, 10, '#1f2937', borderColor);
-       draw.drawText(`${i + 1}`, bx + 2, queueY + yOffset + 6, {
-          align: 'center', font: 'bold 12px Inter, sans-serif', color: '#fff'
-       });
-
-       currentX += (queueW + queueSpacing);
+         currentX += (queueW + queueSpacing);
+      }
     }
+
+    const btnW = 180;
+    const btnH = 50;
+    const btnX = currentLayout.boardX + currentLayout.boardW - btnW;
+    const btnY = bottomY + 24;
+    draw.drawButton(btnX, btnY, btnW, btnH, 'Encerrar Turno', actions.endHeroPhase, {
+      fill: '#7c2d12', hoverFill: '#9a3412', stroke: '#fdba74',
+      disabled: game.phase !== PHASES.HERO || game.busy, font: 'bold 18px Inter, sans-serif',
+    });
   }
 
   function drawSelectedEntityModal(currentLayout) {
@@ -595,6 +611,12 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const now = performance.now();
 
     const currentLayout = layout.getLayout();
+    
+    if (state.game.phase !== PHASES.ENERGY) {
+      state.game.energyConfirmStartTime = null;
+      state.game.energyConfirmed = false;
+    }
+
     const walls = levelWallsSet(state.game.levelIndex);
     const reachable = actions.getReachableTiles();
     const attackable = actions.getAttackableMonsters();
