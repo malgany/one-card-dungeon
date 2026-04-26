@@ -49,5 +49,15 @@ export const LEVELS = [
   { id: 9, start: { x: 0, y: 5 }, walls: [[1, 2], [2, 2], [3, 2], [4, 2], [2, 4], [4, 4]], monsters: [['golem', 5, 5], ['specter', 5, 0], ['archer', 0, 0]] },
   { id: 10, start: { x: 1, y: 5 }, walls: [[1, 1], [3, 1], [5, 1], [1, 3], [3, 3], [5, 3]], monsters: [['specter', 0, 0], ['golem', 4, 5], ['archer', 5, 0]] },
   { id: 11, start: { x: 0, y: 5 }, walls: [[2, 1], [2, 2], [2, 3], [4, 1], [4, 2], [4, 3]], monsters: [['golem', 5, 4], ['specter', 5, 0], ['specter', 0, 0]] },
-  { id: 12, start: { x: 1, y: 5 }, walls: [[1, 1], [2, 1], [4, 1], [1, 3], [3, 3], [4, 3]], monsters: [['boss', 5, 0], ['specter', 3, 0], ['golem', 5, 5]] },
 ];
+
+export const TIMING = {
+  TURN_BANNER: 1600,       // Duration of the "Turn of X" banner
+  POST_BANNER_PAUSE: 1000, // Extra pause after banner disappears before action
+  POST_ACTION_PAUSE: 1000, // Extra pause after action ends before next turn
+  MONSTER_MOVE_SPEED: 250, // ms per tile for monsters
+  PLAYER_MOVE_SPEED: 120,  // ms per tile for player
+  ATTACK_BUMP_DURATION: 250,
+  DAMAGE_SHAKE_DURATION: 350,
+  HERO_ATTACK_WAIT_TIME: 600, // Wait time after hero attack before busy=false
+};

@@ -75,6 +75,7 @@ export function createLayoutTools({ canvas, ctx, state }) {
   }
 
   function hoveredTile() {
+    if (state.game.phase === PHASES.ENERGY) return null;
     return tileAt(getLayout(), state.mouse.x, state.mouse.y);
   }
 

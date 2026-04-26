@@ -1,4 +1,4 @@
-import { BOARD_SIZE, LEVELS, PHASES, SAVE_KEY } from '../config/game-data.js';
+import { BOARD_SIZE, LEVELS, PHASES, SAVE_KEY, TIMING } from '../config/game-data.js';
 import {
   dijkstra,
   distanceBetween,
@@ -13,6 +13,7 @@ import {
 import { createGame, levelMonsters, makeEnergyRoll } from './game-factories.js';
 
 export function createGameActions(state) {
+
   function getGame() {
     return state.game;
   }
@@ -26,14 +27,26 @@ export function createGameActions(state) {
     getGame().lastEvent = text;
   }
 
-  function showBanner(title, subtitle = '', duration = 900, after = null) {
-    getGame().banner = { title, subtitle, until: performance.now() + duration };
+  function showBanner(title, subtitle = '', duration = 900, after = null, options = {}) {
+    getGame().banner = {
+      title,
+      subtitle,
+      until: performance.now() + duration,
+      ...options,
+    };
 
     window.setTimeout(() => {
       const game = getGame();
       if (game.banner && game.banner.title === title) game.banner = null;
       if (after) after();
     }, duration);
+  }
+
+  function showTurnBanner(title, subtitle, cardKey, accent = '#facc15') {
+    showBanner(title, subtitle, TIMING.TURN_BANNER, null, {
+      cardKey,
+      accent,
+    });
   }
 
   function startEnergyTurn(message = 'Arraste os dados para preparar seu turno.') {
@@ -47,10 +60,11 @@ export function createGameActions(state) {
     game.speedRemaining = 0;
     game.attackRemaining = 0;
     game.draggingDie = null;
+    game.selectedEntity = null;
     game.busy = false;
 
     setEvent(message);
-    showBanner('Energia rolada', `Dados: ${roll.join(' • ')}`, 950);
+    showBanner('Dados rolados', `Distribua os dados: ${roll.join(' - ')}`, TIMING.TURN_BANNER);
   }
 
   function allDiceAssigned() {
@@ -128,6 +142,37 @@ export function createGameActions(state) {
     }
 
     return reachable;
+  }
+
+  function getMonsterAttackTiles(monsterId) {
+    const game = getGame();
+    if (game.busy) return new Set();
+
+    const monster = game.monsters.find((m) => m.id === monsterId);
+    if (!monster || monster.hp <= 0) return new Set();
+
+    const walls = levelWallsSet(game.levelIndex);
+    const blockers = monsterOccupiedKeys(game.monsters, monster.id);
+    const blocked = new Set([...walls, ...blockers]);
+    const attackTiles = new Set();
+
+    for (let y = 0; y < BOARD_SIZE; y += 1) {
+      for (let x = 0; x < BOARD_SIZE; x += 1) {
+        const cell = { x, y };
+        const key = posKey(cell);
+
+        if (walls.has(key)) continue;
+        if (blockers.has(key)) continue;
+        if (samePos(cell, monster)) continue;
+
+        const rangeCost = distanceBetween(monster, cell, blocked, false);
+        if (rangeCost <= monster.range && hasLineOfSight(monster, cell, walls, blockers)) {
+          attackTiles.add(key);
+        }
+      }
+    }
+
+    return attackTiles;
   }
 
   function getAttackableMonsters() {
@@ -242,7 +287,7 @@ export function createGameActions(state) {
     setEvent(
       `Seu turno. Vel ${game.speedRemaining}, Atq ${game.attackRemaining}, Def ${game.player.defenseBase + picked.defense}.`
     );
-    showBanner('Seu turno', 'Mova e ataque em qualquer ordem.', 800);
+    showTurnBanner('Seu turno', 'Aventureiro', 'player', '#34d399');
   }
 
   function movePlayer(target) {
@@ -263,10 +308,10 @@ export function createGameActions(state) {
       entityId: 'player',
       path: data.path,
       startTime: performance.now(),
-      durationPerTile: 120,
+      durationPerTile: TIMING.PLAYER_MOVE_SPEED,
     });
 
-    const totalDur = (data.path.length - 1) * 120;
+    const totalDur = (data.path.length - 1) * TIMING.PLAYER_MOVE_SPEED;
     
     game.animations.push({
       type: 'floatingText',
@@ -313,14 +358,14 @@ export function createGameActions(state) {
       targetX: target.x,
       targetY: target.y,
       startTime: performance.now(),
-      duration: 250
+      duration: TIMING.ATTACK_BUMP_DURATION
     });
 
     game.animations.push({
       type: 'damageShake',
       entityId: target.id,
-      startTime: performance.now() + 250,
-      duration: 350
+      startTime: performance.now() + TIMING.ATTACK_BUMP_DURATION,
+      duration: TIMING.DAMAGE_SHAKE_DURATION
     });
 
     game.animations.push({
@@ -358,7 +403,7 @@ export function createGameActions(state) {
           showBanner('Nível concluído', 'Escolha curar ou melhorar um atributo.', 1200);
         }
       }
-    }, 600);
+    }, TIMING.HERO_ATTACK_WAIT_TIME);
   }
 
   function advanceTurn() {
@@ -389,7 +434,8 @@ export function createGameActions(state) {
       }
       
       setEvent(`Turno de ${monster.name}.`);
-      setTimeout(() => executeMonsterTurn(monster), 500);
+      showTurnBanner(`Turno de ${monster.name}`, monster.name, monster.type, monster.tint);
+      setTimeout(() => executeMonsterTurn(monster), TIMING.TURN_BANNER + TIMING.POST_BANNER_PAUSE);
     }
   }
 
@@ -413,11 +459,11 @@ export function createGameActions(state) {
         entityId: monster.id,
         path: path,
         startTime: performance.now(),
-        durationPerTile: 250, // Slower movement for monsters
+        durationPerTile: TIMING.MONSTER_MOVE_SPEED,
       });
       monster.x = targetCell.x;
       monster.y = targetCell.y;
-      moveWaitTime = (path.length - 1) * 250;
+      moveWaitTime = (path.length - 1) * TIMING.MONSTER_MOVE_SPEED;
     }
 
     setTimeout(() => {
@@ -452,15 +498,15 @@ export function createGameActions(state) {
           targetX: game.player.x,
           targetY: game.player.y,
           startTime: performance.now(),
-          duration: 250
+          duration: TIMING.ATTACK_BUMP_DURATION
         });
 
         if (damage > 0) {
           game.animations.push({
             type: 'damageShake',
             entityId: 'player',
-            startTime: performance.now() + 250,
-            duration: 350
+            startTime: performance.now() + TIMING.ATTACK_BUMP_DURATION,
+            duration: TIMING.DAMAGE_SHAKE_DURATION
           });
         }
 
@@ -484,7 +530,8 @@ export function createGameActions(state) {
         setEvent(`${monster.name} se moveu.`);
       }
 
-      setTimeout(() => advanceTurn(), 800);
+      setEvent(`Fim do turno: ${monster.name}`);
+      setTimeout(() => advanceTurn(), TIMING.POST_ACTION_PAUSE);
     }, moveWaitTime);
   }
 
@@ -493,7 +540,10 @@ export function createGameActions(state) {
     if (game.busy || game.phase !== PHASES.HERO) return;
 
     game.busy = true;
-    advanceTurn();
+    setEvent('Fim do turno: Aventureiro');
+    showBanner('Fim do Turno', 'Aventureiro', 800, () => {
+      advanceTurn();
+    });
   }
 
 
@@ -638,6 +688,7 @@ export function createGameActions(state) {
     endHeroPhase,
     getAttackableMonsters,
     getGame,
+    getMonsterAttackTiles,
     getMonsterReachableTiles,
     getReachableTiles,
     getTotals,

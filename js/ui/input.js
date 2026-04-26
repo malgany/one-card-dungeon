@@ -86,6 +86,7 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
       return;
     }
 
+    if (state.game.phase === PHASES.ENERGY) return;
     if (state.game.busy) return;
 
     const currentLayout = layout.getLayout();

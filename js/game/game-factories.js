@@ -84,8 +84,8 @@ export function createGame() {
     animations: [],
     turnQueue: ['player', ...monsters.map(m => m.id)],
     banner: {
-      title: 'Energia rolada',
-      subtitle: `Dados: ${roll.join(' • ')}`,
+      title: 'Dados rolados',
+      subtitle: `Distribua os dados: ${roll.join(' - ')}`,
       until: performance.now() + 1200,
     },
     busy: false,

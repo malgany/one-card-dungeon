@@ -224,12 +224,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       });
     }
 
-    draw.drawButton(x + w - 44, y + h - 44, 32, 32, '⚙️', () => {
-      state.game.menuOpen = !state.game.menuOpen;
-    }, {
-      fill: '#111827', hoverFill: '#1f2937', stroke: '#64748b', font: '16px Inter, sans-serif',
-    });
-  }
+    }
 
   function drawMenu(currentLayout) {
     if (!state.game.menuOpen) return;
@@ -514,38 +509,33 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
           `Velocidade ${monster.speed}`,
         ];
 
-    const cardW = 144;
-    const cardH = 192;
-    const width = 420;
-    const height = 230;
-    let x = rect.x + rect.w + 14;
-    let y = rect.y + 8;
-
-    if (x + width > currentLayout.sw - 18) x = rect.x - width - 14;
-    if (y + height > currentLayout.sh - 10) {
-      y = currentLayout.sh - height - 14;
-    }
+    const cardW = 110;
+    const cardH = 146;
+    const width = currentLayout.leftW - 32;
+    const height = 200;
+    let x = currentLayout.leftX + 16;
+    let y = currentLayout.leftY + currentLayout.leftH - height - 16;
 
     draw.roundRect(x, y, width, height, 18, 'rgba(5,8,14,0.95)', '#64748b');
-    draw.roundRect(x + 14, y + 18, cardW, cardH, 12, '#111827', '#d6a85c');
+    draw.roundRect(x + 12, y + 27, cardW, cardH, 12, '#111827', '#d6a85c');
 
     ctx.save();
-    draw.roundRect(x + 18, y + 22, cardW - 8, cardH - 8, 10, null, null);
+    draw.roundRect(x + 16, y + 31, cardW - 8, cardH - 8, 10, null, null);
     ctx.clip();
 
-    const drew = draw.drawImageCover(image, x + 18, y + 22, cardW - 8, cardH - 8);
+    const drew = draw.drawImageCover(image, x + 16, y + 31, cardW - 8, cardH - 8);
     if (!drew) {
-      draw.drawText(titleIcon, x + 18 + cardW / 2, y + 22 + cardH / 2 + 15, {
+      draw.drawText(titleIcon, x + 16 + cardW / 2, y + 31 + cardH / 2 + 15, {
         align: 'center',
-        font: '56px Inter, sans-serif',
+        font: '46px Inter, sans-serif',
       });
     }
 
     ctx.restore();
 
-    const textX = x + cardW + 32;
-    draw.drawText(`${titleIcon} ${title}`, textX, y + 36, {
-      font: 'bold 19px Inter, sans-serif',
+    const textX = x + cardW + 24;
+    draw.drawText(`${titleIcon} ${title}`, textX, y + 46, {
+      font: 'bold 16px Inter, sans-serif',
       color: '#f8fafc',
     });
 
@@ -554,13 +544,14 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       : ['❤️', '⚔️', '🛡️', '🎯', '🏃'];
 
     for (let index = 0; index < lines.length; index += 1) {
-      draw.drawText(icons[index], textX + 2, y + 74 + index * 26, {
-        font: '16px Inter, sans-serif',
+      draw.drawText(icons[index], textX + 2, y + 80 + index * 22, {
+        font: '14px Inter, sans-serif',
         color: '#fff',
       });
-      draw.drawText(lines[index], textX + 28, y + 74 + index * 26, {
-        font: '15px Inter, sans-serif',
+      draw.drawText(lines[index], textX + 26, y + 80 + index * 22, {
+        font: '13px Inter, sans-serif',
         color: '#cbd5e1',
+        maxWidth: width - cardW - 32,
       });
     }
   }
@@ -575,32 +566,88 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     const cx = currentLayout.boardX + currentLayout.boardW / 2;
     const cy = currentLayout.boardY + currentLayout.boardH / 2;
+    const hasCard = !!banner.cardKey;
+    const panelW = hasCard ? 460 : 520;
+    const panelH = hasCard ? 132 : 148;
+    const panelX = cx - panelW / 2;
+    const panelY = hasCard ? cy + 44 : cy - 74;
+    const accent = banner.accent || '#facc15';
 
     ctx.save();
     ctx.globalAlpha = alpha;
-    draw.roundRect(
-      cx - 260,
-      cy - 74,
-      520,
-      148,
-      26,
-      'rgba(0,0,0,0.76)',
-      '#facc15'
-    );
-    draw.drawText(banner.title, cx, cy - 12, {
-      align: 'center',
-      font: 'bold 32px Inter, sans-serif',
-      color: '#f8fafc',
-    });
+    if (hasCard) {
+      const cardImage = cardImages[banner.cardKey] || null;
+      const cardW = 144;
+      const cardH = 194;
+      const cardX = cx - cardW / 2;
+      const cardY = panelY - cardH + 30;
 
-    if (banner.subtitle) {
-      draw.drawText(banner.subtitle, cx, cy + 25, {
+      draw.roundRect(cardX - 10, cardY - 10, cardW + 20, cardH + 20, 22, 'rgba(0,0,0,0.4)', null);
+      draw.roundRect(cardX, cardY, cardW, cardH, 16, '#111827', accent);
+
+      ctx.save();
+      draw.roundRect(cardX + 4, cardY + 4, cardW - 8, cardH - 8, 12, null, null);
+      ctx.clip();
+      const drew = draw.drawImageCover(cardImage, cardX + 4, cardY + 4, cardW - 8, cardH - 8);
+      if (!drew) {
+        draw.drawText(banner.subtitle || banner.title, cx, cardY + cardH / 2 + 8, {
+          align: 'center',
+          font: 'bold 20px Inter, sans-serif',
+          color: '#f8fafc',
+          maxWidth: cardW - 20,
+        });
+      }
+      ctx.restore();
+
+      ctx.lineWidth = 3;
+      draw.roundRect(panelX, panelY, panelW, panelH, 24, 'rgba(0,0,0,0.8)', accent);
+      draw.drawText(banner.title, cx, panelY + 54, {
         align: 'center',
-        font: '16px Inter, sans-serif',
-        color: '#cbd5e1',
+        font: 'bold 28px Inter, sans-serif',
+        color: '#f8fafc',
       });
+
+      if (banner.subtitle) {
+        draw.drawText(banner.subtitle, cx, panelY + 88, {
+          align: 'center',
+          font: '16px Inter, sans-serif',
+          color: '#cbd5e1',
+        });
+      }
+    } else {
+      ctx.lineWidth = 3;
+      draw.roundRect(panelX, panelY, panelW, panelH, 26, 'rgba(0,0,0,0.76)', accent);
+      draw.drawText(banner.title, cx, cy - 12, {
+        align: 'center',
+        font: 'bold 32px Inter, sans-serif',
+        color: '#f8fafc',
+      });
+
+      if (banner.subtitle) {
+        draw.drawText(banner.subtitle, cx, cy + 25, {
+          align: 'center',
+          font: '16px Inter, sans-serif',
+          color: '#cbd5e1',
+        });
+      }
     }
 
+    ctx.restore();
+  }
+
+  function drawEnergyFocusMask(currentLayout) {
+    if (state.game.phase !== PHASES.ENERGY) return;
+
+    const maskX = currentLayout.boardX - 18;
+    const maskW = currentLayout.sw - maskX;
+    const gradient = ctx.createLinearGradient(maskX, 0, currentLayout.sw, 0);
+    gradient.addColorStop(0, 'rgba(5,8,14,0.54)');
+    gradient.addColorStop(0.35, 'rgba(4,7,12,0.66)');
+    gradient.addColorStop(1, 'rgba(2,4,8,0.78)');
+
+    ctx.save();
+    ctx.fillStyle = gradient;
+    ctx.fillRect(maskX, 0, maskW, currentLayout.sh);
     ctx.restore();
   }
 
@@ -632,8 +679,10 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         : null;
 
     let monsterReachable = new Map();
+    let monsterAttackTiles = new Set();
     if (hoverMonster && !state.game.busy) {
        monsterReachable = actions.getMonsterReachableTiles(hoverMonster.id);
+       monsterAttackTiles = actions.getMonsterAttackTiles(hoverMonster.id);
     }
 
     let screenShakeX = 0;
@@ -688,10 +737,15 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
           ctx.fillRect(rect.x + 3, rect.y + 3, rect.w - 6, rect.h - 6);
           ctx.strokeStyle = 'rgba(103,232,249,0.5)';
           ctx.strokeRect(rect.x + 5, rect.y + 5, rect.w - 10, rect.h - 10);
-        } else if (!isWall && monsterReachable.has(key) && !monster && !samePos({ x, y }, state.game.player)) {
-          ctx.fillStyle = 'rgba(244,63,94,0.15)'; // rose-500
+        } else if (!isWall && monsterAttackTiles.has(key) && !monster && !samePos({ x, y }, state.game.player)) {
+          ctx.fillStyle = 'rgba(239,68,68,0.24)';
           ctx.fillRect(rect.x + 3, rect.y + 3, rect.w - 6, rect.h - 6);
-          ctx.strokeStyle = 'rgba(251,113,133,0.4)'; // rose-400
+          ctx.strokeStyle = 'rgba(248,113,113,0.55)';
+          ctx.strokeRect(rect.x + 5, rect.y + 5, rect.w - 10, rect.h - 10);
+        } else if (!isWall && monsterReachable.has(key) && !monster && !samePos({ x, y }, state.game.player)) {
+          ctx.fillStyle = 'rgba(34,197,94,0.18)';
+          ctx.fillRect(rect.x + 3, rect.y + 3, rect.w - 6, rect.h - 6);
+          ctx.strokeStyle = 'rgba(74,222,128,0.45)';
           ctx.strokeRect(rect.x + 5, rect.y + 5, rect.w - 10, rect.h - 10);
         }
 
@@ -701,6 +755,13 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
           ctx.strokeRect(rect.x + 5, rect.y + 5, rect.w - 10, rect.h - 10);
         }
       }
+    }
+
+    if (hoverMonster && monsterAttackTiles.has(posKey(hoverMonster))) {
+      const hoverRect = layout.tileRect(currentLayout, hoverMonster.x, hoverMonster.y);
+      ctx.strokeStyle = 'rgba(248,113,113,0.95)';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(hoverRect.x + 4, hoverRect.y + 4, hoverRect.w - 8, hoverRect.h - 8);
     }
 
     if (hoverPath && hoverPath.length > 1) {
@@ -892,6 +953,15 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     drawSelectedEntityModal(currentLayout);
     drawMenu(currentLayout);
     drawBottomUI(currentLayout);
+
+    // Top right settings button
+    draw.drawButton(currentLayout.sw - 48, 16, 32, 32, '⚙️', () => {
+      state.game.menuOpen = !state.game.menuOpen;
+    }, {
+      fill: '#111827', hoverFill: '#1f2937', stroke: '#64748b', font: '16px Inter, sans-serif',
+    });
+    
+    drawEnergyFocusMask(currentLayout);
     drawBanner(currentLayout);
     
     ctx.restore();
