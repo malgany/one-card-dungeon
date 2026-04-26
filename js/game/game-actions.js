@@ -168,7 +168,7 @@ export function createGameActions(state) {
 
     const desired = cells[0]?.cell || { x: monster.x, y: monster.y };
     const blockedForMove = new Set([...walls, posKey(player)]);
-    const { dist } = dijkstra(monster, blockedForMove);
+    const { dist, prev } = dijkstra(monster, blockedForMove);
     const candidates = [];
 
     for (const [key, cost] of dist.entries()) {
@@ -181,6 +181,7 @@ export function createGameActions(state) {
         cost,
         remain: distanceBetween(cell, desired, blockedForMove, false),
         playerDistance: distanceBetween(cell, player, blockedForMove, true),
+        path: reconstructPath(prev, cell)
       });
     }
 
@@ -190,7 +191,7 @@ export function createGameActions(state) {
       return b.playerDistance - a.playerDistance;
     });
 
-    return candidates[0]?.cell || { x: monster.x, y: monster.y };
+    return candidates[0] || { cell: { x: monster.x, y: monster.y }, path: [{ x: monster.x, y: monster.y }] };
   }
 
   function confirmEnergy() {
@@ -278,6 +279,22 @@ export function createGameActions(state) {
     });
 
     game.animations.push({
+      type: 'bumpAttack',
+      entityId: 'player',
+      targetX: target.x,
+      targetY: target.y,
+      startTime: performance.now(),
+      duration: 250
+    });
+
+    game.animations.push({
+      type: 'damageShake',
+      entityId: target.id,
+      startTime: performance.now() + 250,
+      duration: 350
+    });
+
+    game.animations.push({
       type: 'floatingText',
       x: target.x,
       y: target.y,
@@ -287,108 +304,170 @@ export function createGameActions(state) {
       duration: 1200
     });
 
+    game.busy = true;
+
     if (target.hp <= 0) {
       setEvent(`${target.name} derrotado.`);
-      game.monsters = game.monsters.filter((monster) => monster.hp > 0);
     } else {
       setEvent(`${target.name}: -1 vida. Gasto: ${target.defense} ataque.`);
     }
 
-    if (game.monsters.length > 0) return;
+    setTimeout(() => {
+      game.busy = false;
 
-    if (game.levelIndex === LEVELS.length - 1) {
-      game.phase = PHASES.WON;
-      showBanner('Vitória!', 'Você encontrou o Cetro de M’Guf-yn.', 2000);
+      if (target.hp <= 0) {
+        game.monsters = game.monsters.filter((monster) => monster.hp > 0);
+        
+        if (game.monsters.length === 0) {
+          if (game.levelIndex === LEVELS.length - 1) {
+            game.phase = PHASES.WON;
+            showBanner('Vitória!', 'Você encontrou o Cetro de M’Guf-yn.', 2000);
+            return;
+          }
+
+          game.phase = PHASES.LEVELUP;
+          showBanner('Nível concluído', 'Escolha curar ou melhorar um atributo.', 1200);
+        }
+      }
+    }, 600);
+  }
+
+  function advanceTurn() {
+    const game = getGame();
+    if (game.phase === PHASES.WON || game.phase === PHASES.LOST || game.phase === PHASES.LEVELUP) return;
+
+    const current = game.turnQueue.shift();
+    if (current) game.turnQueue.push(current);
+
+    const aliveMonsterIds = new Set(game.monsters.map(m => m.id));
+    game.turnQueue = game.turnQueue.filter(id => id === 'player' || aliveMonsterIds.has(id));
+
+    if (game.turnQueue.length === 0) return; // Should not happen
+
+    const nextId = game.turnQueue[0];
+
+    if (nextId === 'player') {
+      game.turnCount += 1;
+      startEnergyTurn('Energia rolada automaticamente. Distribua os dados.');
+    } else {
+      game.phase = PHASES.MONSTER_TURN;
+      game.busy = true;
+      const monster = game.monsters.find(m => m.id === nextId);
+      
+      if (!monster) {
+        advanceTurn(); // Failsafe
+        return;
+      }
+      
+      setEvent(`Turno de ${monster.name}.`);
+      setTimeout(() => executeMonsterTurn(monster), 500);
+    }
+  }
+
+  function executeMonsterTurn(monster) {
+    const game = getGame();
+    if (monster.hp <= 0) {
+      advanceTurn();
       return;
     }
 
-    game.phase = PHASES.LEVELUP;
-    showBanner('Nível concluído', 'Escolha curar ou melhorar um atributo.', 1200);
+    const walls = levelWallsSet(game.levelIndex);
+    const destination = chooseMonsterDestination(monster, game.monsters, game.player, game.levelIndex);
+    const targetCell = destination.cell;
+    const path = destination.path;
+    
+    let moveWaitTime = 0;
+
+    if (!samePos(targetCell, monster)) {
+      game.animations.push({
+        type: 'movement',
+        entityId: monster.id,
+        path: path,
+        startTime: performance.now(),
+        durationPerTile: 250, // Slower movement for monsters
+      });
+      monster.x = targetCell.x;
+      monster.y = targetCell.y;
+      moveWaitTime = (path.length - 1) * 250;
+    }
+
+    setTimeout(() => {
+      if (game.phase === PHASES.WON || game.phase === PHASES.LOST) return;
+
+      const blockers = new Set(
+        game.monsters.filter(m => m.id !== monster.id && m.hp > 0).map(posKey)
+      );
+      const blocked = new Set([...walls, ...blockers]);
+      const rangeCost = distanceBetween(monster, game.player, blocked, true);
+
+      if (rangeCost <= monster.range && hasLineOfSight(monster, game.player, walls, blockers)) {
+        const totalDefense = game.player.defenseBase + game.assignment.defense;
+        const damage = Math.floor(monster.attack / Math.max(1, totalDefense));
+        game.player.health = Math.max(0, game.player.health - damage);
+
+        setEvent(`${monster.name} atacou! ATQ ${monster.attack} ÷ DEF ${totalDefense} = ${damage} dano.`);
+        
+        game.animations.push({
+          type: 'floatingText',
+          x: monster.x,
+          y: monster.y,
+          text: `-${monster.attack}`,
+          color: '#eab308',
+          startTime: performance.now(),
+          duration: 1200
+        });
+
+        game.animations.push({
+          type: 'bumpAttack',
+          entityId: monster.id,
+          targetX: game.player.x,
+          targetY: game.player.y,
+          startTime: performance.now(),
+          duration: 250
+        });
+
+        if (damage > 0) {
+          game.animations.push({
+            type: 'damageShake',
+            entityId: 'player',
+            startTime: performance.now() + 250,
+            duration: 350
+          });
+        }
+
+        game.animations.push({
+          type: 'floatingText',
+          x: game.player.x,
+          y: game.player.y,
+          text: `-${damage}`,
+          color: '#ef4444',
+          startTime: performance.now() + 150,
+          duration: 1200
+        });
+
+        if (game.player.health <= 0) {
+          game.phase = PHASES.LOST;
+          game.busy = false;
+          showBanner('Derrota', 'Seu aventureiro caiu na masmorra.', 2000);
+          return;
+        }
+      } else if (!samePos(destination, monster)) {
+        setEvent(`${monster.name} se moveu.`);
+      }
+
+      setTimeout(() => advanceTurn(), 800);
+    }, moveWaitTime);
   }
 
   function endHeroPhase() {
     const game = getGame();
     if (game.busy || game.phase !== PHASES.HERO) return;
 
-    game.phase = PHASES.MONSTER_MOVE;
     game.busy = true;
-
-    setEvent('Os monstros começaram a se mover.');
-    showBanner(
-      'Movimento dos monstros',
-      'Eles tentam entrar em alcance e linha de visão.',
-      800,
-      runMonsterMovement
-    );
+    advanceTurn();
   }
 
-  function runMonsterMovement() {
-    const game = getGame();
-    const walls = levelWallsSet(game.levelIndex);
-    const sorted = [...game.monsters].sort((a, b) => {
-      return distanceBetween(a, game.player, walls, true) - distanceBetween(b, game.player, walls, true);
-    });
-    const moved = [...game.monsters];
-    let movedCount = 0;
 
-    for (const monster of sorted) {
-      const liveMonster = moved.find((currentMonster) => currentMonster.id === monster.id);
-      const destination = chooseMonsterDestination(liveMonster, moved, game.player, game.levelIndex);
-
-      if (!samePos(destination, liveMonster)) movedCount += 1;
-      liveMonster.x = destination.x;
-      liveMonster.y = destination.y;
-    }
-
-    game.phase = PHASES.MONSTER_ATTACK;
-    setEvent(`${movedCount} monstro(s) se moveram.`);
-    showBanner('Ataque dos monstros', 'Calculando alcance, linha de visão e defesa.', 800, runMonsterAttack);
-  }
-
-  function runMonsterAttack() {
-    const game = getGame();
-    const walls = levelWallsSet(game.levelIndex);
-    let totalAttack = 0;
-    let attackers = 0;
-
-    for (const monster of game.monsters) {
-      const blockers = new Set(
-        game.monsters
-          .filter((otherMonster) => otherMonster.id !== monster.id && otherMonster.hp > 0)
-          .map(posKey)
-      );
-      const blocked = new Set([...walls, ...blockers]);
-      const rangeCost = distanceBetween(monster, game.player, blocked, true);
-
-      if (rangeCost <= monster.range && hasLineOfSight(monster, game.player, walls, blockers)) {
-        totalAttack += monster.attack;
-        attackers += 1;
-      }
-    }
-
-    const totalDefense = game.player.defenseBase + game.assignment.defense;
-    const damage = Math.floor(totalAttack / Math.max(1, totalDefense));
-    game.player.health = Math.max(0, game.player.health - damage);
-
-    const resultText = attackers === 0
-      ? 'Nenhum monstro conseguiu atacar.'
-      : `${attackers} atacante(s). ATQ ${totalAttack} ÷ DEF ${totalDefense} = ${damage} dano.`;
-
-    setEvent(resultText);
-
-    if (game.player.health <= 0) {
-      game.phase = PHASES.LOST;
-      game.busy = false;
-      showBanner('Derrota', 'Seu aventureiro caiu na masmorra.', 2000);
-      return;
-    }
-
-    game.busy = true;
-    showBanner('Ataque resolvido', resultText, 1150, () => {
-      game.turnCount += 1;
-      startEnergyTurn('Energia rolada automaticamente. Distribua os dados.');
-    });
-  }
 
   function applyReward(kind) {
     const game = getGame();
@@ -407,6 +486,7 @@ export function createGameActions(state) {
     game.player.x = nextLevel.start.x;
     game.player.y = nextLevel.start.y;
     game.monsters = levelMonsters(nextLevel);
+    game.turnQueue = ['player', ...game.monsters.map(m => m.id)];
 
     setEvent(`Nível ${nextLevel.id}. Energia rolada automaticamente.`);
     startEnergyTurn(`Nível ${nextLevel.id}. Distribua os dados de energia.`);
@@ -472,6 +552,10 @@ export function createGameActions(state) {
     normalized.busy = false;
     normalized.animations = [];
     normalized.banner = null;
+    
+    if (!normalized.turnQueue || normalized.turnQueue.length === 0) {
+       normalized.turnQueue = ['player', ...normalized.monsters.map(m => m.id)];
+    }
 
     if (!Array.isArray(normalized.roll) || normalized.roll.length !== 3) {
       normalized.roll = normalized.phase === PHASES.ENERGY ? makeEnergyRoll() : fallback.roll;
@@ -530,8 +614,6 @@ export function createGameActions(state) {
     loadGame,
     movePlayer,
     newGame,
-    runMonsterAttack,
-    runMonsterMovement,
     saveGame,
     setEvent,
     showBanner,

@@ -103,8 +103,13 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     const isPlayer = state.game.player.x === tile.x && state.game.player.y === tile.y;
 
     if (monster) {
-      state.game.selectedEntity = { type: 'monster', id: monster.id };
-      actions.attackMonster(monster.id);
+      const attackable = actions.getAttackableMonsters();
+      if (attackable.has(monster.id)) {
+        actions.attackMonster(monster.id);
+        state.game.selectedEntity = null;
+      } else {
+        state.game.selectedEntity = { type: 'monster', id: monster.id };
+      }
     } else if (isPlayer) {
       state.game.selectedEntity = { type: 'player' };
     } else {

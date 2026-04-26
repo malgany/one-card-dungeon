@@ -142,7 +142,7 @@ export function createDrawPrimitives({ ctx, state, cardImages }) {
     return true;
   }
 
-  function drawUnitCardToken(unit, rect, isPlayer = false) {
+  function drawUnitCardToken(unit, rect, isPlayer = false, flashRed = false) {
     const image = cardImageForUnit(unit, isPlayer);
     const margin = 8;
     const cardH = rect.h - margin * 2;
@@ -151,7 +151,8 @@ export function createDrawPrimitives({ ctx, state, cardImages }) {
     const y = rect.y + margin;
     const w = cardW;
     const h = cardH;
-    const tint = isPlayer ? '#064e3b' : unit.tint;
+    let tint = isPlayer ? '#064e3b' : unit.tint;
+    if (flashRed) tint = '#ef4444';
 
     roundRect(x, y, w, h, 12, `${tint}dd`, 'rgba(0,0,0,0.45)');
     ctx.save();

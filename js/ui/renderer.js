@@ -45,6 +45,8 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     cy += 16;
     const totals = actions.getTotals();
+    const topMargin = 90;
+    const availableW = w - 32;
     const barW = w - 32;
     const barH = 40;
     const barX = x + 16;
@@ -104,6 +106,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
       cy += diceSize + 40;
       
+      const boardY = topMargin + Math.floor((h - topMargin - 140) / 2);
       const boxW = Math.floor((w - 48) / 3);
       const boxH = 140;
       const boxSpacing = 8;
@@ -162,6 +165,8 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
           disabled: game.busy || !actions.allDiceAssigned(),
           font: 'bold 22px Inter, sans-serif', color: '#fffbeb',
         });
+        
+        draw.drawText('Movimento: Reto = 2 vel | Diagonal = 3 vel', x + w / 2, cy + 78, { align: 'center', font: '13px Inter, sans-serif', color: '#fbbf24' });
 
         if (game.draggingDie) {
           draw.drawDieToken(
@@ -180,6 +185,8 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         draw.drawText('Passe o mouse no herói para ver', x + w / 2, cy, { align: 'center', font: '14px Inter, sans-serif', color: '#94a3b8' });
         draw.drawText('movimento. Clique em inimigos', x + w / 2, cy + 20, { align: 'center', font: '14px Inter, sans-serif', color: '#94a3b8' });
         draw.drawText('destacados para atacar.', x + w / 2, cy + 40, { align: 'center', font: '14px Inter, sans-serif', color: '#94a3b8' });
+        
+        draw.drawText('Movimento: Reto = 2 vel | Diagonal = 3 vel', x + w / 2, cy + 65, { align: 'center', font: '13px Inter, sans-serif', color: '#fbbf24' });
       }
     }
 
@@ -262,21 +269,21 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    const drawMiniStat = (x, y, text, bgColor, color = '#fff') => {
+    const drawMiniStat = (x, y, text, bgColor, color = '#fff', alpha = 1) => {
+      ctx.save();
+      ctx.globalAlpha = alpha;
       ctx.beginPath();
       ctx.arc(x, y, 12, 0, Math.PI * 2);
       ctx.fillStyle = bgColor;
       ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+      ctx.strokeStyle = `rgba(0,0,0,${0.8 * alpha})`;
       ctx.lineWidth = 2;
       ctx.stroke();
 
       ctx.fillStyle = color;
       ctx.fillText(text, x, y + 1);
+      ctx.restore();
     };
-
-    const hpText = playerHover ? `${game.player.health}` : `${monster.hp}`;
-    drawMiniStat(rect.x + rect.w / 2, rect.y - 14, hpText, '#b91c1c');
 
     if (playerHover) {
       const attack = game.phase === PHASES.HERO ? game.attackRemaining : game.player.attackBase + game.assignment.attack;
@@ -285,8 +292,96 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       drawMiniStat(rect.x - 4, rect.y + rect.h / 2, `${attack}`, '#ca8a04');
       drawMiniStat(rect.x + rect.w + 4, rect.y + rect.h / 2, `${speed}`, '#16a34a');
     } else {
-      drawMiniStat(rect.x - 4, rect.y + rect.h / 2, `${monster.attack}`, '#ca8a04');
-      drawMiniStat(rect.x + rect.w + 4, rect.y + rect.h / 2, `${monster.speed}`, '#16a34a');
+      const attackable = actions.getAttackableMonsters();
+      if (game.phase === PHASES.HERO && attackable.has(monster.id)) {
+        const attack = game.attackRemaining;
+        const defense = monster.defense;
+        
+        const loopDuration = 1800;
+        const t = (performance.now() % loopDuration) / loopDuration;
+        const x_center = rect.x + rect.w / 2;
+        const y_center = rect.y - 36;
+        
+        let atkOffsetX = -20;
+        let defOffsetX = 20;
+        let atkAlpha = 1;
+        let defAlpha = 1;
+
+        if (t > 0.2 && t <= 0.4) {
+           const p = Math.pow((t - 0.2) / 0.2, 2); 
+           atkOffsetX = -20 + (10 * p); 
+        } else if (t > 0.4) {
+           atkOffsetX = -10;
+        }
+
+        if (t > 0.4 && t <= 0.8) {
+           const p = (t - 0.4) / 0.4;
+           if (attack >= defense) {
+              defOffsetX = 20 + (20 * p);
+              defAlpha = 1 - p;
+           } else {
+              atkOffsetX = -10 - (20 * p);
+              atkAlpha = 1 - p;
+           }
+        } else if (t > 0.8) {
+           const p = (t - 0.8) / 0.2;
+           atkAlpha = attack >= defense ? 1 - p : 0;
+           defAlpha = attack >= defense ? 0 : 1 - p;
+        }
+        
+        if (atkAlpha > 0) drawMiniStat(x_center + atkOffsetX, y_center, `${attack}`, '#ca8a04', '#fff', atkAlpha);
+        if (defAlpha > 0) drawMiniStat(x_center + defOffsetX, y_center, `${defense}`, '#2563eb', '#fff', defAlpha);
+      } else {
+        drawMiniStat(rect.x - 4, rect.y + rect.h / 2, `${monster.attack}`, '#ca8a04');
+        drawMiniStat(rect.x + rect.w + 4, rect.y + rect.h / 2, `${monster.defense}`, '#2563eb');
+      }
+    }
+  }
+
+  function drawTurnQueue(currentLayout) {
+    const game = state.game;
+    if (!game.turnQueue || game.turnQueue.length === 0) return;
+
+    const queueW = 48;
+    const queueSpacing = 16;
+    let queueY = currentLayout.boardY - 65;
+    if (queueY < 10) queueY = 10; // Prevent cutting off on small screens
+    
+    let currentX = currentLayout.boardX + currentLayout.boardW - queueW;
+    // Prevent cutting off on the right
+    if (currentX + queueW > currentLayout.sw - 10) currentX = currentLayout.sw - 10 - queueW;
+
+    for (let i = 0; i < game.turnQueue.length; i++) {
+       const entityId = game.turnQueue[i];
+       let icon;
+
+       if (entityId === 'player') {
+          icon = '🧙';
+       } else {
+          const monster = game.monsters.find(m => m.id === entityId);
+          if (!monster) continue;
+          icon = monster.emoji;
+       }
+
+       const isCurrent = i === 0;
+       const bgColor = isCurrent ? '#4ade80' : '#111827'; // Light green for current
+       const borderColor = '#64748b'; // Neutral color for border
+
+       const boxSize = isCurrent ? queueW + 8 : queueW;
+       const yOffset = isCurrent ? -4 : 0;
+       const bx = currentX - (isCurrent ? 4 : 0);
+       
+       draw.roundRect(bx, queueY + yOffset, boxSize, boxSize, 8, bgColor, borderColor);
+       draw.drawText(icon, bx + boxSize / 2, queueY + yOffset + boxSize / 2 + 8, {
+          align: 'center', font: isCurrent ? '30px Inter' : '24px Inter'
+       });
+
+       draw.roundRect(bx - 8, queueY + yOffset - 8, 20, 20, 10, '#1f2937', borderColor);
+       draw.drawText(`${i + 1}`, bx + 2, queueY + yOffset + 6, {
+          align: 'center', font: 'bold 12px Inter, sans-serif', color: '#fff'
+       });
+
+       currentX -= (queueW + queueSpacing);
     }
   }
 
@@ -314,7 +409,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const lines = playerSelected
       ? [
           `Vida ${game.player.health}/${game.player.maxHealth}`,
-          `Velocidade ${game.player.speedBase} + ${game.assignment.speed} | Restante ${game.speedRemaining}`,
+          `Velocidade ${game.player.speedBase} + ${game.assignment.speed} | Restante ${game.speedRemaining} (~${Math.floor(game.speedRemaining / 2)} casas)`,
           `Ataque ${game.player.attackBase} + ${game.assignment.attack} | Restante ${game.attackRemaining}`,
           `Defesa ${totals.defense}`,
           `Alcance ${totals.range}`,
@@ -418,6 +513,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     requestAnimationFrame(render);
 
     state.game.buttons = [];
+    const now = performance.now();
 
     const currentLayout = layout.getLayout();
     const walls = levelWallsSet(state.game.levelIndex);
@@ -434,12 +530,31 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         ? reachable.get(posKey(hoverTile)).path
         : null;
 
+    let screenShakeX = 0;
+    let screenShakeY = 0;
+    let screenFlashRed = false;
+
+    const playerShakeAnim = state.game.animations.find(a => a.type === 'damageShake' && a.entityId === 'player');
+    if (playerShakeAnim) {
+       const p = (now - playerShakeAnim.startTime) / playerShakeAnim.duration;
+       if (p >= 0 && p <= 1) {
+           screenShakeX += Math.sin(p * Math.PI * 10) * 12;
+           screenShakeY += Math.sin(p * Math.PI * 13) * 8;
+           if (Math.floor(p * 12) % 2 === 0) screenFlashRed = true;
+       }
+    }
+
+    ctx.save();
+    if (screenShakeX !== 0 || screenShakeY !== 0) {
+        ctx.translate(screenShakeX, screenShakeY);
+    }
+
     const background = ctx.createLinearGradient(0, 0, 0, currentLayout.sh);
     background.addColorStop(0, '#151922');
     background.addColorStop(0.55, '#080a0f');
     background.addColorStop(1, '#050608');
     ctx.fillStyle = background;
-    ctx.fillRect(0, 0, currentLayout.sw, currentLayout.sh);
+    ctx.fillRect(-20, -20, currentLayout.sw + 40, currentLayout.sh + 40);
 
     drawSidebar(currentLayout);
     draw.roundRect(
@@ -509,17 +624,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       ctx.setLineDash([]);
     }
 
-    for (const monster of state.game.monsters) {
-      const rect = layout.tileRect(currentLayout, monster.x, monster.y);
-      draw.drawUnitCardToken(monster, rect, false);
-      
-      const barW = rect.w * 0.72;
-      const barX = rect.x + (rect.w - barW) / 2;
-      const barY = rect.y - 6;
-      draw.drawHpBar(barX, barY, barW, 8, monster.hp, monster.maxHp, '#ef4444');
-    }
-
-    const now = performance.now();
+    // now is computed at the top
 
     state.game.animations = state.game.animations.filter((anim) => {
       if (anim.type === 'floatingText') {
@@ -529,8 +634,72 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         const totalDuration = (anim.path.length - 1) * anim.durationPerTile;
         return now < anim.startTime + totalDuration;
       }
+      if (anim.type === 'bumpAttack' || anim.type === 'damageShake') {
+        return now < anim.startTime + anim.duration;
+      }
       return false;
     });
+
+    for (const monster of state.game.monsters) {
+      let drawX = monster.x;
+      let drawY = monster.y;
+      
+      const monsterAnim = state.game.animations.find((a) => a.type === 'movement' && a.entityId === monster.id);
+      if (monsterAnim) {
+        const elapsed = now - monsterAnim.startTime;
+        if (elapsed >= 0) {
+          const tileIndex = Math.floor(elapsed / monsterAnim.durationPerTile);
+          const tileProgress = (elapsed % monsterAnim.durationPerTile) / monsterAnim.durationPerTile;
+          if (tileIndex < monsterAnim.path.length - 1) {
+            const p1 = monsterAnim.path[tileIndex];
+            const p2 = monsterAnim.path[tileIndex + 1];
+            drawX = p1.x + (p2.x - p1.x) * tileProgress;
+            drawY = p1.y + (p2.y - p1.y) * tileProgress;
+          } else {
+            const last = monsterAnim.path[monsterAnim.path.length - 1];
+            drawX = last.x;
+            drawY = last.y;
+          }
+        }
+      }
+
+      const rect = layout.tileRect(currentLayout, drawX, drawY);
+      
+      let pixelOffsetX = 0;
+      let pixelOffsetY = 0;
+      let flashRed = false;
+
+      const bumpAnim = state.game.animations.find(a => a.type === 'bumpAttack' && a.entityId === monster.id);
+      if (bumpAnim) {
+         const p = (now - bumpAnim.startTime) / bumpAnim.duration;
+         const dx = bumpAnim.targetX - monster.x;
+         const dy = bumpAnim.targetY - monster.y;
+         const len = Math.sqrt(dx*dx + dy*dy) || 1;
+         let bump = 0;
+         if (p < 0.25) bump = -0.25 * (p / 0.25);
+         else if (p < 0.5) bump = -0.25 + 1.25 * ((p - 0.25) / 0.25);
+         else bump = 1.0 * (1 - ((p - 0.5) / 0.5));
+         pixelOffsetX += (dx / len) * bump * 40;
+         pixelOffsetY += (dy / len) * bump * 40;
+      }
+
+      const shakeAnim = state.game.animations.find(a => a.type === 'damageShake' && a.entityId === monster.id);
+      if (shakeAnim) {
+         const p = (now - shakeAnim.startTime) / shakeAnim.duration;
+         pixelOffsetX += Math.sin(p * Math.PI * 10) * 6;
+         if (Math.floor(p * 10) % 2 === 0) flashRed = true;
+      }
+
+      rect.x += pixelOffsetX;
+      rect.y += pixelOffsetY;
+
+      draw.drawUnitCardToken(monster, rect, false, flashRed);
+      
+      const barW = rect.w * 0.72;
+      const barX = rect.x + (rect.w - barW) / 2;
+      const barY = rect.y - 6;
+      draw.drawHpBar(barX, barY, barW, 8, monster.hp, monster.maxHp, '#ef4444');
+    }
 
     let drawPlayerX = state.game.player.x;
     let drawPlayerY = state.game.player.y;
@@ -556,7 +725,30 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     }
 
     const playerRect = layout.tileRect(currentLayout, drawPlayerX, drawPlayerY);
-    draw.drawUnitCardToken(state.game.player, playerRect, true);
+
+    let playerOffsetX = 0;
+    let playerOffsetY = 0;
+
+    const playerBumpAnim = state.game.animations.find(a => a.type === 'bumpAttack' && a.entityId === 'player');
+    if (playerBumpAnim) {
+       const p = (now - playerBumpAnim.startTime) / playerBumpAnim.duration;
+       if (p >= 0 && p <= 1) {
+           const dx = playerBumpAnim.targetX - state.game.player.x;
+           const dy = playerBumpAnim.targetY - state.game.player.y;
+           const len = Math.sqrt(dx*dx + dy*dy) || 1;
+           let bump = 0;
+           if (p < 0.25) bump = -0.25 * (p / 0.25);
+           else if (p < 0.5) bump = -0.25 + 1.25 * ((p - 0.25) / 0.25);
+           else bump = 1.0 * (1 - ((p - 0.5) / 0.5));
+           playerOffsetX += (dx / len) * bump * 40;
+           playerOffsetY += (dy / len) * bump * 40;
+       }
+    }
+
+    playerRect.x += playerOffsetX;
+    playerRect.y += playerOffsetY;
+
+    draw.drawUnitCardToken(state.game.player, playerRect, true, false);
     
     const playerBarW = playerRect.w * 0.72;
     const playerBarX = playerRect.x + (playerRect.w - playerBarW) / 2;
@@ -585,10 +777,18 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       }
     });
 
+    drawTurnQueue(currentLayout);
     drawHoverStats(currentLayout);
     drawSelectedEntityModal(currentLayout);
     drawMenu(currentLayout);
     drawBanner(currentLayout);
+    
+    ctx.restore();
+
+    if (screenFlashRed) {
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.25)';
+        ctx.fillRect(0, 0, currentLayout.sw, currentLayout.sh);
+    }
 
     canvas.style.cursor = state.game.draggingDie
       ? 'grabbing'

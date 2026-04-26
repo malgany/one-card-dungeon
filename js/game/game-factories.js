@@ -54,6 +54,7 @@ export function levelMonsters(level) {
 export function createGame() {
   const level = LEVELS[0];
   const roll = makeEnergyRoll();
+  const monsters = levelMonsters(level);
 
   return {
     levelIndex: 0,
@@ -67,7 +68,7 @@ export function createGame() {
       defenseBase: 1,
       rangeBase: 2,
     },
-    monsters: levelMonsters(level),
+    monsters,
     phase: PHASES.ENERGY,
     roll,
     energyAssigned: { speed: null, attack: null, defense: null },
@@ -81,6 +82,7 @@ export function createGame() {
     draggingDie: null,
     menuOpen: false,
     animations: [],
+    turnQueue: ['player', ...monsters.map(m => m.id)],
     banner: {
       title: 'Energia rolada',
       subtitle: `Dados: ${roll.join(' • ')}`,

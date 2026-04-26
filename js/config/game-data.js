@@ -4,6 +4,7 @@ export const SAVE_KEY = 'one-card-dungeon-canvas-v3';
 export const PHASES = {
   ENERGY: 'energy',
   HERO: 'hero',
+  MONSTER_TURN: 'monsterTurn',
   MONSTER_MOVE: 'monsterMove',
   MONSTER_ATTACK: 'monsterAttack',
   LEVELUP: 'levelup',
