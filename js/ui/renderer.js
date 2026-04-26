@@ -229,27 +229,36 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   function drawMenu(currentLayout) {
     if (!state.game.menuOpen) return;
 
-    const w = 190;
-    const h = 176;
-    const x = currentLayout.leftX + currentLayout.leftW - 20;
-    const y = currentLayout.leftY + 54;
+    const w = 220;
+    const h = 218;
+    const x = (currentLayout.sw - w) / 2;
+    const y = (currentLayout.sh - h) / 2;
 
     draw.roundRect(x, y, w, h, 20, 'rgba(5,8,14,0.96)', '#64748b');
-    draw.drawText('Menu', x + 18, y + 30, {
+    draw.drawText('Menu', x + w / 2, y + 30, {
+      align: 'center',
       font: 'bold 17px Inter, sans-serif',
       color: '#f8fafc',
     });
-    draw.drawButton(x + 18, y + 48, w - 36, 34, 'Salvar jogo', actions.saveGame, {
+    draw.drawButton(x + 18, y + 48, w - 36, 34, 'Como jogar', () => {
+      state.game.menuOpen = false;
+      document.getElementById('tutorial-modal').style.display = 'flex';
+    }, {
+      fill: '#0f766e',
+      hoverFill: '#115e59',
+      stroke: '#5eead4',
+    });
+    draw.drawButton(x + 18, y + 90, w - 36, 34, 'Salvar jogo', actions.saveGame, {
       fill: '#1f2937',
       hoverFill: '#374151',
       stroke: '#64748b',
     });
-    draw.drawButton(x + 18, y + 90, w - 36, 34, 'Carregar jogo', actions.loadGame, {
+    draw.drawButton(x + 18, y + 132, w - 36, 34, 'Carregar jogo', actions.loadGame, {
       fill: '#1f2937',
       hoverFill: '#374151',
       stroke: '#64748b',
     });
-    draw.drawButton(x + 18, y + 132, w - 36, 34, 'Novo jogo', actions.newGame, {
+    draw.drawButton(x + 18, y + 174, w - 36, 34, 'Novo jogo', actions.newGame, {
       fill: '#611818',
       hoverFill: '#7f1d1d',
       stroke: '#fca5a5',
@@ -481,25 +490,28 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const remaining = Math.max(0, banner.until - now);
     const alpha = Math.min(1, remaining / 250);
 
+    const cx = currentLayout.boardX + currentLayout.boardW / 2;
+    const cy = currentLayout.boardY + currentLayout.boardH / 2;
+
     ctx.save();
     ctx.globalAlpha = alpha;
     draw.roundRect(
-      currentLayout.sw / 2 - 260,
-      currentLayout.sh / 2 - 74,
+      cx - 260,
+      cy - 74,
       520,
       148,
       26,
       'rgba(0,0,0,0.76)',
       '#facc15'
     );
-    draw.drawText(banner.title, currentLayout.sw / 2, currentLayout.sh / 2 - 12, {
+    draw.drawText(banner.title, cx, cy - 12, {
       align: 'center',
       font: 'bold 32px Inter, sans-serif',
       color: '#f8fafc',
     });
 
     if (banner.subtitle) {
-      draw.drawText(banner.subtitle, currentLayout.sw / 2, currentLayout.sh / 2 + 25, {
+      draw.drawText(banner.subtitle, cx, cy + 25, {
         align: 'center',
         font: '16px Inter, sans-serif',
         color: '#cbd5e1',
@@ -538,8 +550,8 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     if (playerShakeAnim) {
        const p = (now - playerShakeAnim.startTime) / playerShakeAnim.duration;
        if (p >= 0 && p <= 1) {
-           screenShakeX += Math.sin(p * Math.PI * 10) * 12;
-           screenShakeY += Math.sin(p * Math.PI * 13) * 8;
+           screenShakeX += Math.sin(p * Math.PI * 10) * 16;
+           screenShakeY += Math.sin(p * Math.PI * 13) * 12;
            if (Math.floor(p * 12) % 2 === 0) screenFlashRed = true;
        }
     }

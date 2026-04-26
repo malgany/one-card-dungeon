@@ -11,6 +11,113 @@
 </head>
 <body>
 <canvas id="game"></canvas>
+
+<div id="tutorial-modal" class="modal-overlay" style="display: none;">
+  <div class="modal-container">
+    <button class="modal-close" onclick="document.getElementById('tutorial-modal').style.display='none'">&times;</button>
+    <div class="modal-layout">
+      <nav class="modal-sidebar">
+        <h3>Índice</h3>
+        <ul>
+          <li><a href="#tut-vida">1. Vida</a></li>
+          <li><a href="#tut-velocidade">2. Velocidade</a></li>
+          <li><a href="#tut-movimento">3. Movimento</a></li>
+          <li><a href="#tut-ataque">4. Ataque</a></li>
+          <li><a href="#tut-defesa">5. Defesa</a></li>
+          <li><a href="#tut-alcance">6. Alcance</a></li>
+          <li><a href="#tut-visao">7. Linha de visão</a></li>
+          <li><a href="#tut-dados">8. Dados de energia</a></li>
+          <li><a href="#tut-turno-av">9. Turno do aventureiro</a></li>
+          <li><a href="#tut-turno-mon">10. Turno dos monstros</a></li>
+        </ul>
+      </nav>
+      <div class="modal-content">
+        <h1>Como Jogar</h1>
+        <p>O jogo funciona como uma mini-masmorra tática em turnos. Você controla o aventureiro, tenta derrotar todos os monstros do nível e depois avança até o nível 12.</p>
+
+        <h2 id="tut-vida">1. Vida</h2>
+        <p>A vida é quanto dano seu personagem ou monstro aguenta.</p>
+        <p><strong>No seu personagem:</strong><br>
+        Começa com 6 de vida. Se chegar a 0, você perde.</p>
+        <p><strong>Nos monstros:</strong><br>
+        Cada monstro tem sua própria vida. Quando a vida do monstro chega a 0, ele é removido da masmorra.</p>
+
+        <h2 id="tut-velocidade">2. Velocidade</h2>
+        <p>Velocidade é o recurso usado para andar.</p>
+        <p>No turno, você tem:<br>
+        <strong>Velocidade total = velocidade base + dado colocado em velocidade</strong></p>
+        <p>Exemplo:<br>
+        Velocidade base: 1<br>
+        Dado colocado em velocidade: 4<br>
+        Então você tem: 1 + 4 = 5 pontos de velocidade.<br>
+        Com esses pontos você pode se mover pela masmorra.</p>
+
+        <h2 id="tut-movimento">3. Movimento</h2>
+        <p>Cada movimento custa pontos de velocidade:</p>
+        <p><strong>Movimento reto:</strong> Mover para cima, baixo, esquerda ou direita custa <strong>2 pontos</strong> de velocidade.</p>
+        <p><strong>Movimento diagonal:</strong> Mover na diagonal custa <strong>3 pontos</strong> de velocidade.</p>
+        <p>Exemplo: Se você tem 5 de velocidade, pode fazer 1 movimento diagonal, gastando 3, e depois 1 movimento reto, gastando 2. Total: 3 + 2 = 5.</p>
+        <p>Você não precisa gastar tudo, mas não pode gastar mais do que tem.</p>
+        <p>Você também não pode: atravessar parede, parar em cima de monstro, ou passar por caminhos bloqueados.</p>
+
+        <h2 id="tut-ataque">4. Ataque</h2>
+        <p>Ataque é o recurso usado para causar dano nos monstros.</p>
+        <p>No turno, você tem:<br>
+        <strong>Ataque total = ataque base + dado colocado em ataque</strong></p>
+        <p>Para causar 1 ponto de dano em um monstro, você precisa gastar ataque igual à defesa do monstro.</p>
+        <p>Exemplo:<br>
+        Você tem 5 de ataque e o monstro tem 2 de defesa.<br>
+        Você pode gastar 2 para causar 1 dano. Depois ainda sobra 3 de ataque.<br>
+        Com 5 de ataque contra defesa 2, você consegue causar até 2 danos, porque 2 + 2 = 4. Sobra 1 ataque, mas esse 1 sozinho não causa dano.</p>
+        <p>Se o monstro tem 4 de defesa e você tem 3 de ataque, você não causa dano, porque precisa de pelo menos 4 para causar 1 dano.</p>
+
+        <h2 id="tut-defesa">5. Defesa</h2>
+        <p>Defesa serve para reduzir o dano que você toma dos monstros.</p>
+        <p>No turno, você tem:<br>
+        <strong>Defesa total = defesa base + dado colocado em defesa</strong></p>
+        <p>Quando os monstros atacam, soma-se o ataque de todos os monstros que conseguem atacar você. Depois calcula:<br>
+        <strong>Dano recebido = ataque total dos monstros ÷ sua defesa total</strong> (Arredonda para baixo).</p>
+        <p>Exemplo: monstros somam 4 de ataque, você tem 6 de defesa. 4 ÷ 6 = 0. Você toma 0 de dano.<br>
+        Outro exemplo: monstros somam 12 de ataque, você tem 5 de defesa. 12 ÷ 5 = 2. Você toma 2 de dano.</p>
+
+        <h2 id="tut-alcance">6. Alcance</h2>
+        <p>Alcance define até onde você consegue atacar. Ele usa a mesma lógica do movimento:<br>
+        - Monstro ao lado em linha reta: distância 2<br>
+        - Monstro na diagonal: distância 3<br>
+        - Dois espaços retos: distância 4<br>
+        - Um reto + uma diagonal: distância 5</p>
+        <p>No começo, seu alcance é 2. Isso significa que, no início, você só consegue atacar monstros que estejam encostados em você na vertical ou horizontal.</p>
+        <p>Para atacar, precisa cumprir duas condições: o monstro precisa estar dentro do seu alcance e você precisa ter linha de visão.</p>
+
+        <h2 id="tut-visao">7. Linha de visão</h2>
+        <p>Linha de visão significa que existe um caminho visual entre você e o monstro.</p>
+        <p>Você não consegue atacar se no caminho houver parede ou outro monstro bloqueando a visão.<br>
+        Mesmo que o monstro esteja dentro do alcance, se não tiver linha de visão, você não pode atacar.</p>
+
+        <h2 id="tut-dados">8. Dados de energia</h2>
+        <p>No começo de cada turno, você rola 3 dados. Você distribui esses dados entre Velocidade, Ataque e Defesa.</p>
+        <p>O valor do dado soma ao valor base daquele atributo.</p>
+        <p>Exemplo: Você tem velocidade base 1, ataque base 1, defesa base 1 e alcance base 2.<br>
+        Rolou: 5, 3, 2.<br>
+        Você pode escolher: 5 em velocidade (total 6), 3 em ataque (total 4), 2 em defesa (total 3).<br>
+        Ou pode trocar, dependendo da estratégia.</p>
+
+        <h2 id="tut-turno-av">9. Turno do aventureiro</h2>
+        <p>Depois de distribuir os dados, começa seu turno.</p>
+        <p>Você pode mover, atacar, mover de novo, atacar de novo. A ordem é livre.<br>
+        Desde que tenha pontos suficientes de velocidade e ataque.</p>
+
+        <h2 id="tut-turno-mon">10. Turno dos monstros</h2>
+        <p>Depois que você encerra seu turno: os monstros se movem, tentam ficar em posição boa para atacar e depois atacam se estiverem em alcance e linha de visão.</p>
+        <p>O dano dos monstros é calculado usando:<br>
+        Ataque total dos monstros ÷ sua defesa total.</p>
+        
+        <p><strong>A ideia principal é:</strong> todo turno você escolhe onde colocar seus dados para decidir se quer correr, bater forte ou se proteger melhor.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script type="module" src="script.js"></script>
 </body>
 </html>
