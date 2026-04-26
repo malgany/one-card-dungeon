@@ -23,14 +23,15 @@ export function createLayoutTools({ canvas, ctx, state }) {
     const margin = 24;
     
     const availableW = rightW - margin * 2;
-    const availableH = sh - margin * 2;
+    const bottomUIHeight = 100;
+    const availableH = sh - margin * 2 - bottomUIHeight;
     const boardPixels = Math.floor(Math.min(availableW, availableH, 800));
     const tileSize = Math.floor(boardPixels / BOARD_SIZE);
     const boardW = tileSize * BOARD_SIZE;
     const boardH = tileSize * BOARD_SIZE;
     
     const boardX = sidebarW + Math.floor((rightW - boardW) / 2);
-    const boardY = Math.floor((sh - boardH) / 2);
+    const boardY = Math.floor((sh - bottomUIHeight - boardH) / 2);
 
     return {
       sw,
@@ -41,6 +42,7 @@ export function createLayoutTools({ canvas, ctx, state }) {
       boardW,
       boardH,
       tileSize,
+      bottomUIHeight,
       leftX: 16,
       leftY: 16,
       leftW: sidebarW - 32,

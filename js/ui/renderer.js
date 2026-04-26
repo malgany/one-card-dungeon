@@ -52,9 +52,8 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const barX = x + 16;
     draw.roundRect(barX, cy, barW, barH, 8, 'rgba(15,23,42,0.95)', '#334155');
     
-    const statItemW = barW / 5;
+    const statItemW = barW / 4;
     const statsArray = [
-      { icon: '❤️', val: `${game.player.health}/${game.player.maxHealth}`, color: '#ef4444' },
       { icon: '🏃', val: game.speedRemaining || totals.speed, color: '#34d399' },
       { icon: '⚔️', val: game.attackRemaining || totals.attack, color: '#fbbf24' },
       { icon: '🛡️', val: totals.defense, color: '#60a5fa' },
@@ -347,18 +346,86 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     }
   }
 
-  function drawTurnQueue(currentLayout) {
+  function drawBottomUI(currentLayout) {
     const game = state.game;
+    const bottomY = currentLayout.sh - currentLayout.bottomUIHeight;
+    const uiX = currentLayout.boardX;
+    
+    // Draw Heart
+    const hp = game.player.health;
+    const maxHp = game.player.maxHealth;
+    
+    const heartSize = 74;
+    const hx = uiX + heartSize / 2;
+    const hy = bottomY + 12;
+    
+    ctx.save();
+    ctx.translate(hx, hy);
+    
+    // Draw heart path
+    ctx.beginPath();
+    const w = heartSize;
+    const h = heartSize;
+    const topCurveHeight = h * 0.3;
+    ctx.moveTo(0, topCurveHeight);
+    ctx.bezierCurveTo(0, 0, -w / 2, 0, -w / 2, topCurveHeight);
+    ctx.bezierCurveTo(-w / 2, (h + topCurveHeight) / 2, 0, (h + topCurveHeight) / 2, 0, h);
+    ctx.bezierCurveTo(0, (h + topCurveHeight) / 2, w / 2, (h + topCurveHeight) / 2, w / 2, topCurveHeight);
+    ctx.bezierCurveTo(w / 2, 0, 0, 0, 0, topCurveHeight);
+    ctx.closePath();
+
+    // Fill background (empty heart)
+    ctx.fillStyle = '#f8fafc'; // white/light-gray
+    ctx.fill();
+
+    // Fill red portion based on HP
+    if (hp > 0 && maxHp > 0) {
+      ctx.save();
+      ctx.clip(); 
+      const fillPercent = hp / maxHp;
+      const fillHeight = h * fillPercent;
+      const startY = h - fillHeight;
+      
+      ctx.fillStyle = '#ef4444'; // red-500
+      ctx.fillRect(-w / 2, startY, w, fillHeight);
+      ctx.restore();
+    }
+
+    // Stroke heart
+    ctx.strokeStyle = '#1e293b'; 
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    
+    // Text inside heart
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 18px Inter, sans-serif';
+    
+    // Draw current hp
+    ctx.fillText(hp, 0, h * 0.35);
+    
+    // Draw line
+    ctx.beginPath();
+    ctx.moveTo(-10, h * 0.5);
+    ctx.lineTo(10, h * 0.5);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    // Draw max hp
+    ctx.fillText(maxHp, 0, h * 0.67);
+    
+    ctx.restore();
+    
+    // Turn Queue
     if (!game.turnQueue || game.turnQueue.length === 0) return;
 
     const queueW = 48;
     const queueSpacing = 16;
-    let queueY = currentLayout.boardY - 65;
-    if (queueY < 10) queueY = 10; // Prevent cutting off on small screens
+    const queueY = bottomY + 26;
     
-    let currentX = currentLayout.boardX + currentLayout.boardW - queueW;
-    // Prevent cutting off on the right
-    if (currentX + queueW > currentLayout.sw - 10) currentX = currentLayout.sw - 10 - queueW;
+    let currentX = uiX + heartSize + 40;
 
     for (let i = 0; i < game.turnQueue.length; i++) {
        const entityId = game.turnQueue[i];
@@ -373,12 +440,12 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
        }
 
        const isCurrent = i === 0;
-       const bgColor = isCurrent ? '#4ade80' : '#111827'; // Light green for current
-       const borderColor = '#64748b'; // Neutral color for border
+       const bgColor = isCurrent ? '#4ade80' : '#111827';
+       const borderColor = '#64748b';
 
        const boxSize = isCurrent ? queueW + 8 : queueW;
        const yOffset = isCurrent ? -4 : 0;
-       const bx = currentX - (isCurrent ? 4 : 0);
+       const bx = currentX;
        
        draw.roundRect(bx, queueY + yOffset, boxSize, boxSize, 8, bgColor, borderColor);
        draw.drawText(icon, bx + boxSize / 2, queueY + yOffset + boxSize / 2 + 8, {
@@ -390,7 +457,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
           align: 'center', font: 'bold 12px Inter, sans-serif', color: '#fff'
        });
 
-       currentX -= (queueW + queueSpacing);
+       currentX += (queueW + queueSpacing);
     }
   }
 
@@ -542,6 +609,11 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         ? reachable.get(posKey(hoverTile)).path
         : null;
 
+    let monsterReachable = new Map();
+    if (hoverMonster && !state.game.busy) {
+       monsterReachable = actions.getMonsterReachableTiles(hoverMonster.id);
+    }
+
     let screenShakeX = 0;
     let screenShakeY = 0;
     let screenFlashRed = false;
@@ -593,6 +665,11 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
           ctx.fillStyle = 'rgba(34,211,238,0.18)';
           ctx.fillRect(rect.x + 3, rect.y + 3, rect.w - 6, rect.h - 6);
           ctx.strokeStyle = 'rgba(103,232,249,0.5)';
+          ctx.strokeRect(rect.x + 5, rect.y + 5, rect.w - 10, rect.h - 10);
+        } else if (!isWall && monsterReachable.has(key) && !monster && !samePos({ x, y }, state.game.player)) {
+          ctx.fillStyle = 'rgba(244,63,94,0.15)'; // rose-500
+          ctx.fillRect(rect.x + 3, rect.y + 3, rect.w - 6, rect.h - 6);
+          ctx.strokeStyle = 'rgba(251,113,133,0.4)'; // rose-400
           ctx.strokeRect(rect.x + 5, rect.y + 5, rect.w - 10, rect.h - 10);
         }
 
@@ -789,10 +866,10 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       }
     });
 
-    drawTurnQueue(currentLayout);
     drawHoverStats(currentLayout);
     drawSelectedEntityModal(currentLayout);
     drawMenu(currentLayout);
+    drawBottomUI(currentLayout);
     drawBanner(currentLayout);
     
     ctx.restore();

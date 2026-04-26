@@ -101,6 +101,35 @@ export function createGameActions(state) {
     return reachable;
   }
 
+  function getMonsterReachableTiles(monsterId) {
+    const game = getGame();
+    if (game.busy) return new Map();
+
+    const monster = game.monsters.find((m) => m.id === monsterId);
+    if (!monster || monster.hp <= 0) return new Map();
+
+    const blockedForMove = new Set([
+      ...levelWallsSet(game.levelIndex),
+      posKey(game.player)
+    ]);
+    
+    const { dist, prev } = dijkstra(monster, blockedForMove);
+    const reachable = new Map();
+    const occupied = monsterOccupiedKeys(game.monsters, monster.id);
+
+    for (const [key, cost] of dist.entries()) {
+      if (cost === 0 || cost > monster.speed) continue;
+      if (occupied.has(key)) continue;
+      
+      reachable.set(key, {
+        cost,
+        path: reconstructPath(prev, parseKey(key)),
+      });
+    }
+
+    return reachable;
+  }
+
   function getAttackableMonsters() {
     const game = getGame();
     if (game.phase !== PHASES.HERO || game.busy) return new Set();
@@ -609,6 +638,7 @@ export function createGameActions(state) {
     endHeroPhase,
     getAttackableMonsters,
     getGame,
+    getMonsterReachableTiles,
     getReachableTiles,
     getTotals,
     loadGame,
