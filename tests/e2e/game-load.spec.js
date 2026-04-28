@@ -10,8 +10,12 @@ test('loads and renders the canvas game without console errors', async ({ page }
   });
 
   await page.goto('/');
+  const webglCanvas = page.locator('.board-webgl');
   const canvas = page.locator('#game');
+  await expect(webglCanvas).toBeVisible();
   await expect(canvas).toBeVisible();
+
+  await expect(page.locator('canvas')).toHaveCount(2);
 
   const box = await canvas.boundingBox();
   expect(box?.width).toBeGreaterThan(100);

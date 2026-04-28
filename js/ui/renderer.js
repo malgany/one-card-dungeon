@@ -1,9 +1,140 @@
 import { BOARD_SIZE, LEVELS, PHASES, STAT_META } from '../config/game-data.js';
 import { levelWallsSet, posKey, samePos } from '../game/board-logic.js';
 import { createDrawPrimitives } from './draw-primitives.js';
+import { createThreeBoardView } from './three-board-view.js';
 
 export function createRenderer({ canvas, ctx, cardImages, state, actions, layout }) {
   const draw = createDrawPrimitives({ ctx, state, cardImages });
+  const threeBoard = createThreeBoardView({ state });
+
+  function clearThreeBoardViewport(currentLayout) {
+    const viewport = threeBoard.getViewport(currentLayout);
+    const pixelRatio = window.devicePixelRatio || 1;
+
+    ctx.save();
+    ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    ctx.clearRect(viewport.x, viewport.y, viewport.w, viewport.h);
+    ctx.restore();
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function beginHeartPath(cx, cy, size) {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + size * 0.36);
+    ctx.bezierCurveTo(cx - size * 0.62, cy - size * 0.05, cx - size * 0.44, cy - size * 0.52, cx - size * 0.13, cy - size * 0.42);
+    ctx.bezierCurveTo(cx - size * 0.02, cy - size * 0.38, cx, cy - size * 0.24, cx, cy - size * 0.12);
+    ctx.bezierCurveTo(cx, cy - size * 0.24, cx + size * 0.02, cy - size * 0.38, cx + size * 0.13, cy - size * 0.42);
+    ctx.bezierCurveTo(cx + size * 0.44, cy - size * 0.52, cx + size * 0.62, cy - size * 0.05, cx, cy + size * 0.36);
+    ctx.closePath();
+  }
+
+  function drawHeartMeter(cx, cy, size, hp, maxHp) {
+    const ratio = maxHp > 0 ? clamp(hp / maxHp, 0, 1) : 0;
+
+    ctx.save();
+    beginHeartPath(cx, cy, size);
+    ctx.fillStyle = '#4b1f2d';
+    ctx.fill();
+
+    ctx.save();
+    beginHeartPath(cx, cy, size);
+    ctx.clip();
+    const top = cy - size * 0.48;
+    const height = size * 0.86;
+    const fillY = top + height * (1 - ratio);
+    const gradient = ctx.createLinearGradient(cx, fillY, cx, top + height);
+    gradient.addColorStop(0, '#fb7185');
+    gradient.addColorStop(1, '#b91c1c');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(cx - size * 0.62, fillY, size * 1.24, height * ratio);
+    ctx.restore();
+
+    ctx.lineWidth = Math.max(2, size * 0.045);
+    ctx.strokeStyle = '#fecdd3';
+    beginHeartPath(cx, cy, size);
+    ctx.stroke();
+
+    draw.drawText(String(hp), cx, cy + size * 0.04, {
+      align: 'center',
+      baseline: 'middle',
+      font: `900 ${Math.floor(size * 0.28)}px Inter, sans-serif`,
+      color: '#ffffff',
+    });
+    ctx.restore();
+  }
+
+  function beginStarPath(cx, cy, outerRadius, innerRadius) {
+    ctx.beginPath();
+    for (let index = 0; index < 10; index += 1) {
+      const radius = index % 2 === 0 ? outerRadius : innerRadius;
+      const angle = -Math.PI / 2 + index * (Math.PI / 5);
+      const x = cx + Math.cos(angle) * radius;
+      const y = cy + Math.sin(angle) * radius;
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  }
+
+  function drawActionPointBadge(cx, cy, size, value) {
+    ctx.save();
+    beginStarPath(cx, cy, size * 0.52, size * 0.26);
+    ctx.fillStyle = '#3b82f6';
+    ctx.fill();
+    ctx.lineWidth = Math.max(2, size * 0.08);
+    ctx.strokeStyle = '#bfdbfe';
+    ctx.stroke();
+    draw.drawText(String(value), cx, cy + size * 0.08, {
+      align: 'center',
+      baseline: 'middle',
+      font: `900 ${Math.floor(size * 0.42)}px Inter, sans-serif`,
+      color: '#ffffff',
+    });
+    ctx.restore();
+  }
+
+  function drawMovementPointBadge(cx, cy, size, value) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - size * 0.54);
+    ctx.lineTo(cx + size * 0.54, cy);
+    ctx.lineTo(cx, cy + size * 0.54);
+    ctx.lineTo(cx - size * 0.54, cy);
+    ctx.closePath();
+    ctx.fillStyle = '#22c55e';
+    ctx.fill();
+    ctx.lineWidth = Math.max(2, size * 0.08);
+    ctx.strokeStyle = '#bbf7d0';
+    ctx.stroke();
+    draw.drawText(String(value), cx, cy + size * 0.07, {
+      align: 'center',
+      baseline: 'middle',
+      font: `900 ${Math.floor(size * 0.42)}px Inter, sans-serif`,
+      color: '#ffffff',
+    });
+    ctx.restore();
+  }
+
+  function drawClockIcon(cx, cy, radius, color = '#e2e8f0') {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(15,23,42,0.88)';
+    ctx.fill();
+    ctx.lineWidth = Math.max(2, radius * 0.16);
+    ctx.strokeStyle = color;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx, cy - radius * 0.52);
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + radius * 0.42, cy + radius * 0.18);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   function drawSidebar(currentLayout) {
     const game = state.game;
@@ -31,6 +162,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const phaseName = {
       energy: 'ENERGIA',
       hero: 'AVENTUREIRO',
+      monsterTurn: 'MONSTROS',
       monsterMove: 'MONSTROS',
       monsterAttack: 'ATAQUE INIMIGO',
       levelup: 'RECOMPENSA',
@@ -262,7 +394,91 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     });
   }
 
+  function drawCompactBottomUI(currentLayout) {
+    const game = state.game;
+    const bottomY = currentLayout.sh - currentLayout.bottomUIHeight;
+    const uiX = currentLayout.boardX;
+    const uiW = currentLayout.boardW;
+    const hp = game.player.health;
+    const maxHp = game.player.maxHealth;
+    const attack = actions.getEquippedAttack(game);
+    const attackSelected = game.selectedAttackId === attack.id;
+    const attackDisabled = game.phase !== PHASES.HERO || game.busy || game.apRemaining < attack.apCost;
+
+    draw.roundRect(uiX, bottomY + 10, 72, 50, 10, 'rgba(15,23,42,0.88)', '#334155');
+    draw.drawText('HP', uiX + 36, bottomY + 30, {
+      align: 'center',
+      font: 'bold 12px Inter, sans-serif',
+      color: '#fca5a5',
+    });
+    draw.drawText(`${hp}/${maxHp}`, uiX + 36, bottomY + 50, {
+      align: 'center',
+      font: 'bold 17px Inter, sans-serif',
+      color: '#f8fafc',
+    });
+
+    const slotSize = 46;
+    const slotGap = 8;
+    const slotsX = uiX + 84;
+    const slotsY = bottomY + 12;
+
+    for (let index = 0; index < 3; index += 1) {
+      const sx = slotsX + index * (slotSize + slotGap);
+      const slot = { x: sx, y: slotsY, w: slotSize, h: slotSize };
+      const hovered = layout.pointInRect(state.mouse.x, state.mouse.y, slot);
+      const filled = index === 0;
+      const selected = filled && attackSelected;
+      const fill = !filled
+        ? 'rgba(15,23,42,0.52)'
+        : selected
+          ? '#92400e'
+          : hovered && !attackDisabled
+            ? '#78350f'
+            : '#1f2937';
+      const stroke = selected ? '#fbbf24' : filled ? '#b45309' : '#334155';
+
+      draw.roundRect(sx, slotsY, slotSize, slotSize, 10, fill, stroke);
+
+      if (filled) {
+        draw.drawText('ATQ', sx + slotSize / 2, slotsY + 26, {
+          align: 'center',
+          font: 'bold 12px Inter, sans-serif',
+          color: attackDisabled ? '#737b8c' : '#fff7ed',
+        });
+        draw.drawText(String(attack.apCost), sx + slotSize - 11, slotsY + slotSize - 7, {
+          align: 'center',
+          font: 'bold 10px Inter, sans-serif',
+          color: attackDisabled ? '#737b8c' : '#facc15',
+        });
+
+        if (!attackDisabled) {
+          state.game.buttons.push({ ...slot, onClick: actions.toggleAttackSelection });
+        }
+      } else {
+        draw.drawText('+', sx + slotSize / 2, slotsY + 29, {
+          align: 'center',
+          font: '20px Inter, sans-serif',
+          color: '#475569',
+        });
+      }
+    }
+
+    const btnW = Math.min(176, uiW);
+    const btnH = 48;
+    const btnX = uiX + uiW - btnW;
+    const btnY = bottomY + 74;
+    draw.drawButton(btnX, btnY, btnW, btnH, 'Encerrar Turno', actions.endHeroPhase, {
+      fill: '#7c2d12', hoverFill: '#9a3412', stroke: '#fdba74',
+      disabled: game.phase !== PHASES.HERO || game.busy, font: 'bold 16px Inter, sans-serif',
+    });
+  }
+
   function drawBottomUI(currentLayout) {
+    if (currentLayout.compact) {
+      drawCompactBottomUI(currentLayout);
+      return;
+    }
+
     const game = state.game;
     const bottomY = currentLayout.sh - currentLayout.bottomUIHeight;
     const uiX = currentLayout.boardX;
@@ -436,6 +652,234 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     });
   }
 
+  function drawPlayerResourceHud(x, y, scale = 1) {
+    const game = state.game;
+    const width = 154 * scale;
+    const height = 94 * scale;
+    const heartSize = 74 * scale;
+    const heartCx = x + width / 2;
+    const heartCy = y + 38 * scale;
+
+    draw.roundRect(x, y + 8 * scale, width, height - 8 * scale, 14 * scale, 'rgba(15,23,42,0.72)', '#334155');
+    drawHeartMeter(heartCx, heartCy, heartSize, game.player.health, game.player.maxHealth);
+    drawActionPointBadge(
+      heartCx - 45 * scale,
+      heartCy + 36 * scale,
+      34 * scale,
+      game.apRemaining ?? game.player.apMax,
+    );
+    drawMovementPointBadge(
+      heartCx + 45 * scale,
+      heartCy + 36 * scale,
+      34 * scale,
+      game.speedRemaining ?? game.player.speedBase,
+    );
+
+    return width;
+  }
+
+  function drawSpellGlyph(cx, cy, size, disabled) {
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineWidth = Math.max(3, size * 0.08);
+    ctx.strokeStyle = disabled ? '#737b8c' : '#fbbf24';
+    ctx.beginPath();
+    ctx.moveTo(cx - size * 0.18, cy + size * 0.18);
+    ctx.lineTo(cx + size * 0.18, cy - size * 0.18);
+    ctx.moveTo(cx - size * 0.2, cy - size * 0.18);
+    ctx.lineTo(cx + size * 0.18, cy + size * 0.2);
+    ctx.stroke();
+    ctx.lineCap = 'butt';
+    ctx.restore();
+  }
+
+  function drawSpellBar(x, y, availableW, slotSize, maxSlots, showLabel = true) {
+    const game = state.game;
+    const attack = actions.getEquippedAttack(game);
+    const attackSelected = game.selectedAttackId === attack.id;
+    const attackDisabled = game.phase !== PHASES.HERO || game.busy || game.apRemaining < attack.apCost;
+    const slotGap = Math.max(6, Math.floor(slotSize * 0.16));
+    const slotCount = clamp(Math.floor((availableW + slotGap) / (slotSize + slotGap)), 3, maxSlots);
+    const slotsY = y + (showLabel ? 22 : 0);
+
+    if (showLabel) {
+      beginStarPath(x + 8, y + 8, 6, 3);
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fill();
+      draw.drawText('FEITICOS', x + 20, y + 13, {
+        font: '700 12px Inter, sans-serif',
+        color: '#cbd5e1',
+      });
+    }
+
+    for (let index = 0; index < slotCount; index += 1) {
+      const sx = x + index * (slotSize + slotGap);
+      const slot = { x: sx, y: slotsY, w: slotSize, h: slotSize };
+      const hovered = layout.pointInRect(state.mouse.x, state.mouse.y, slot);
+      const filled = index === 0;
+      const selected = filled && attackSelected;
+      const fill = !filled
+        ? 'rgba(15,23,42,0.48)'
+        : selected
+          ? '#9a3412'
+          : hovered && !attackDisabled
+            ? '#78350f'
+            : '#1f2937';
+      const stroke = selected ? '#fed7aa' : filled ? '#f97316' : '#334155';
+
+      draw.roundRect(sx, slotsY, slotSize, slotSize, Math.min(10, slotSize * 0.18), fill, stroke);
+
+      if (filled) {
+        draw.drawText('\u270A', sx + slotSize / 2, slotsY + slotSize * 0.62, {
+          align: 'center',
+          font: `${Math.floor(slotSize * 0.52)}px Inter, sans-serif`,
+          color: attackDisabled ? '#737b8c' : '#fff7ed',
+        });
+
+        if (!attackDisabled) {
+          state.game.buttons.push({ ...slot, onClick: actions.toggleAttackSelection });
+        }
+      } else {
+        ctx.save();
+        ctx.globalAlpha = 0.7;
+        ctx.beginPath();
+        ctx.arc(sx + slotSize / 2, slotsY + slotSize / 2, Math.max(2, slotSize * 0.06), 0, Math.PI * 2);
+        ctx.fillStyle = '#475569';
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+
+  function turnQueueEntries(game) {
+    const ids = ['player', ...game.monsters.map((monster) => monster.id)];
+
+    return ids.map((entityId) => {
+      if (entityId === 'player') {
+        return {
+          id: 'player',
+          name: 'Aventureiro',
+          hp: game.player.health,
+          emoji: '\uD83E\uDDD9',
+          tint: '#34d399',
+        };
+      }
+
+      const monster = game.monsters.find((currentMonster) => currentMonster.id === entityId);
+      if (!monster) return null;
+      return {
+        id: monster.id,
+        name: monster.name,
+        hp: monster.hp,
+        emoji: monster.emoji,
+        tint: monster.tint,
+      };
+    }).filter(Boolean);
+  }
+
+  function turnQueueWidth(game, itemSize, gap) {
+    const clockW = itemSize + 8;
+    return clockW + gap + turnQueueEntries(game).length * (itemSize + gap) + 8;
+  }
+
+  function drawTurnQueue(x, y, itemSize, gap, now) {
+    const game = state.game;
+    const entries = turnQueueEntries(game);
+    if (entries.length === 0) return;
+
+    const clockW = itemSize + 8;
+    const itemH = itemSize + 20;
+    draw.roundRect(x, y, clockW, itemH, 10, 'rgba(15,23,42,0.86)', '#334155');
+    drawClockIcon(x + clockW / 2, y + itemSize * 0.44, itemSize * 0.23, '#93c5fd');
+    draw.drawText(String(game.turnCount), x + clockW / 2, y + itemSize + 14, {
+      align: 'center',
+      font: `900 ${Math.floor(itemSize * 0.34)}px Inter, sans-serif`,
+      color: '#e0f2fe',
+    });
+
+    let currentX = x + clockW + gap;
+    for (const entry of entries) {
+      const isCurrent = entry.id === game.turnQueue?.[0];
+      const pulse = isCurrent ? Math.abs(Math.sin(now / 180)) * 3 : 0;
+      const highlightSize = itemSize + (isCurrent ? 8 : 0);
+      const bx = currentX;
+      const cx = bx + itemSize / 2;
+      const cy = y + itemSize / 2;
+      const fill = isCurrent ? 'rgba(14,165,233,0.34)' : 'rgba(15,23,42,0.76)';
+      const stroke = isCurrent ? '#facc15' : '#475569';
+
+      draw.roundRect(cx - highlightSize / 2, cy - highlightSize / 2 + (isCurrent ? -pulse : 0), highlightSize, highlightSize, 10, fill, stroke);
+      draw.drawText(entry.emoji || 'P', cx, cy + itemSize * 0.18 + (isCurrent ? -pulse : 0), {
+        align: 'center',
+        font: `700 ${Math.floor(itemSize * 0.54)}px Inter, sans-serif`,
+        color: '#f8fafc',
+      });
+
+      draw.roundRect(bx + 2, y + itemSize + 3, itemSize - 4, 17, 7, 'rgba(7,10,17,0.9)', '#334155');
+      draw.drawText(`${entry.hp}\u2665`, bx + itemSize / 2, y + itemSize + 16, {
+        align: 'center',
+        font: `900 ${Math.floor(itemSize * 0.26)}px Inter, sans-serif`,
+        color: '#fecaca',
+      });
+
+      currentX += itemSize + gap;
+    }
+  }
+
+  function drawDesktopTurnQueue(currentLayout, now) {
+    if (currentLayout.compact) return;
+
+    const game = state.game;
+    const itemSize = 48;
+    const gap = 8;
+    const width = turnQueueWidth(game, itemSize, gap);
+    const x = currentLayout.boardX + currentLayout.boardW / 2 - width / 2;
+    const y = Math.max(18, currentLayout.boardY - 112);
+
+    drawTurnQueue(x, y, itemSize, gap, now);
+  }
+
+  function drawCombatBottomUI(currentLayout, now = performance.now()) {
+    const game = state.game;
+    const bottomY = currentLayout.sh - currentLayout.bottomUIHeight;
+
+    if (currentLayout.compact) {
+      const uiX = currentLayout.boardX;
+      const uiW = currentLayout.boardW;
+      const hudW = drawPlayerResourceHud(uiX, bottomY + 6, 0.74);
+      drawSpellBar(uiX + hudW + 8, bottomY + 13, uiW - hudW - 8, 39, 4, false);
+
+      const queueItem = 29;
+      const queueGap = 5;
+      drawTurnQueue(uiX, bottomY + 78, queueItem, queueGap, now);
+
+      const btnW = Math.min(148, uiW * 0.44);
+      draw.drawButton(uiX + uiW - btnW, bottomY + 84, btnW, 38, 'Encerrar Turno', actions.endHeroPhase, {
+        fill: '#7c2d12', hoverFill: '#9a3412', stroke: '#fdba74',
+        disabled: game.phase !== PHASES.HERO || game.busy, font: 'bold 12px Inter, sans-serif',
+      });
+      return;
+    }
+
+    const uiX = currentLayout.sidebarW + 24;
+    const uiW = currentLayout.sw - currentLayout.sidebarW - 48;
+    const tight = uiW < 760;
+    const hudScale = tight ? 0.74 : 0.88;
+    const hudW = drawPlayerResourceHud(uiX, bottomY + 15, hudScale);
+    const btnW = tight ? 142 : 170;
+    const btnH = 40;
+    const btnX = uiX + uiW - btnW;
+    const btnY = bottomY + 74;
+    const spellX = uiX + hudW + 18;
+    const spellAvailableW = Math.max(150, btnX - spellX - 18);
+
+    drawSpellBar(spellX, bottomY + 20, spellAvailableW, tight ? 40 : 46, 8, true);
+    draw.drawButton(btnX, btnY, btnW, btnH, 'Encerrar Turno', actions.endHeroPhase, {
+      fill: '#7c2d12', hoverFill: '#9a3412', stroke: '#fdba74',
+      disabled: game.phase !== PHASES.HERO || game.busy, font: 'bold 15px Inter, sans-serif',
+    });
+  }
+
   function drawSelectedEntityModal(currentLayout) {
     const game = state.game;
     const playerSelected = !!layout.hoveredPlayer();
@@ -511,6 +955,71 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         maxWidth: width - cardW - 32,
       });
     }
+  }
+
+  function screenPointForTile(currentLayout, x, y, height = 1) {
+    const projected = threeBoard.screenPositionForTile?.(currentLayout, x, y, height);
+    if (projected) return projected;
+
+    const rect = layout.tileRect(currentLayout, x, y);
+    return {
+      x: rect.x + rect.w / 2,
+      y: rect.y + rect.h / 2,
+    };
+  }
+
+  function drawHoveredEntityTooltip(currentLayout) {
+    const game = state.game;
+    const playerHovered = !!layout.hoveredPlayer();
+    const monster = playerHovered ? null : layout.hoveredMonster();
+    if (!playerHovered && !monster) return;
+
+    const entity = playerHovered ? game.player : monster;
+    const name = playerHovered ? 'Aventureiro' : monster.name;
+    const hp = playerHovered ? game.player.health : monster.hp;
+    const point = screenPointForTile(currentLayout, entity.x, entity.y, 1.28);
+    const label = `${name} | ${hp} \u2665`;
+
+    ctx.save();
+    ctx.font = '800 13px Inter, sans-serif';
+    const width = Math.min(currentLayout.sw - 24, Math.max(118, ctx.measureText(label).width + 26));
+    const height = 30;
+    const x = clamp(point.x - width / 2, 12, currentLayout.sw - width - 12);
+    const y = clamp(point.y - 34, 12, currentLayout.sh - height - 12);
+
+    draw.roundRect(x, y, width, height, 10, 'rgba(5,8,14,0.92)', '#f8fafc');
+    draw.drawText(label, x + width / 2, y + 20, {
+      align: 'center',
+      font: '800 13px Inter, sans-serif',
+      color: '#f8fafc',
+    });
+    ctx.restore();
+  }
+
+  function drawFloatingTextAnimations(currentLayout, now) {
+    state.game.animations.forEach((anim) => {
+      if (anim.type !== 'floatingText' || now < anim.startTime) return;
+
+      const progress = (now - anim.startTime) / anim.duration;
+      const point = screenPointForTile(currentLayout, anim.x, anim.y, 1.18);
+      const isDamage = anim.color === '#ef4444';
+      const fontSize = isDamage ? 38 : 28;
+      const lift = (isDamage ? 54 : 42) * progress;
+      const cx = point.x;
+      const cy = point.y - lift;
+
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1 - Math.pow(progress, 2.6));
+      ctx.strokeStyle = 'rgba(15,23,42,0.92)';
+      ctx.lineWidth = isDamage ? 7 : 5;
+      ctx.font = `900 ${fontSize}px Inter, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.strokeText(anim.text, cx, cy);
+      ctx.fillStyle = anim.color;
+      ctx.fillText(anim.text, cx, cy);
+      ctx.restore();
+    });
   }
 
   function drawBanner(currentLayout) {
@@ -669,6 +1178,18 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
        monsterReachable = actions.getMonsterReachableTiles(hoverMonster.id);
        monsterAttackTiles = actions.getMonsterAttackTiles(hoverMonster.id);
     }
+
+    threeBoard.render({
+      currentLayout,
+      walls,
+      hoverTile,
+      hoverPath,
+      reachable,
+      playerAttackTiles,
+      monsterReachable,
+      monsterAttackTiles,
+      now,
+    });
 
     let screenShakeX = 0;
     let screenShakeY = 0;
@@ -898,31 +1419,13 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     draw.drawUnitCardToken(state.game.player, playerRect, true, false);
 
-    state.game.animations.forEach((anim) => {
-      if (anim.type === 'floatingText' && now >= anim.startTime) {
-        const progress = (now - anim.startTime) / anim.duration;
-        const rect = layout.tileRect(currentLayout, anim.x, anim.y);
-        const cx = rect.x + rect.w / 2;
-        const cy = rect.y + rect.h / 2 - (progress * 44);
+    clearThreeBoardViewport(currentLayout);
 
-        ctx.save();
-        ctx.globalAlpha = Math.max(0, 1 - Math.pow(progress, 3));
-        ctx.strokeStyle = 'rgba(15,23,42,0.9)';
-        ctx.lineWidth = 5;
-        ctx.font = '900 32px Inter, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.strokeText(anim.text, cx, cy);
-        
-        ctx.fillStyle = anim.color;
-        ctx.fillText(anim.text, cx, cy);
-        ctx.restore();
-      }
-    });
-
-    drawSelectedEntityModal(currentLayout);
+    drawFloatingTextAnimations(currentLayout, now);
+    drawDesktopTurnQueue(currentLayout, now);
+    drawHoveredEntityTooltip(currentLayout);
     drawMenu(currentLayout);
-    drawBottomUI(currentLayout);
+    drawCombatBottomUI(currentLayout, now);
 
     // Top right settings button
     draw.drawButton(currentLayout.sw - 48, 16, 32, 32, '⚙️', () => {

@@ -17,13 +17,46 @@ export function createLayoutTools({ canvas, ctx, state }) {
   function getLayout() {
     const sw = window.innerWidth;
     const sh = window.innerHeight;
+    const compact = sw < 760;
+
+    if (compact) {
+      const margin = 16;
+      const topUIHeight = Math.min(300, Math.max(270, Math.floor(sh * 0.34)));
+      const bottomUIHeight = 132;
+      const availableW = sw - margin * 2;
+      const availableH = Math.max(180, sh - topUIHeight - bottomUIHeight - margin);
+      const boardPixels = Math.floor(Math.min(availableW, availableH, 520));
+      const tileSize = Math.max(28, Math.floor(boardPixels / BOARD_SIZE));
+      const boardW = tileSize * BOARD_SIZE;
+      const boardH = tileSize * BOARD_SIZE;
+      const boardX = Math.floor((sw - boardW) / 2);
+      const boardY = topUIHeight + Math.max(8, Math.floor((availableH - boardH) / 2));
+
+      return {
+        compact,
+        sw,
+        sh,
+        sidebarW: sw,
+        boardX,
+        boardY,
+        boardW,
+        boardH,
+        tileSize,
+        bottomUIHeight,
+        topUIHeight,
+        leftX: 16,
+        leftY: 16,
+        leftW: sw - 32,
+        leftH: topUIHeight - 36,
+      };
+    }
     
     const sidebarW = Math.max(340, Math.floor(sw * 0.26));
     const rightW = sw - sidebarW;
     const margin = 24;
     
     const availableW = rightW - margin * 2;
-    const bottomUIHeight = 100;
+    const bottomUIHeight = 124;
     const availableH = sh - margin * 2 - bottomUIHeight;
     const boardPixels = Math.floor(Math.min(availableW, availableH, 800));
     const tileSize = Math.floor(boardPixels / BOARD_SIZE);
@@ -34,6 +67,7 @@ export function createLayoutTools({ canvas, ctx, state }) {
     const boardY = Math.floor((sh - bottomUIHeight - boardH) / 2);
 
     return {
+      compact,
       sw,
       sh,
       sidebarW,
@@ -60,6 +94,9 @@ export function createLayoutTools({ canvas, ctx, state }) {
   }
 
   function tileAt(layout, px, py) {
+    const renderedTile = state.boardInteraction?.tileAt?.(layout, px, py);
+    if (renderedTile !== undefined) return renderedTile;
+
     if (
       px < layout.boardX ||
       py < layout.boardY ||
