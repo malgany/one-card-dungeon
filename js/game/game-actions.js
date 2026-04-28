@@ -74,12 +74,12 @@ export function createGameActions(state) {
     game.selectedAttackId = null;
     game.busy = false;
 
-    setEvent(message || `Seu turno. ${game.apRemaining} AP, ${game.speedRemaining} movimento.`);
-    showTurnBanner('Seu turno', `${game.apRemaining} AP para agir`, 'player', '#34d399');
+    setEvent(message || `Sua vez. ${game.apRemaining} AP, ${game.speedRemaining} movimento.`);
+    showTurnBanner('Sua vez', `${game.apRemaining} AP para agir`, 'player', '#34d399');
   }
 
   function startEnergyTurn() {
-    startHeroTurn('Turno iniciado sem rolagem de dados.');
+    startHeroTurn('Vez iniciada sem rolagem de dados.');
   }
 
   function allDiceAssigned() {
@@ -305,7 +305,7 @@ export function createGameActions(state) {
   function confirmEnergy() {
     const game = getGame();
     if (game.busy || game.phase !== PHASES.ENERGY) return;
-    startHeroTurn('Turno iniciado sem rolagem de dados.');
+    startHeroTurn('Vez iniciada sem rolagem de dados.');
   }
 
   function movePlayer(target) {
@@ -361,6 +361,7 @@ export function createGameActions(state) {
     }
 
     if (!getPlayerAttackTiles().has(posKey(targetCell))) {
+      game.selectedAttackId = null;
       setEvent('Fora do alcance do ataque.');
       return false;
     }
@@ -485,8 +486,8 @@ export function createGameActions(state) {
         return;
       }
       
-      setEvent(`Turno de ${monster.name}.`);
-      showTurnBanner(`Turno de ${monster.name}`, monster.name, monster.type, monster.tint);
+      setEvent(`Vez de ${monster.name}.`);
+      showTurnBanner(`Vez de ${monster.name}`, monster.name, monster.type, monster.tint);
       setTimeout(() => executeMonsterTurn(monster), TIMING.TURN_BANNER + TIMING.POST_BANNER_PAUSE);
     }
   }
@@ -582,7 +583,7 @@ export function createGameActions(state) {
         setEvent(`${monster.name} se moveu.`);
       }
 
-      setEvent(`Fim do turno: ${monster.name}`);
+      setEvent(`Fim da vez: ${monster.name}`);
       setTimeout(() => advanceTurn(), TIMING.POST_ACTION_PAUSE);
     }, moveWaitTime);
   }
@@ -593,8 +594,8 @@ export function createGameActions(state) {
 
     game.busy = true;
     game.selectedAttackId = null;
-    setEvent('Fim do turno: Aventureiro');
-    showBanner('Fim do Turno', 'Aventureiro', 800, () => {
+    setEvent('Fim da vez: Aventureiro');
+    showBanner('Fim da vez', 'Aventureiro', 800, () => {
       advanceTurn();
     });
   }
@@ -640,7 +641,7 @@ export function createGameActions(state) {
     game.monsters = levelMonsters(nextLevel);
     game.turnQueue = ['player', ...game.monsters.map(m => m.id)];
 
-    setEvent(`Nível ${nextLevel.id}. Turno iniciado.`);
+    setEvent(`Nível ${nextLevel.id}. Vez iniciada.`);
     startHeroTurn(`Nível ${nextLevel.id}. ${game.player.apMax} AP, ${game.player.speedBase} movimento.`);
   }
 

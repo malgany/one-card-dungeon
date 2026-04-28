@@ -1,15 +1,18 @@
 # One RPG Game
 
-Projeto de dungeon crawler em canvas inspirado em card dungeon, agora organizado em modulos ES nativos para ficar mais facil de manter e navegar.
+Projeto de dungeon crawler tático com **tabuleiro 3D (Three.js)**, inspirado em card dungeons, organizado em módulos ES nativos.
 
-## Regras Atuais
+## Funcionalidades Atuais
 
-- O turno do aventureiro comeca direto na fase de heroi, sem rolagem ou distribuicao de dados.
-- O aventureiro tem 6 AP por turno. AP e gasto por acoes, como ataques equipados.
-- O ataque nao e mais um atributo direto do personagem. O personagem tem um slot de ataque; por enquanto ele vem equipado com `Golpe`, que custa 5 AP, tem dano 5 e suga 1 vida quando causa dano.
-- Defesa mitiga dano por subtracao: dano final = dano do ataque - defesa do alvo, com minimo 0.
-- O aventureiro tem 60 de vida. Os monstros tambem tiveram a vida multiplicada por 10.
-- Movimento e alcance usam passos ortogonais. Nao existe passo diagonal; uma diagonal equivale a dois passos em cruz.
+- **Tabuleiro 3D**: Visão isométrica com renderização via Three.js, incluindo animações de movimento e combate.
+- **Sistema de Turnos Individual**: Cada entidade (jogador e monstros) possui sua própria vez na fila de iniciativa.
+- **Fase de Herói Simplificada**: O turno do aventureiro começa direto na ação, com **6 AP** fixos por turno.
+- **Ações Estratégicas**:
+  - **Movimento**: 4 pontos de movimento por turno (passos ortogonais apenas).
+  - **Ataque**: Equipado com `Golpe` (5 AP, 5 Dano, 1 Roubo de Vida).
+- **Combate**: Defesa mitiga dano (Dano Final = Ataque - Defesa, min 0).
+- **Vida**: Aventureiro tem 60 HP; monstros têm vida proporcional à sua periculosidade.
+- **Interface**: HUD interativo, tooltips e animações de texto flutuante.
 
 ## Como abrir
 

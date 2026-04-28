@@ -86,13 +86,13 @@ export function createGame() {
     animations: [],
     turnQueue: ['player', ...monsters.map(m => m.id)],
     banner: {
-      title: 'Seu turno',
+      title: 'Sua vez',
       subtitle: `${ACTION_RULES.BASE_AP} AP para agir`,
       until: performance.now() + 1200,
       cardKey: 'player',
       accent: '#34d399',
     },
     busy: false,
-    lastEvent: `Seu turno. ${ACTION_RULES.BASE_AP} AP, ${4} movimento.`,
+    lastEvent: `Sua vez. ${ACTION_RULES.BASE_AP} AP, ${4} movimento.`,
   };
 }

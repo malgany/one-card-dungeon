@@ -155,7 +155,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     });
     
     cy += 36;
-    draw.drawText(`Nível ${LEVELS[game.levelIndex].id}/12 • Turno ${game.turnCount}`, x + w / 2, cy, {
+    draw.drawText(`Nível ${LEVELS[game.levelIndex].id}/12 • Vez ${game.turnCount}`, x + w / 2, cy, {
       align: 'center', font: 'bold 18px Inter, sans-serif', color: '#facc15',
     });
 
@@ -359,7 +359,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     if (!state.game.menuOpen) return;
 
     const w = 220;
-    const h = 218;
+    const h = 142;
     const x = (currentLayout.sw - w) / 2;
     const y = (currentLayout.sh - h) / 2;
 
@@ -373,24 +373,16 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       state.game.menuOpen = false;
       document.getElementById('tutorial-modal').style.display = 'flex';
     }, {
-      fill: '#0f766e',
-      hoverFill: '#115e59',
-      stroke: '#5eead4',
-    });
-    draw.drawButton(x + 18, y + 90, w - 36, 34, 'Salvar jogo', actions.saveGame, {
       fill: '#1f2937',
       hoverFill: '#374151',
       stroke: '#64748b',
     });
-    draw.drawButton(x + 18, y + 132, w - 36, 34, 'Carregar jogo', actions.loadGame, {
+    draw.drawButton(x + 18, y + 90, w - 36, 34, 'Sair', () => {
+      state.game.menuOpen = false;
+    }, {
       fill: '#1f2937',
       hoverFill: '#374151',
       stroke: '#64748b',
-    });
-    draw.drawButton(x + 18, y + 174, w - 36, 34, 'Novo jogo', actions.newGame, {
-      fill: '#611818',
-      hoverFill: '#7f1d1d',
-      stroke: '#fca5a5',
     });
   }
 
@@ -467,7 +459,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const btnH = 48;
     const btnX = uiX + uiW - btnW;
     const btnY = bottomY + 74;
-    draw.drawButton(btnX, btnY, btnW, btnH, 'Encerrar Turno', actions.endHeroPhase, {
+    draw.drawButton(btnX, btnY, btnW, btnH, 'Encerrar vez', actions.endHeroPhase, {
       fill: '#7c2d12', hoverFill: '#9a3412', stroke: '#fdba74',
       disabled: game.phase !== PHASES.HERO || game.busy, font: 'bold 16px Inter, sans-serif',
     });
@@ -646,7 +638,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const btnH = 50;
     const btnX = currentLayout.boardX + currentLayout.boardW - btnW;
     const btnY = bottomY + 24;
-    draw.drawButton(btnX, btnY, btnW, btnH, 'Encerrar Turno', actions.endHeroPhase, {
+    draw.drawButton(btnX, btnY, btnW, btnH, 'Encerrar vez', actions.endHeroPhase, {
       fill: '#7c2d12', hoverFill: '#9a3412', stroke: '#fdba74',
       disabled: game.phase !== PHASES.HERO || game.busy, font: 'bold 18px Inter, sans-serif',
     });
@@ -854,7 +846,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       drawTurnQueue(uiX, bottomY + 78, queueItem, queueGap, now);
 
       const btnW = Math.min(148, uiW * 0.44);
-      draw.drawButton(uiX + uiW - btnW, bottomY + 84, btnW, 38, 'Encerrar Turno', actions.endHeroPhase, {
+      draw.drawButton(uiX + uiW - btnW, bottomY + 84, btnW, 38, 'Encerrar vez', actions.endHeroPhase, {
         fill: '#7c2d12', hoverFill: '#9a3412', stroke: '#fdba74',
         disabled: game.phase !== PHASES.HERO || game.busy, font: 'bold 12px Inter, sans-serif',
       });
@@ -874,7 +866,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const spellAvailableW = Math.max(150, btnX - spellX - 18);
 
     drawSpellBar(spellX, bottomY + 20, spellAvailableW, tight ? 40 : 46, 8, true);
-    draw.drawButton(btnX, btnY, btnW, btnH, 'Encerrar Turno', actions.endHeroPhase, {
+    draw.drawButton(btnX, btnY, btnW, btnH, 'Encerrar vez', actions.endHeroPhase, {
       fill: '#7c2d12', hoverFill: '#9a3412', stroke: '#fdba74',
       disabled: game.phase !== PHASES.HERO || game.busy, font: 'bold 15px Inter, sans-serif',
     });
@@ -1033,51 +1025,54 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const cx = currentLayout.boardX + currentLayout.boardW / 2;
     const cy = currentLayout.boardY + currentLayout.boardH / 2;
     const hasCard = !!banner.cardKey;
-    const panelW = hasCard ? 460 : 520;
-    const panelH = hasCard ? 132 : 148;
+    const panelW = hasCard ? Math.min(620, Math.max(480, currentLayout.boardW * 0.82)) : 520;
+    const panelH = hasCard ? 176 : 148;
     const panelX = cx - panelW / 2;
-    const panelY = hasCard ? cy + 44 : cy - 74;
+    const panelY = hasCard ? cy - panelH / 2 + 16 : cy - 74;
     const accent = banner.accent || '#facc15';
 
     ctx.save();
     ctx.globalAlpha = alpha;
     if (hasCard) {
       const cardImage = cardImages[banner.cardKey] || null;
-      const cardW = 144;
-      const cardH = 194;
-      const cardX = cx - cardW / 2;
-      const cardY = panelY - cardH + 30;
+      const cardW = 118;
+      const cardH = 150;
+      const cardX = panelX + 20;
+      const cardY = panelY + (panelH - cardH) / 2;
+      const textX = cardX + cardW + 24;
+      const textW = panelW - (textX - panelX) - 20;
 
-      draw.roundRect(cardX - 10, cardY - 10, cardW + 20, cardH + 20, 22, 'rgba(0,0,0,0.4)', null);
-      draw.roundRect(cardX, cardY, cardW, cardH, 16, '#111827', accent);
+      draw.roundRect(panelX, panelY, panelW, panelH, 24, 'rgba(0,0,0,0.82)', accent);
+      draw.roundRect(cardX - 8, cardY - 8, cardW + 16, cardH + 16, 18, 'rgba(0,0,0,0.35)', null);
+      draw.roundRect(cardX, cardY, cardW, cardH, 14, '#111827', accent);
 
       ctx.save();
-      draw.roundRect(cardX + 4, cardY + 4, cardW - 8, cardH - 8, 12, null, null);
+      draw.roundRect(cardX + 4, cardY + 4, cardW - 8, cardH - 8, 10, null, null);
       ctx.clip();
       const drew = draw.drawImageCover(cardImage, cardX + 4, cardY + 4, cardW - 8, cardH - 8);
       if (!drew) {
-        draw.drawText(banner.subtitle || banner.title, cx, cardY + cardH / 2 + 8, {
+        draw.drawText(banner.subtitle || banner.title, cardX + cardW / 2, cardY + cardH / 2 + 8, {
           align: 'center',
-          font: 'bold 20px Inter, sans-serif',
+          font: 'bold 18px Inter, sans-serif',
           color: '#f8fafc',
-          maxWidth: cardW - 20,
+          maxWidth: cardW - 16,
         });
       }
       ctx.restore();
 
-      ctx.lineWidth = 3;
-      draw.roundRect(panelX, panelY, panelW, panelH, 24, 'rgba(0,0,0,0.8)', accent);
-      draw.drawText(banner.title, cx, panelY + 54, {
-        align: 'center',
-        font: 'bold 28px Inter, sans-serif',
+      draw.drawText(banner.title, textX, panelY + 62, {
+        align: 'left',
+        font: 'bold 30px Inter, sans-serif',
         color: '#f8fafc',
+        maxWidth: textW,
       });
 
       if (banner.subtitle) {
-        draw.drawText(banner.subtitle, cx, panelY + 88, {
-          align: 'center',
+        draw.drawText(banner.subtitle, textX, panelY + 102, {
+          align: 'left',
           font: '16px Inter, sans-serif',
           color: '#cbd5e1',
+          maxWidth: textW,
         });
       }
     } else {
@@ -1117,12 +1112,6 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       align: 'center',
       font: '22px Inter, sans-serif',
       color: '#fff7ed',
-    });
-    draw.roundRect(x + size - 16, y + size - 16, 18, 18, 9, '#111827', '#facc15');
-    draw.drawText(String(attack.apCost), x + size - 7, y + size - 3, {
-      align: 'center',
-      font: 'bold 10px Inter, sans-serif',
-      color: '#facc15',
     });
     ctx.restore();
   }

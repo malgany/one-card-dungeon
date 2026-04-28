@@ -1,9 +1,9 @@
 # Regras Atuais
 
-## Turno e AP
+## Vez e AP
 
-O jogo nao usa mais rolagem e distribuicao de dados no comeco do turno.
-O aventureiro comeca o turno direto na fase de heroi com 6 AP.
+O jogo nao usa mais rolagem e distribuicao de dados no comeco da vez.
+O aventureiro comeca a vez direto na fase de heroi com 6 AP.
 
 AP e o recurso usado para executar acoes. Cada acao define o proprio custo.
 

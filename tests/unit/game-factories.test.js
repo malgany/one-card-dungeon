@@ -69,6 +69,6 @@ describe('game factories', () => {
     expect(game.speedRemaining).toBe(4);
     expect(game.apRemaining).toBe(6);
     expect(game.turnQueue).toEqual(['player', ...game.monsters.map((m) => m.id)]);
-    expect(game.banner.title).toBe('Seu turno');
+    expect(game.banner.title).toBe('Sua vez');
   });
 });

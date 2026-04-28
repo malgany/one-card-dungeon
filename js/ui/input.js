@@ -94,6 +94,7 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     
     if (!tile) {
       state.game.selectedEntity = null;
+      state.game.selectedAttackId = null;
       return;
     }
 
