@@ -18,7 +18,7 @@ export function inBounds(pos) {
 }
 
 export function stepCost(a, b) {
-  return a.x !== b.x && a.y !== b.y ? 3 : 2;
+  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
 export function levelWallsSet(levelIndex) {
@@ -42,12 +42,16 @@ export function monsterOccupiedKeys(monsters, exceptId = null) {
 export function neighbors(pos) {
   const result = [];
 
-  for (let dx = -1; dx <= 1; dx += 1) {
-    for (let dy = -1; dy <= 1; dy += 1) {
-      if (dx === 0 && dy === 0) continue;
-      const next = { x: pos.x + dx, y: pos.y + dy };
-      if (inBounds(next)) result.push(next);
-    }
+  const offsets = [
+    [0, -1],
+    [-1, 0],
+    [1, 0],
+    [0, 1],
+  ];
+
+  for (const [dx, dy] of offsets) {
+    const next = { x: pos.x + dx, y: pos.y + dy };
+    if (inBounds(next)) result.push(next);
   }
 
   return result;

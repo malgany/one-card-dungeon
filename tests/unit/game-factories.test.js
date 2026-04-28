@@ -50,10 +50,25 @@ describe('game factories', () => {
     const game = createGame();
 
     expect(game.levelIndex).toBe(0);
-    expect(game.player).toMatchObject({ x: LEVELS[0].start.x, y: LEVELS[0].start.y, health: 6 });
-    expect(game.phase).toBe(PHASES.ENERGY);
-    expect(game.roll).toEqual([1, 1, 1]);
+    expect(game.player).toMatchObject({
+      x: LEVELS[0].start.x,
+      y: LEVELS[0].start.y,
+      health: 60,
+      maxHealth: 60,
+      apMax: 6,
+      speedBase: 4,
+      attackSlot: {
+        name: 'Golpe',
+        apCost: 5,
+        damage: 5,
+        lifeSteal: 1,
+      },
+    });
+    expect(game.phase).toBe(PHASES.HERO);
+    expect(game.roll).toEqual([]);
+    expect(game.speedRemaining).toBe(4);
+    expect(game.apRemaining).toBe(6);
     expect(game.turnQueue).toEqual(['player', ...game.monsters.map((m) => m.id)]);
-    expect(game.banner.title).toBe('Dados rolados');
+    expect(game.banner.title).toBe('Seu turno');
   });
 });

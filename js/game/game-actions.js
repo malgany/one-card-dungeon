@@ -1,4 +1,4 @@
-import { BOARD_SIZE, LEVELS, PHASES, SAVE_KEY, TIMING } from '../config/game-data.js';
+import { ACTION_RULES, BOARD_SIZE, LEVELS, PHASES, SAVE_KEY, TIMING } from '../config/game-data.js';
 import {
   dijkstra,
   distanceBetween,
@@ -10,7 +10,7 @@ import {
   reconstructPath,
   samePos,
 } from './board-logic.js';
-import { createGame, levelMonsters, makeEnergyRoll } from './game-factories.js';
+import { createGame, levelMonsters } from './game-factories.js';
 
 export function createGameActions(state) {
 
@@ -49,31 +49,41 @@ export function createGameActions(state) {
     });
   }
 
-  function startEnergyTurn(message = 'Arraste os dados para preparar seu turno.') {
-    const game = getGame();
-    const roll = makeEnergyRoll();
+  function getEquippedAttack(game = getGame()) {
+    return {
+      ...ACTION_RULES.BASIC_ATTACK,
+      ...(game.player.attackSlot || {}),
+    };
+  }
 
-    game.phase = PHASES.ENERGY;
-    game.roll = roll;
+  function getMitigatedDamage(rawDamage, defense) {
+    return Math.max(0, rawDamage - Math.max(0, defense));
+  }
+
+  function startHeroTurn(message = null) {
+    const game = getGame();
+
+    game.phase = PHASES.HERO;
+    game.roll = [];
     game.energyAssigned = { speed: null, attack: null, defense: null };
     game.assignment = { speed: 0, attack: 0, defense: 0 };
-    game.speedRemaining = 0;
-    game.attackRemaining = 0;
+    game.speedRemaining = game.player.speedBase;
+    game.apRemaining = game.player.apMax;
     game.draggingDie = null;
     game.selectedEntity = null;
+    game.selectedAttackId = null;
     game.busy = false;
 
-    setEvent(message);
-    showBanner('Dados rolados', `Distribua os dados: ${roll.join(' - ')}`, TIMING.TURN_BANNER);
+    setEvent(message || `Seu turno. ${game.apRemaining} AP, ${game.speedRemaining} movimento.`);
+    showTurnBanner('Seu turno', `${game.apRemaining} AP para agir`, 'player', '#34d399');
+  }
+
+  function startEnergyTurn() {
+    startHeroTurn('Turno iniciado sem rolagem de dados.');
   }
 
   function allDiceAssigned() {
-    const game = getGame();
-    return (
-      game.energyAssigned.speed !== null &&
-      game.energyAssigned.attack !== null &&
-      game.energyAssigned.defense !== null
-    );
+    return false;
   }
 
   function assignedStatForDie(dieIndex) {
@@ -100,6 +110,7 @@ export function createGameActions(state) {
   function getReachableTiles() {
     const game = getGame();
     if (game.phase !== PHASES.HERO || game.busy) return new Map();
+    if (game.selectedAttackId) return new Map();
 
     const { dist, prev } = getMovementData();
     const reachable = new Map();
@@ -175,24 +186,47 @@ export function createGameActions(state) {
     return attackTiles;
   }
 
+  function getPlayerAttackTiles() {
+    const game = getGame();
+    const attackTiles = new Set();
+    if (game.phase !== PHASES.HERO || game.busy) return attackTiles;
+
+    const attack = getEquippedAttack(game);
+    if (game.selectedAttackId !== attack.id || game.apRemaining < attack.apCost) return attackTiles;
+
+    const walls = levelWallsSet(game.levelIndex);
+
+    for (let y = 0; y < BOARD_SIZE; y += 1) {
+      for (let x = 0; x < BOARD_SIZE; x += 1) {
+        const cell = { x, y };
+        const key = posKey(cell);
+        if (walls.has(key)) continue;
+        if (samePos(cell, game.player)) continue;
+
+        const targetMonster = game.monsters.find((monster) => samePos(monster, cell));
+        const blockers = monsterOccupiedKeys(game.monsters, targetMonster?.id);
+        const blocked = new Set([...walls, ...blockers]);
+        const rangeCost = distanceBetween(game.player, cell, blocked, true);
+
+        if (rangeCost <= game.player.rangeBase && hasLineOfSight(game.player, cell, walls, blockers)) {
+          attackTiles.add(key);
+        }
+      }
+    }
+
+    return attackTiles;
+  }
+
   function getAttackableMonsters() {
     const game = getGame();
     if (game.phase !== PHASES.HERO || game.busy) return new Set();
 
     const attackable = new Set();
-    const walls = levelWallsSet(game.levelIndex);
+    const attackTiles = getPlayerAttackTiles();
 
     for (const monster of game.monsters) {
       if (monster.hp <= 0) continue;
-      if (game.attackRemaining < monster.defense) continue;
-
-      const blockers = monsterOccupiedKeys(game.monsters, monster.id);
-      const blocked = new Set([...walls, ...blockers]);
-      const rangeCost = distanceBetween(game.player, monster, blocked, true);
-
-      if (rangeCost <= game.player.rangeBase && hasLineOfSight(game.player, monster, walls, blockers)) {
-        attackable.add(monster.id);
-      }
+      if (attackTiles.has(posKey(monster))) attackable.add(monster.id);
     }
 
     return attackable;
@@ -270,29 +304,17 @@ export function createGameActions(state) {
 
   function confirmEnergy() {
     const game = getGame();
-    if (game.busy || game.phase !== PHASES.ENERGY || !allDiceAssigned()) return;
-
-    const picked = {
-      speed: game.roll[game.energyAssigned.speed],
-      attack: game.roll[game.energyAssigned.attack],
-      defense: game.roll[game.energyAssigned.defense],
-    };
-
-    game.assignment = picked;
-    game.speedRemaining = game.player.speedBase + picked.speed;
-    game.attackRemaining = game.player.attackBase + picked.attack;
-    game.phase = PHASES.HERO;
-    game.draggingDie = null;
-
-    setEvent(
-      `Seu turno. Vel ${game.speedRemaining}, Atq ${game.attackRemaining}, Def ${game.player.defenseBase + picked.defense}.`
-    );
-    showTurnBanner('Seu turno', 'Aventureiro', 'player', '#34d399');
+    if (game.busy || game.phase !== PHASES.ENERGY) return;
+    startHeroTurn('Turno iniciado sem rolagem de dados.');
   }
 
   function movePlayer(target) {
     const game = getGame();
     if (game.busy) return;
+    if (game.selectedAttackId) {
+      setEvent('Desmarque o ataque para mover.');
+      return;
+    }
 
     const reachable = getReachableTiles();
     const data = reachable.get(posKey(target));
@@ -328,19 +350,25 @@ export function createGameActions(state) {
     setEvent(`Movimento: -${data.cost} velocidade.`);
   }
 
-  function attackMonster(monsterId) {
+  function attackTile(targetCell) {
     const game = getGame();
-    if (game.busy) return;
+    if (game.busy) return false;
 
-    const attackable = getAttackableMonsters();
-    if (!attackable.has(monsterId)) return;
+    const attack = getEquippedAttack(game);
+    if (game.selectedAttackId !== attack.id) {
+      setEvent('Selecione um ataque antes de atacar.');
+      return false;
+    }
 
-    const target = game.monsters.find((monster) => monster.id === monsterId);
-    if (!target) return;
+    if (!getPlayerAttackTiles().has(posKey(targetCell))) {
+      setEvent('Fora do alcance do ataque.');
+      return false;
+    }
 
-    const cost = target.defense;
-    game.attackRemaining -= cost;
-    target.hp -= 1;
+    const target = game.monsters.find((monster) => samePos(monster, targetCell));
+    const cost = attack.apCost;
+    game.apRemaining -= cost;
+    game.selectedAttackId = null;
 
     game.animations.push({
       type: 'floatingText',
@@ -355,41 +383,56 @@ export function createGameActions(state) {
     game.animations.push({
       type: 'bumpAttack',
       entityId: 'player',
-      targetX: target.x,
-      targetY: target.y,
+      targetX: targetCell.x,
+      targetY: targetCell.y,
       startTime: performance.now(),
       duration: TIMING.ATTACK_BUMP_DURATION
     });
 
-    game.animations.push({
-      type: 'damageShake',
-      entityId: target.id,
-      startTime: performance.now() + TIMING.ATTACK_BUMP_DURATION,
-      duration: TIMING.DAMAGE_SHAKE_DURATION
-    });
+    let damage = 0;
+    let healed = 0;
+    if (target) {
+      damage = getMitigatedDamage(attack.damage, target.defense);
+      target.hp = Math.max(0, target.hp - damage);
 
-    game.animations.push({
-      type: 'floatingText',
-      x: target.x,
-      y: target.y,
-      text: '-1',
-      color: '#ef4444',
-      startTime: performance.now() + 150,
-      duration: 1200
-    });
+      healed = damage > 0
+        ? Math.min(attack.lifeSteal, game.player.maxHealth - game.player.health)
+        : 0;
+      if (healed > 0) game.player.health += healed;
+
+      game.animations.push({
+        type: 'damageShake',
+        entityId: target.id,
+        startTime: performance.now() + TIMING.ATTACK_BUMP_DURATION,
+        duration: TIMING.DAMAGE_SHAKE_DURATION
+      });
+
+      game.animations.push({
+        type: 'floatingText',
+        x: target.x,
+        y: target.y,
+        text: `-${damage}`,
+        color: '#ef4444',
+        startTime: performance.now() + 150,
+        duration: 1200
+      });
+    }
 
     game.busy = true;
 
-    if (target.hp <= 0) {
+    if (!target) {
+      setEvent(`${attack.name}: ataque em celula vazia. Gasto: ${cost} AP.`);
+    } else if (target.hp <= 0) {
       setEvent(`${target.name} derrotado.`);
     } else {
-      setEvent(`${target.name}: -1 vida. Gasto: ${target.defense} ataque.`);
+      const healText = healed > 0 ? ` Suga ${healed} vida.` : '';
+      setEvent(`${attack.name}: ${attack.damage} - DEF ${target.defense} = ${damage} dano. Gasto: ${cost} AP.${healText}`);
     }
 
     setTimeout(() => {
       game.busy = false;
 
-      if (target.hp <= 0) {
+      if (target && target.hp <= 0) {
         game.monsters = game.monsters.filter((monster) => monster.hp > 0);
         
         if (game.monsters.length === 0) {
@@ -404,6 +447,15 @@ export function createGameActions(state) {
         }
       }
     }, TIMING.HERO_ATTACK_WAIT_TIME);
+
+    return true;
+  }
+
+  function attackMonster(monsterId) {
+    const game = getGame();
+    const target = game.monsters.find((monster) => monster.id === monsterId);
+    if (!target) return false;
+    return attackTile(target);
   }
 
   function advanceTurn() {
@@ -422,7 +474,7 @@ export function createGameActions(state) {
 
     if (nextId === 'player') {
       game.turnCount += 1;
-      startEnergyTurn('Energia rolada automaticamente. Distribua os dados.');
+      startHeroTurn();
     } else {
       game.phase = PHASES.MONSTER_TURN;
       game.busy = true;
@@ -476,11 +528,11 @@ export function createGameActions(state) {
       const rangeCost = distanceBetween(monster, game.player, blocked, true);
 
       if (rangeCost <= monster.range && hasLineOfSight(monster, game.player, walls, blockers)) {
-        const totalDefense = game.player.defenseBase + game.assignment.defense;
-        const damage = Math.floor(monster.attack / Math.max(1, totalDefense));
+        const totalDefense = game.player.defenseBase;
+        const damage = getMitigatedDamage(monster.attack, totalDefense);
         game.player.health = Math.max(0, game.player.health - damage);
 
-        setEvent(`${monster.name} atacou! ATQ ${monster.attack} ÷ DEF ${totalDefense} = ${damage} dano.`);
+        setEvent(`${monster.name} atacou! ATQ ${monster.attack} - DEF ${totalDefense} = ${damage} dano.`);
         
         game.animations.push({
           type: 'floatingText',
@@ -540,6 +592,7 @@ export function createGameActions(state) {
     if (game.busy || game.phase !== PHASES.HERO) return;
 
     game.busy = true;
+    game.selectedAttackId = null;
     setEvent('Fim do turno: Aventureiro');
     showBanner('Fim do Turno', 'Aventureiro', 800, () => {
       advanceTurn();
@@ -547,6 +600,20 @@ export function createGameActions(state) {
   }
 
 
+
+  function toggleAttackSelection() {
+    const game = getGame();
+    if (game.busy || game.phase !== PHASES.HERO) return;
+
+    const attack = getEquippedAttack(game);
+    if (game.apRemaining < attack.apCost) {
+      setEvent(`AP insuficiente para ${attack.name}.`);
+      return;
+    }
+
+    game.selectedAttackId = game.selectedAttackId === attack.id ? null : attack.id;
+    setEvent(game.selectedAttackId ? `${attack.name} selecionado.` : 'Ataque desmarcado.');
+  }
 
   function applyReward(kind) {
     const game = getGame();
@@ -557,7 +624,13 @@ export function createGameActions(state) {
 
     if (kind === 'heal') game.player.health = game.player.maxHealth;
     if (kind === 'speed') game.player.speedBase += 1;
-    if (kind === 'attack') game.player.attackBase += 1;
+    if (kind === 'attack') {
+      const attack = getEquippedAttack(game);
+      game.player.attackSlot = {
+        ...attack,
+        damage: attack.damage + 1,
+      };
+    }
     if (kind === 'defense') game.player.defenseBase += 1;
     if (kind === 'range') game.player.rangeBase += 1;
 
@@ -567,8 +640,8 @@ export function createGameActions(state) {
     game.monsters = levelMonsters(nextLevel);
     game.turnQueue = ['player', ...game.monsters.map(m => m.id)];
 
-    setEvent(`Nível ${nextLevel.id}. Energia rolada automaticamente.`);
-    startEnergyTurn(`Nível ${nextLevel.id}. Distribua os dados de energia.`);
+    setEvent(`Nível ${nextLevel.id}. Turno iniciado.`);
+    startHeroTurn(`Nível ${nextLevel.id}. ${game.player.apMax} AP, ${game.player.speedBase} movimento.`);
   }
 
   function saveGame() {
@@ -581,6 +654,7 @@ export function createGameActions(state) {
         diceRects: [],
         dropZones: [],
         draggingDie: null,
+        selectedAttackId: null,
         menuOpen: false,
       };
 
@@ -627,6 +701,7 @@ export function createGameActions(state) {
     normalized.diceRects = [];
     normalized.dropZones = [];
     normalized.draggingDie = null;
+    normalized.selectedAttackId = null;
     normalized.menuOpen = false;
     normalized.busy = false;
     normalized.animations = [];
@@ -636,13 +711,20 @@ export function createGameActions(state) {
        normalized.turnQueue = ['player', ...normalized.monsters.map(m => m.id)];
     }
 
-    if (!Array.isArray(normalized.roll) || normalized.roll.length !== 3) {
-      normalized.roll = normalized.phase === PHASES.ENERGY ? makeEnergyRoll() : fallback.roll;
-    }
+    normalized.roll = Array.isArray(normalized.roll) ? normalized.roll : [];
+    const wasEnergyPhase = normalized.phase === PHASES.ENERGY;
+    if (wasEnergyPhase) normalized.phase = PHASES.HERO;
 
     if (!normalized.lastEvent) normalized.lastEvent = 'Jogo carregado.';
-    if (!Number.isFinite(normalized.speedRemaining)) normalized.speedRemaining = 0;
-    if (!Number.isFinite(normalized.attackRemaining)) normalized.attackRemaining = 0;
+    if (!Number.isFinite(normalized.player.apMax)) normalized.player.apMax = ACTION_RULES.BASE_AP;
+    normalized.player.attackSlot = getEquippedAttack(normalized);
+    if (!Number.isFinite(normalized.speedRemaining)) normalized.speedRemaining = normalized.player.speedBase;
+    if (!Number.isFinite(normalized.apRemaining)) normalized.apRemaining = normalized.player.apMax;
+    if (wasEnergyPhase) {
+      normalized.assignment = { speed: 0, attack: 0, defense: 0 };
+      normalized.speedRemaining = normalized.player.speedBase;
+      normalized.apRemaining = normalized.player.apMax;
+    }
     if (!Number.isFinite(normalized.turnCount)) normalized.turnCount = 1;
 
     return normalized;
@@ -665,17 +747,22 @@ export function createGameActions(state) {
 
   function newGame() {
     setGame(createGame());
-    showBanner('Novo jogo', `Dados: ${getGame().roll.join(' • ')}`, 1000);
+    showBanner('Novo jogo', `${getGame().player.apMax} AP para agir`, 1000);
   }
 
   function getTotals() {
     const game = getGame();
+    const attack = getEquippedAttack(game);
 
     return {
       speed: game.player.speedBase + game.assignment.speed,
-      attack: game.player.attackBase + game.assignment.attack,
-      defense: game.player.defenseBase + game.assignment.defense,
+      attack: attack.damage,
+      attackCost: attack.apCost,
+      attackLifeSteal: attack.lifeSteal,
+      attackName: attack.name,
+      defense: game.player.defenseBase,
       range: game.player.rangeBase,
+      ap: game.player.apMax,
     };
   }
 
@@ -684,20 +771,25 @@ export function createGameActions(state) {
     applyReward,
     assignedStatForDie,
     attackMonster,
+    attackTile,
     confirmEnergy,
     endHeroPhase,
     getAttackableMonsters,
     getGame,
     getMonsterAttackTiles,
     getMonsterReachableTiles,
+    getPlayerAttackTiles,
     getReachableTiles,
     getTotals,
+    getEquippedAttack,
     loadGame,
     movePlayer,
     newGame,
     saveGame,
     setEvent,
     showBanner,
+    startHeroTurn,
     startEnergyTurn,
+    toggleAttackSelection,
   };
 }

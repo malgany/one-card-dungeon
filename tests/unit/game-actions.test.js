@@ -15,22 +15,20 @@ describe('game actions', () => {
     localStorage.clear();
   });
 
-  it('starts and confirms an energy turn', () => {
+  it('starts a hero turn with fixed movement and AP', () => {
     const { state, actions } = createActionHarness();
 
-    actions.startEnergyTurn('prepare');
-    expect(state.game.phase).toBe(PHASES.ENERGY);
-    expect(state.game.roll).toEqual([1, 1, 1]);
-    expect(state.game.energyAssigned).toEqual({ speed: null, attack: null, defense: null });
-
-    state.game.roll = [2, 3, 4];
-    state.game.energyAssigned = { speed: 0, attack: 1, defense: 2 };
-    actions.confirmEnergy();
+    state.game.speedRemaining = 0;
+    state.game.apRemaining = 0;
+    state.game.selectedAttackId = 'strike';
+    actions.startHeroTurn('prepare');
 
     expect(state.game.phase).toBe(PHASES.HERO);
-    expect(state.game.assignment).toEqual({ speed: 2, attack: 3, defense: 4 });
-    expect(state.game.speedRemaining).toBe(3);
-    expect(state.game.attackRemaining).toBe(4);
+    expect(state.game.roll).toEqual([]);
+    expect(state.game.assignment).toEqual({ speed: 0, attack: 0, defense: 0 });
+    expect(state.game.speedRemaining).toBe(state.game.player.speedBase);
+    expect(state.game.apRemaining).toBe(state.game.player.apMax);
+    expect(state.game.selectedAttackId).toBe(null);
   });
 
   it('returns reachable player tiles within remaining speed', () => {
@@ -38,12 +36,12 @@ describe('game actions', () => {
     state.game.phase = PHASES.HERO;
     state.game.monsters = [];
     state.game.player = { ...state.game.player, x: 0, y: 5 };
-    state.game.speedRemaining = 2;
+    state.game.speedRemaining = 1;
 
     const reachable = actions.getReachableTiles();
 
     expect(reachable.has('0,4')).toBe(true);
-    expect(reachable.get('0,4').cost).toBe(2);
+    expect(reachable.get('0,4').cost).toBe(1);
     expect(reachable.has('1,4')).toBe(false);
     expect(reachable.has('0,5')).toBe(false);
   });
@@ -53,7 +51,7 @@ describe('game actions', () => {
     state.game.phase = PHASES.HERO;
     state.game.monsters = [];
     state.game.player = { ...state.game.player, x: 0, y: 5 };
-    state.game.speedRemaining = 2;
+    state.game.speedRemaining = 1;
 
     actions.movePlayer({ x: 0, y: 4 });
 
@@ -68,25 +66,73 @@ describe('game actions', () => {
 
   it('attacks a reachable monster and removes it when defeated', () => {
     const monster = createMonster('spider', 1, 5, 0);
-    monster.hp = 1;
+    monster.hp = 4;
     const game = createGame();
     game.phase = PHASES.HERO;
-    game.player = { ...game.player, x: 0, y: 5, rangeBase: 2 };
+    game.player = { ...game.player, x: 0, y: 5, health: 59, rangeBase: 2 };
     game.monsters = [monster];
-    game.attackRemaining = 1;
+    game.apRemaining = 5;
+    game.selectedAttackId = game.player.attackSlot.id;
     const { state, actions } = createActionHarness(game);
 
     expect(actions.getAttackableMonsters()).toEqual(new Set([monster.id]));
 
     actions.attackMonster(monster.id);
 
-    expect(state.game.attackRemaining).toBe(0);
+    expect(state.game.apRemaining).toBe(0);
+    expect(state.game.player.health).toBe(60);
     expect(monster.hp).toBe(0);
     expect(state.game.busy).toBe(true);
+    expect(state.game.selectedAttackId).toBe(null);
 
     vi.advanceTimersByTime(TIMING.HERO_ATTACK_WAIT_TIME);
     expect(state.game.monsters).toEqual([]);
     expect(state.game.phase).toBe(PHASES.LEVELUP);
+  });
+
+  it('requires selecting the equipped attack before targeting monsters', () => {
+    const monster = createMonster('spider', 1, 5, 0);
+    const game = createGame();
+    game.phase = PHASES.HERO;
+    game.player = { ...game.player, x: 0, y: 5, rangeBase: 2 };
+    game.monsters = [monster];
+    game.apRemaining = 5;
+    const { state, actions } = createActionHarness(game);
+
+    expect(actions.getAttackableMonsters()).toEqual(new Set());
+
+    actions.toggleAttackSelection();
+    expect(state.game.selectedAttackId).toBe(game.player.attackSlot.id);
+    expect(actions.getAttackableMonsters()).toEqual(new Set([monster.id]));
+
+    actions.toggleAttackSelection();
+    expect(state.game.selectedAttackId).toBe(null);
+  });
+
+  it('attacks empty cells in range and keeps movement locked while aiming', () => {
+    const game = createGame();
+    game.phase = PHASES.HERO;
+    game.monsters = [];
+    game.player = { ...game.player, x: 0, y: 5, rangeBase: 2 };
+    game.apRemaining = 5;
+    game.selectedAttackId = game.player.attackSlot.id;
+    const { state, actions } = createActionHarness(game);
+
+    expect(actions.getReachableTiles()).toEqual(new Map());
+    expect(actions.getPlayerAttackTiles().has('0,4')).toBe(true);
+
+    actions.movePlayer({ x: 0, y: 4 });
+    expect(state.game.player).toMatchObject({ x: 0, y: 5 });
+    expect(state.game.apRemaining).toBe(5);
+
+    actions.attackTile({ x: 0, y: 4 });
+
+    expect(state.game.apRemaining).toBe(0);
+    expect(state.game.selectedAttackId).toBe(null);
+    expect(state.game.busy).toBe(true);
+    expect(state.game.animations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'bumpAttack', entityId: 'player', targetX: 0, targetY: 4 }),
+    ]));
   });
 
   it('wins the game when the final level monster is defeated', () => {
@@ -98,7 +144,8 @@ describe('game actions', () => {
     game.phase = PHASES.HERO;
     game.player = { ...game.player, x: 0, y: 5, rangeBase: 2 };
     game.monsters = [monster];
-    game.attackRemaining = 1;
+    game.apRemaining = 5;
+    game.selectedAttackId = game.player.attackSlot.id;
     const { state, actions } = createActionHarness(game);
 
     actions.attackMonster(monster.id);
@@ -140,7 +187,7 @@ describe('game actions', () => {
     expect(state.game.levelIndex).toBe(1);
     expect(state.game.player.health).toBe(state.game.player.maxHealth);
     expect(state.game.player).toMatchObject(LEVELS[1].start);
-    expect(state.game.phase).toBe(PHASES.ENERGY);
+    expect(state.game.phase).toBe(PHASES.HERO);
     expect(state.game.turnQueue).toEqual(['player', ...state.game.monsters.map((m) => m.id)]);
   });
 

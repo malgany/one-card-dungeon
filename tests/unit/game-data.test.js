@@ -10,7 +10,7 @@ describe('game data', () => {
       WON: 'won',
       LOST: 'lost',
     });
-    expect(Object.keys(STAT_META)).toEqual(['speed', 'attack', 'defense']);
+    expect(Object.keys(STAT_META)).toEqual(['ap', 'speed', 'attack', 'defense']);
   });
 
   it('keeps all levels inside the board and references known monster templates', () => {

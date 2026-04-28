@@ -52,10 +52,11 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const barX = x + 16;
     draw.roundRect(barX, cy, barW, barH, 8, 'rgba(15,23,42,0.95)', '#334155');
     
-    const statItemW = barW / 4;
+    const statItemW = barW / 5;
     const statsArray = [
-      { icon: '🏃', val: game.speedRemaining || totals.speed, color: '#34d399' },
-      { icon: '⚔️', val: game.attackRemaining || totals.attack, color: '#fbbf24' },
+      { icon: '⚡', val: game.apRemaining ?? totals.ap, color: '#facc15' },
+      { icon: '🏃', val: game.speedRemaining ?? totals.speed, color: '#34d399' },
+      { icon: '⚔️', val: totals.attack, color: '#fbbf24' },
       { icon: '🛡️', val: totals.defense, color: '#60a5fa' },
       { icon: '🎯', val: totals.range, color: '#fb923c' }
     ];
@@ -78,7 +79,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     game.diceRects = [];
     game.dropZones = [];
 
-    if (game.phase === PHASES.ENERGY || game.phase === PHASES.HERO) {
+    if (game.phase === PHASES.ENERGY) {
       draw.drawText('Dados rolados', x + w / 2, cy, {
         align: 'center', font: '20px Inter, sans-serif', color: '#d1d5db',
       });
@@ -188,10 +189,6 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
             64, game.roll[game.draggingDie.dieIndex], game.draggingDie.dieIndex
           );
         }
-      } else if (game.phase === PHASES.HERO) {
-        draw.drawText('Passe o mouse no herói para ver', x + w / 2, cy, { align: 'center', font: '14px Inter, sans-serif', color: '#94a3b8' });
-        draw.drawText('movimento. Clique em inimigos', x + w / 2, cy + 20, { align: 'center', font: '14px Inter, sans-serif', color: '#94a3b8' });
-        draw.drawText('destacados para atacar.', x + w / 2, cy + 40, { align: 'center', font: '14px Inter, sans-serif', color: '#94a3b8' });
       }
     }
 
@@ -199,7 +196,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       const options = [
         ['❤️ Curar', 'heal'],
         ['🏃 +1 Velocidade', 'speed'],
-        ['⚔️ +1 Ataque', 'attack'],
+        ['⚔️ +1 Dano do Ataque', 'attack'],
         ['🛡️ +1 Defesa', 'defense'],
         ['🎯 +1 Alcance', 'range'],
       ];
@@ -263,88 +260,6 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       hoverFill: '#7f1d1d',
       stroke: '#fca5a5',
     });
-  }
-
-  function drawHoverStats(currentLayout) {
-    const monster = layout.hoveredMonster();
-    const playerHover = layout.hoveredPlayer();
-    if (!monster && !playerHover) return;
-
-    const game = state.game;
-    const tile = playerHover ? game.player : monster;
-    const rect = layout.tileRect(currentLayout, tile.x, tile.y);
-
-    ctx.font = 'bold 16px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    const drawMiniStat = (x, y, text, bgColor, color = '#fff', alpha = 1) => {
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.beginPath();
-      ctx.arc(x, y, 12, 0, Math.PI * 2);
-      ctx.fillStyle = bgColor;
-      ctx.fill();
-      ctx.strokeStyle = `rgba(0,0,0,${0.8 * alpha})`;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      ctx.fillStyle = color;
-      ctx.fillText(text, x, y + 1);
-      ctx.restore();
-    };
-
-    if (playerHover) {
-      const attack = game.phase === PHASES.HERO ? game.attackRemaining : game.player.attackBase + game.assignment.attack;
-      const speed = game.phase === PHASES.HERO ? game.speedRemaining : game.player.speedBase + game.assignment.speed;
-      
-      drawMiniStat(rect.x - 4, rect.y + rect.h / 2, `${attack}`, '#ca8a04');
-      drawMiniStat(rect.x + rect.w + 4, rect.y + rect.h / 2, `${speed}`, '#16a34a');
-    } else {
-      const attackable = actions.getAttackableMonsters();
-      if (game.phase === PHASES.HERO && attackable.has(monster.id)) {
-        const attack = game.attackRemaining;
-        const defense = monster.defense;
-        
-        const loopDuration = 1800;
-        const t = (performance.now() % loopDuration) / loopDuration;
-        const x_center = rect.x + rect.w / 2;
-        const y_center = rect.y - 36;
-        
-        let atkOffsetX = -20;
-        let defOffsetX = 20;
-        let atkAlpha = 1;
-        let defAlpha = 1;
-
-        if (t > 0.2 && t <= 0.4) {
-           const p = Math.pow((t - 0.2) / 0.2, 2); 
-           atkOffsetX = -20 + (10 * p); 
-        } else if (t > 0.4) {
-           atkOffsetX = -10;
-        }
-
-        if (t > 0.4 && t <= 0.8) {
-           const p = (t - 0.4) / 0.4;
-           if (attack >= defense) {
-              defOffsetX = 20 + (20 * p);
-              defAlpha = 1 - p;
-           } else {
-              atkOffsetX = -10 - (20 * p);
-              atkAlpha = 1 - p;
-           }
-        } else if (t > 0.8) {
-           const p = (t - 0.8) / 0.2;
-           atkAlpha = attack >= defense ? 1 - p : 0;
-           defAlpha = attack >= defense ? 0 : 1 - p;
-        }
-        
-        if (atkAlpha > 0) drawMiniStat(x_center + atkOffsetX, y_center, `${attack}`, '#ca8a04', '#fff', atkAlpha);
-        if (defAlpha > 0) drawMiniStat(x_center + defOffsetX, y_center, `${defense}`, '#2563eb', '#fff', defAlpha);
-      } else {
-        drawMiniStat(rect.x - 4, rect.y + rect.h / 2, `${monster.attack}`, '#ca8a04');
-        drawMiniStat(rect.x + rect.w + 4, rect.y + rect.h / 2, `${monster.defense}`, '#2563eb');
-      }
-    }
   }
 
   function drawBottomUI(currentLayout) {
@@ -418,6 +333,55 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     ctx.fillText(maxHp, 0, h * 0.67);
     
     ctx.restore();
+
+    const slotSize = 58;
+    const slotGap = 10;
+    const slotsX = uiX + heartSize + 28;
+    const slotsY = bottomY + 21;
+    const attack = actions.getEquippedAttack(game);
+    const attackSelected = game.selectedAttackId === attack.id;
+    const attackDisabled = game.phase !== PHASES.HERO || game.busy || game.apRemaining < attack.apCost;
+
+    for (let index = 0; index < 3; index += 1) {
+      const sx = slotsX + index * (slotSize + slotGap);
+      const slot = { x: sx, y: slotsY, w: slotSize, h: slotSize };
+      const hovered = layout.pointInRect(state.mouse.x, state.mouse.y, slot);
+      const filled = index === 0;
+      const selected = filled && attackSelected;
+      const fill = !filled
+        ? 'rgba(15,23,42,0.52)'
+        : selected
+          ? '#92400e'
+          : hovered && !attackDisabled
+            ? '#78350f'
+            : '#1f2937';
+      const stroke = selected ? '#fbbf24' : filled ? '#b45309' : '#334155';
+
+      draw.roundRect(sx, slotsY, slotSize, slotSize, 12, fill, stroke);
+
+      if (filled) {
+        draw.drawText('✊', sx + slotSize / 2, slotsY + 34, {
+          align: 'center',
+          font: '28px Inter, sans-serif',
+          color: attackDisabled ? '#737b8c' : '#fff7ed',
+        });
+        draw.drawText(String(attack.apCost), sx + slotSize - 12, slotsY + slotSize - 8, {
+          align: 'center',
+          font: 'bold 11px Inter, sans-serif',
+          color: attackDisabled ? '#737b8c' : '#facc15',
+        });
+
+        if (!attackDisabled) {
+          state.game.buttons.push({ ...slot, onClick: actions.toggleAttackSelection });
+        }
+      } else {
+        draw.drawText('+', sx + slotSize / 2, slotsY + 36, {
+          align: 'center',
+          font: '22px Inter, sans-serif',
+          color: '#475569',
+        });
+      }
+    }
     
     // Turn Queue
     if (game.turnQueue && game.turnQueue.length > 0) {
@@ -425,7 +389,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       const queueSpacing = 16;
       const queueY = bottomY + 26;
       
-      let currentX = uiX + heartSize + 40;
+      let currentX = slotsX + (slotSize + slotGap) * 3 + 28;
       const staticQueue = ['player', ...game.monsters.map(m => m.id)];
 
       for (let i = 0; i < staticQueue.length; i++) {
@@ -474,19 +438,11 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
   function drawSelectedEntityModal(currentLayout) {
     const game = state.game;
-    const selected = game.selectedEntity;
-    if (!selected) return;
+    const playerSelected = !!layout.hoveredPlayer();
+    const monster = playerSelected ? null : layout.hoveredMonster();
+    if (!playerSelected && !monster) return;
 
-    let tile, playerSelected, monster;
-    if (selected.type === 'player') {
-      playerSelected = true;
-      tile = game.player;
-    } else {
-      playerSelected = false;
-      monster = game.monsters.find(m => m.id === selected.id);
-      if (!monster) return;
-      tile = monster;
-    }
+    const tile = playerSelected ? game.player : monster;
 
     const rect = layout.tileRect(currentLayout, tile.x, tile.y);
     const totals = actions.getTotals();
@@ -496,8 +452,9 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const lines = playerSelected
       ? [
           `Vida ${game.player.health}/${game.player.maxHealth}`,
-          `Velocidade ${game.player.speedBase} + ${game.assignment.speed} | Restante ${game.speedRemaining} (~${Math.floor(game.speedRemaining / 2)} casas)`,
-          `Ataque ${game.player.attackBase} + ${game.assignment.attack} | Restante ${game.attackRemaining}`,
+          `AP ${game.apRemaining}/${game.player.apMax} | ${totals.attackName} custa ${totals.attackCost} AP`,
+          `Movimento ${game.speedRemaining}/${game.player.speedBase} | só em cruz`,
+          `Ataque ${totals.attack} | suga ${totals.attackLifeSteal}`,
           `Defesa ${totals.defense}`,
           `Alcance ${totals.range}`,
         ]
@@ -512,7 +469,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const cardW = 110;
     const cardH = 146;
     const width = currentLayout.leftW - 32;
-    const height = 200;
+    const height = playerSelected ? 224 : 200;
     let x = currentLayout.leftX + 16;
     let y = currentLayout.leftY + currentLayout.leftH - height - 16;
 
@@ -544,7 +501,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       : ['❤️', '⚔️', '🛡️', '🎯', '🏃'];
 
     for (let index = 0; index < lines.length; index += 1) {
-      draw.drawText(icons[index], textX + 2, y + 80 + index * 22, {
+      draw.drawText(icons[index] || '', textX + 2, y + 80 + index * 22, {
         font: '14px Inter, sans-serif',
         color: '#fff',
       });
@@ -635,6 +592,32 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     ctx.restore();
   }
 
+  function drawCarriedAttack() {
+    const game = state.game;
+    const attack = actions.getEquippedAttack(game);
+    if (game.phase !== PHASES.HERO || game.busy || game.selectedAttackId !== attack.id) return;
+
+    const size = 38;
+    const x = state.mouse.x + 16;
+    const y = state.mouse.y + 16;
+
+    ctx.save();
+    ctx.globalAlpha = 0.94;
+    draw.roundRect(x, y, size, size, 10, '#78350f', '#fbbf24');
+    draw.drawText('✊', x + size / 2, y + 25, {
+      align: 'center',
+      font: '22px Inter, sans-serif',
+      color: '#fff7ed',
+    });
+    draw.roundRect(x + size - 16, y + size - 16, 18, 18, 9, '#111827', '#facc15');
+    draw.drawText(String(attack.apCost), x + size - 7, y + size - 3, {
+      align: 'center',
+      font: 'bold 10px Inter, sans-serif',
+      color: '#facc15',
+    });
+    ctx.restore();
+  }
+
   function drawEnergyFocusMask(currentLayout) {
     if (state.game.phase !== PHASES.ENERGY) return;
 
@@ -666,12 +649,14 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     const walls = levelWallsSet(state.game.levelIndex);
     const reachable = actions.getReachableTiles();
-    const attackable = actions.getAttackableMonsters();
+    const playerAttackTiles = actions.getPlayerAttackTiles();
     const hoverTile = layout.hoveredTile();
     const hoverMonster = layout.hoveredMonster();
+    const attackMode = state.game.phase === PHASES.HERO && !!state.game.selectedAttackId && !state.game.busy;
     const showMoveHints =
       state.game.phase === PHASES.HERO &&
       !state.game.busy &&
+      !attackMode &&
       (layout.hoveredPlayer() || (hoverTile && reachable.has(posKey(hoverTile))));
     const hoverPath =
       showMoveHints && hoverTile && reachable.has(posKey(hoverTile))
@@ -680,7 +665,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     let monsterReachable = new Map();
     let monsterAttackTiles = new Set();
-    if (hoverMonster && !state.game.busy) {
+    if (hoverMonster && !state.game.busy && !attackMode) {
        monsterReachable = actions.getMonsterReachableTiles(hoverMonster.id);
        monsterAttackTiles = actions.getMonsterAttackTiles(hoverMonster.id);
     }
@@ -732,7 +717,14 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         if (isWall) draw.drawWallTile(rect);
         else draw.drawFloorTile(rect, x, y);
 
-        if (!isWall && showMoveHints && reachable.has(key) && !monster && !samePos({ x, y }, state.game.player)) {
+        if (!isWall && playerAttackTiles.has(key) && !samePos({ x, y }, state.game.player)) {
+          ctx.fillStyle = 'rgba(244,114,182,0.14)';
+          ctx.fillRect(rect.x + 3, rect.y + 3, rect.w - 6, rect.h - 6);
+          ctx.strokeStyle = 'rgba(244,114,182,0.85)';
+          ctx.lineWidth = 4;
+          ctx.strokeRect(rect.x + 5, rect.y + 5, rect.w - 10, rect.h - 10);
+          ctx.lineWidth = 1;
+        } else if (!isWall && showMoveHints && reachable.has(key) && !monster && !samePos({ x, y }, state.game.player)) {
           ctx.fillStyle = 'rgba(34,211,238,0.18)';
           ctx.fillRect(rect.x + 3, rect.y + 3, rect.w - 6, rect.h - 6);
           ctx.strokeStyle = 'rgba(103,232,249,0.5)';
@@ -749,11 +741,6 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
           ctx.strokeRect(rect.x + 5, rect.y + 5, rect.w - 10, rect.h - 10);
         }
 
-        if (monster && attackable.has(monster.id)) {
-          ctx.strokeStyle = 'rgba(244,114,182,0.95)';
-          ctx.lineWidth = 4;
-          ctx.strokeRect(rect.x + 5, rect.y + 5, rect.w - 10, rect.h - 10);
-        }
       }
     }
 
@@ -783,17 +770,11 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       ctx.lineCap = 'butt';
     }
 
-    if (hoverMonster && attackable.has(hoverMonster.id)) {
-      const playerRect = layout.tileRect(currentLayout, state.game.player.x, state.game.player.y);
-      const monsterRect = layout.tileRect(currentLayout, hoverMonster.x, hoverMonster.y);
-      ctx.setLineDash([10, 8]);
-      ctx.strokeStyle = 'rgba(244,114,182,0.85)';
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(playerRect.x + playerRect.w / 2, playerRect.y + playerRect.h / 2);
-      ctx.lineTo(monsterRect.x + monsterRect.w / 2, monsterRect.y + monsterRect.h / 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
+    if (attackMode && hoverTile && playerAttackTiles.has(posKey(hoverTile))) {
+      const hoverRect = layout.tileRect(currentLayout, hoverTile.x, hoverTile.y);
+      ctx.strokeStyle = 'rgba(251,207,232,0.95)';
+      ctx.lineWidth = 5;
+      ctx.strokeRect(hoverRect.x + 4, hoverRect.y + 4, hoverRect.w - 8, hoverRect.h - 8);
     }
 
     // now is computed at the top
@@ -866,11 +847,6 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       rect.y += pixelOffsetY;
 
       draw.drawUnitCardToken(monster, rect, false, flashRed);
-      
-      const barW = rect.w * 0.72;
-      const barX = rect.x + (rect.w - barW) / 2;
-      const barY = rect.y - 6;
-      draw.drawHpBar(barX, barY, barW, 8, monster.hp, monster.maxHp, '#ef4444');
     }
 
     let drawPlayerX = state.game.player.x;
@@ -921,11 +897,6 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     playerRect.y += playerOffsetY;
 
     draw.drawUnitCardToken(state.game.player, playerRect, true, false);
-    
-    const playerBarW = playerRect.w * 0.72;
-    const playerBarX = playerRect.x + (playerRect.w - playerBarW) / 2;
-    const playerBarY = playerRect.y - 6;
-    draw.drawHpBar(playerBarX, playerBarY, playerBarW, 8, state.game.player.health, state.game.player.maxHealth, '#ef4444');
 
     state.game.animations.forEach((anim) => {
       if (anim.type === 'floatingText' && now >= anim.startTime) {
@@ -949,7 +920,6 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       }
     });
 
-    drawHoverStats(currentLayout);
     drawSelectedEntityModal(currentLayout);
     drawMenu(currentLayout);
     drawBottomUI(currentLayout);
@@ -960,6 +930,8 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     }, {
       fill: '#111827', hoverFill: '#1f2937', stroke: '#64748b', font: '16px Inter, sans-serif',
     });
+
+    drawCarriedAttack();
     
     drawEnergyFocusMask(currentLayout);
     drawBanner(currentLayout);
@@ -977,7 +949,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
           layout.hoveredButton() ||
           layout.hoveredDraggableDie() ||
           (hoverTile && reachable.has(posKey(hoverTile))) ||
-          (hoverMonster && attackable.has(hoverMonster.id))
+          (hoverTile && playerAttackTiles.has(posKey(hoverTile)))
         )
         ? 'pointer'
         : 'default';

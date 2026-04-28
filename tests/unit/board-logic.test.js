@@ -28,17 +28,16 @@ describe('board logic', () => {
     expect(inBounds({ x: 5, y: 5 })).toBe(true);
     expect(inBounds({ x: 6, y: 0 })).toBe(false);
     expect(inBounds({ x: -1, y: 0 })).toBe(false);
-    expect(stepCost({ x: 0, y: 0 }, { x: 1, y: 0 })).toBe(2);
-    expect(stepCost({ x: 0, y: 0 }, { x: 1, y: 1 })).toBe(3);
+    expect(stepCost({ x: 0, y: 0 }, { x: 1, y: 0 })).toBe(1);
+    expect(stepCost({ x: 0, y: 0 }, { x: 1, y: 1 })).toBe(2);
   });
 
   it('returns valid neighbors for corners and center cells', () => {
     expect(neighbors({ x: 0, y: 0 })).toEqual([
-      { x: 0, y: 1 },
       { x: 1, y: 0 },
-      { x: 1, y: 1 },
+      { x: 0, y: 1 },
     ]);
-    expect(neighbors({ x: 3, y: 3 })).toHaveLength(8);
+    expect(neighbors({ x: 3, y: 3 })).toHaveLength(4);
   });
 
   it('builds wall and monster occupancy sets', () => {
@@ -54,13 +53,15 @@ describe('board logic', () => {
     const blocked = new Set(['1,0', '1,1']);
     const { dist, prev } = dijkstra({ x: 0, y: 0 }, blocked);
 
-    expect(dist.get('0,1')).toBe(2);
+    expect(dist.get('0,1')).toBe(1);
     expect(dist.has('1,0')).toBe(false);
-    expect(dist.get('2,0')).toBe(10);
+    expect(dist.get('2,0')).toBe(6);
     expect(reconstructPath(prev, { x: 2, y: 0 })).toEqual([
       { x: 0, y: 0 },
       { x: 0, y: 1 },
+      { x: 0, y: 2 },
       { x: 1, y: 2 },
+      { x: 2, y: 2 },
       { x: 2, y: 1 },
       { x: 2, y: 0 },
     ]);
@@ -69,7 +70,7 @@ describe('board logic', () => {
   it('can optionally allow a blocked target when measuring distance', () => {
     const blocked = new Set(['1,0']);
     expect(distanceBetween({ x: 0, y: 0 }, { x: 1, y: 0 }, blocked)).toBe(Number.POSITIVE_INFINITY);
-    expect(distanceBetween({ x: 0, y: 0 }, { x: 1, y: 0 }, blocked, true)).toBe(2);
+    expect(distanceBetween({ x: 0, y: 0 }, { x: 1, y: 0 }, blocked, true)).toBe(1);
   });
 
   it('detects line-of-sight blocks from walls and units', () => {

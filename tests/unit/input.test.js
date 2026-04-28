@@ -26,6 +26,7 @@ function createInputHarness() {
       ],
       energyAssigned: { speed: null, attack: null, defense: null },
       draggingDie: null,
+      selectedAttackId: null,
       buttons: [],
       menuOpen: false,
       monsters: [],
@@ -39,6 +40,7 @@ function createInputHarness() {
     setEvent: vi.fn(),
     getAttackableMonsters: vi.fn(() => new Set()),
     attackMonster: vi.fn(),
+    attackTile: vi.fn(),
     movePlayer: vi.fn(),
   };
   const layout = {
@@ -110,5 +112,17 @@ describe('canvas input', () => {
 
     listeners.get('click')();
     expect(actions.movePlayer).toHaveBeenCalledWith({ x: 2, y: 0 });
+  });
+
+  it('targets board cells instead of moving while an attack is selected', () => {
+    const { actions, layout, listeners, state } = createInputHarness();
+    state.game.phase = PHASES.HERO;
+    state.game.selectedAttackId = 'strike';
+    layout.tileAt.mockReturnValue({ x: 2, y: 0 });
+
+    listeners.get('click')();
+
+    expect(actions.attackTile).toHaveBeenCalledWith({ x: 2, y: 0 });
+    expect(actions.movePlayer).not.toHaveBeenCalled();
   });
 });
