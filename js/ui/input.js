@@ -1,4 +1,4 @@
-import { STAT_META, PHASES } from '../config/game-data.js';
+import { GAME_MODES, STAT_META, PHASES } from '../config/game-data.js';
 
 export function registerCanvasInput({ canvas, state, actions, layout }) {
   canvas.addEventListener('mousemove', (event) => {
@@ -95,6 +95,19 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     if (!tile) {
       state.game.selectedEntity = null;
       state.game.selectedAttackId = null;
+      return;
+    }
+
+    if (state.game.mode === GAME_MODES.OVERWORLD) {
+      const enemy = actions.getOverworldEnemyAt(tile);
+      const isPlayer = state.game.player.x === tile.x && state.game.player.y === tile.y;
+
+      if (enemy) {
+        actions.startOverworldEncounter(enemy.id);
+      } else if (!isPlayer) {
+        state.game.selectedEntity = null;
+        actions.moveOverworldPlayer(tile);
+      }
       return;
     }
 

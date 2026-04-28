@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LEVELS, MONSTER_TEMPLATES, PHASES } from '../../js/config/game-data.js';
+import { GAME_MODES, LEVELS, MONSTER_TEMPLATES, OVERWORLD_MAPS, PHASES } from '../../js/config/game-data.js';
 import {
+  createDungeonLegacyGame,
   createGame,
   createMonster,
+  createOverworldEnemy,
   levelMonsters,
   makeEnergyRoll,
+  overworldEnemies,
   randDie,
 } from '../../js/game/game-factories.js';
 
@@ -44,15 +47,30 @@ describe('game factories', () => {
     expect(levelMonsters(LEVELS[0]).map((m) => m.id)).toEqual(['spider-0-4-0', 'spider-1-5-2']);
   });
 
-  it('creates the initial game state for level one', () => {
+  it('creates overworld enemies with group ids', () => {
+    const enemy = createOverworldEnemy('spider', 4, 5, 'nest-a', 0);
+
+    expect(enemy).toMatchObject({
+      id: 'overworld-nest-a-0',
+      type: 'spider',
+      x: 4,
+      y: 5,
+      groupId: 'nest-a',
+      hp: MONSTER_TEMPLATES.spider.hp,
+    });
+    expect(overworldEnemies(OVERWORLD_MAPS[0]).map((e) => e.groupId)).toContain('nest-a');
+  });
+
+  it('creates the initial game state in the open map', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
 
     const game = createGame();
 
+    expect(game.mode).toBe(GAME_MODES.OVERWORLD);
     expect(game.levelIndex).toBe(0);
     expect(game.player).toMatchObject({
-      x: LEVELS[0].start.x,
-      y: LEVELS[0].start.y,
+      x: OVERWORLD_MAPS[0].playerStart.x,
+      y: OVERWORLD_MAPS[0].playerStart.y,
       health: 60,
       maxHealth: 60,
       apMax: 6,
@@ -65,6 +83,21 @@ describe('game factories', () => {
       },
     });
     expect(game.phase).toBe(PHASES.HERO);
+    expect(game.overworld.mapId).toBe(OVERWORLD_MAPS[0].id);
+    expect(game.overworld.enemies.length).toBeGreaterThan(0);
+    expect(game.monsters).toEqual([]);
+    expect(game.turnQueue).toEqual(['player']);
+    expect(game.banner.title).toBe('Mapa aberto');
+  });
+
+  it('preserves the legacy dungeon factory', () => {
+    const game = createDungeonLegacyGame();
+
+    expect(game.mode).toBe(GAME_MODES.DUNGEON_LEGACY);
+    expect(game.player).toMatchObject({
+      x: LEVELS[0].start.x,
+      y: LEVELS[0].start.y,
+    });
     expect(game.roll).toEqual([]);
     expect(game.speedRemaining).toBe(4);
     expect(game.apRemaining).toBe(6);

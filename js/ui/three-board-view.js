@@ -1,7 +1,6 @@
 import * as THREE from 'three';
-import { BOARD_SIZE, CARD_SOURCES } from '../config/game-data.js';
+import { BOARD_SIZE, CARD_SOURCES, GAME_MODES } from '../config/game-data.js';
 
-const BOARD_HALF = BOARD_SIZE / 2;
 const CARD_WIDTH = 0.56;
 const CARD_HEIGHT = 0.82;
 const CARD_ROTATION_Y = Math.PI / 4;
@@ -10,6 +9,8 @@ const ISO_ELEVATION = Math.atan(1 / Math.sqrt(2));
 const ISO_CAMERA_DISTANCE = 12;
 const ORTHO_VIEW_HEIGHT = 8.8;
 const COMPACT_ORTHO_VIEW_HEIGHT = 9.6;
+const OVERWORLD_ORTHO_VIEW_HEIGHT = 10.8;
+const COMPACT_OVERWORLD_ORTHO_VIEW_HEIGHT = 9.6;
 const FLOOR_COLORS = ['#3b3126', '#2f271f'];
 const HIGHLIGHT_ORDER = [
   'hover',
@@ -34,25 +35,40 @@ function keyFor(x, y) {
   return `${x},${y}`;
 }
 
-function tileCenter(x, y) {
+function tileCenter(x, y, boardWidth = BOARD_SIZE, boardHeight = BOARD_SIZE) {
   return {
-    x: x - BOARD_HALF + 0.5,
-    z: y - BOARD_HALF + 0.5,
+    x: x - boardWidth / 2 + 0.5,
+    z: y - boardHeight / 2 + 0.5,
   };
 }
 
-function setIsometricCameraPosition(camera) {
+function setIsometricCameraPosition(camera, target = { x: 0, z: 0 }) {
   const horizontalDistance = ISO_CAMERA_DISTANCE * Math.cos(ISO_ELEVATION);
 
   camera.position.set(
-    horizontalDistance * Math.sin(ISO_AZIMUTH),
+    target.x + horizontalDistance * Math.sin(ISO_AZIMUTH),
     ISO_CAMERA_DISTANCE * Math.sin(ISO_ELEVATION),
-    horizontalDistance * Math.cos(ISO_AZIMUTH),
+    target.z + horizontalDistance * Math.cos(ISO_AZIMUTH),
   );
-  camera.lookAt(0, 0, 0);
+  camera.lookAt(target.x, 0, target.z);
 }
 
-function boardViewport(layout) {
+function boardViewport(layout, mode = GAME_MODES.DUNGEON_LEGACY) {
+  if (mode === GAME_MODES.OVERWORLD) {
+    const top = layout.compact ? Math.max(0, layout.leftY + layout.leftH + 8) : 0;
+    const x = layout.compact ? 0 : layout.sidebarW;
+    const y = top;
+    const right = layout.sw;
+    const bottom = layout.sh;
+
+    return {
+      x,
+      y,
+      w: Math.max(1, right - x),
+      h: Math.max(1, bottom - y),
+    };
+  }
+
   const marginX = Math.min(118, layout.tileSize * 0.82);
   const marginTop = Math.min(142, layout.tileSize * 1.05);
   const marginBottom = Math.min(88, layout.tileSize * 0.7);
@@ -143,6 +159,10 @@ function isFlashing(entityId, animations, now) {
 }
 
 export function createThreeBoardView({ state }) {
+  const currentBoard = {
+    width: BOARD_SIZE,
+    height: BOARD_SIZE,
+  };
   const scene = new THREE.Scene();
   scene.background = colorFromHex('#07090f');
 
@@ -169,12 +189,14 @@ export function createThreeBoardView({ state }) {
     roughness: 0.82,
     metalness: 0.08,
   });
-  const base = new THREE.Mesh(new THREE.BoxGeometry(6.55, 0.18, 6.55), baseMaterial);
+  const base = new THREE.Mesh(new THREE.BoxGeometry(1, 0.18, 1), baseMaterial);
   base.position.y = -0.13;
+  base.scale.set(BOARD_SIZE + 0.55, 1, BOARD_SIZE + 0.55);
   base.receiveShadow = true;
   boardGroup.add(base);
 
   const tileGeometry = new THREE.BoxGeometry(0.94, 0.08, 0.94);
+  const tileMeshes = new Map();
 
   for (let y = 0; y < BOARD_SIZE; y += 1) {
     for (let x = 0; x < BOARD_SIZE; x += 1) {
@@ -187,6 +209,7 @@ export function createThreeBoardView({ state }) {
       const center = tileCenter(x, y);
       tile.position.set(center.x, 0, center.z);
       tile.receiveShadow = true;
+      tileMeshes.set(keyFor(x, y), tile);
       boardGroup.add(tile);
     }
   }
@@ -254,17 +277,32 @@ export function createThreeBoardView({ state }) {
     }
   }
 
-  function syncCamera(layout) {
-    const viewport = boardViewport(layout);
+  function syncCamera(layout, now) {
+    const mode = state.game.mode || GAME_MODES.DUNGEON_LEGACY;
+    const viewport = boardViewport(layout, mode);
     const aspect = viewport.w / viewport.h;
-    const viewHeight = layout.compact ? COMPACT_ORTHO_VIEW_HEIGHT : ORTHO_VIEW_HEIGHT;
+    const isOverworld = mode === GAME_MODES.OVERWORLD;
+    const viewHeight = isOverworld
+      ? (layout.compact ? COMPACT_OVERWORLD_ORTHO_VIEW_HEIGHT : OVERWORLD_ORTHO_VIEW_HEIGHT)
+      : (layout.compact ? COMPACT_ORTHO_VIEW_HEIGHT : ORTHO_VIEW_HEIGHT);
     const viewWidth = viewHeight * aspect;
+
+    let target = { x: 0, z: 0 };
+    if (isOverworld) {
+      const { drawX, drawY } = movementPosition(
+        state.game.player,
+        'player',
+        state.game.animations || [],
+        now || performance.now()
+      );
+      target = tileCenter(drawX, drawY, currentBoard.width, currentBoard.height);
+    }
 
     camera.left = -viewWidth / 2;
     camera.right = viewWidth / 2;
     camera.top = viewHeight / 2;
     camera.bottom = -viewHeight / 2;
-    setIsometricCameraPosition(camera);
+    setIsometricCameraPosition(camera, target);
     camera.updateProjectionMatrix();
     return viewport;
   }
@@ -278,6 +316,70 @@ export function createThreeBoardView({ state }) {
     texture.anisotropy = 8;
     textureCache.set(src, texture);
     return texture;
+  }
+
+  function ensureTileMesh(x, y) {
+    const tileKey = keyFor(x, y);
+    if (tileMeshes.has(tileKey)) return tileMeshes.get(tileKey);
+
+    const material = new THREE.MeshStandardMaterial({
+      color: colorFromHex(FLOOR_COLORS[(x + y) % FLOOR_COLORS.length]),
+      roughness: 0.92,
+      metalness: 0.02,
+    });
+    const tile = new THREE.Mesh(tileGeometry, material);
+    tile.receiveShadow = true;
+    tileMeshes.set(tileKey, tile);
+    boardGroup.add(tile);
+    return tile;
+  }
+
+  function ensureHighlightMesh(x, y) {
+    const tileKey = keyFor(x, y);
+    if (highlights.has(tileKey)) return highlights.get(tileKey);
+
+    const material = new THREE.MeshBasicMaterial({
+      color: colorFromHex('#ffffff'),
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const highlight = new THREE.Mesh(highlightGeometry, material);
+    highlight.rotation.x = -Math.PI / 2;
+    highlight.visible = false;
+    highlights.set(tileKey, highlight);
+    boardGroup.add(highlight);
+    return highlight;
+  }
+
+  function syncBoardGeometry(width = BOARD_SIZE, height = BOARD_SIZE) {
+    currentBoard.width = width;
+    currentBoard.height = height;
+    base.scale.set(width + 0.55, 1, height + 0.55);
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const center = tileCenter(x, y, width, height);
+        const tile = ensureTileMesh(x, y);
+        tile.position.set(center.x, 0, center.z);
+        tile.visible = true;
+
+        const highlight = ensureHighlightMesh(x, y);
+        highlight.position.set(center.x, 0.055, center.z);
+        highlight.visible = false;
+      }
+    }
+
+    for (const [tileKey, tile] of tileMeshes.entries()) {
+      const [x, y] = tileKey.split(',').map(Number);
+      if (x >= width || y >= height) tile.visible = false;
+    }
+
+    for (const [tileKey, highlight] of highlights.entries()) {
+      const [x, y] = tileKey.split(',').map(Number);
+      if (x >= width || y >= height) highlight.visible = false;
+    }
   }
 
   function createUnitMesh(unit, isPlayer) {
@@ -332,13 +434,14 @@ export function createThreeBoardView({ state }) {
     const active = new Set(walls);
 
     for (const wallKey of active) {
-      if (wallMeshes.has(wallKey)) continue;
       const [x, y] = wallKey.split(',').map(Number);
-      const center = tileCenter(x, y);
-      const wall = new THREE.Mesh(wallGeometry, wallMaterial);
+      const center = tileCenter(x, y, currentBoard.width, currentBoard.height);
+      const wall = wallMeshes.get(wallKey) || new THREE.Mesh(wallGeometry, wallMaterial);
       wall.position.set(center.x, 0.31, center.z);
-      wallMeshes.set(wallKey, wall);
-      boardGroup.add(wall);
+      if (!wallMeshes.has(wallKey)) {
+        wallMeshes.set(wallKey, wall);
+        boardGroup.add(wall);
+      }
     }
 
     for (const [wallKey, wall] of wallMeshes.entries()) {
@@ -355,8 +458,12 @@ export function createThreeBoardView({ state }) {
     monsterReachable,
     monsterAttackTiles,
   }) {
-    for (let y = 0; y < BOARD_SIZE; y += 1) {
-      for (let x = 0; x < BOARD_SIZE; x += 1) {
+    for (const highlight of highlights.values()) {
+      highlight.visible = false;
+    }
+
+    for (let y = 0; y < currentBoard.height; y += 1) {
+      for (let x = 0; x < currentBoard.width; x += 1) {
         const tileKey = keyFor(x, y);
         const flags = {
           hover: hoverTile && hoverTile.x === x && hoverTile.y === y,
@@ -367,6 +474,7 @@ export function createThreeBoardView({ state }) {
         };
         const type = HIGHLIGHT_ORDER.find((name) => flags[name]);
         const mesh = highlights.get(tileKey);
+        if (!mesh) continue;
 
         if (!type) {
           mesh.visible = false;
@@ -389,11 +497,12 @@ export function createThreeBoardView({ state }) {
 
   function updatePathArrows(path) {
     clearPathArrows();
+    if (state.game.mode === GAME_MODES.OVERWORLD) return;
     if (!Array.isArray(path) || path.length < 2) return;
 
     for (let index = 0; index < path.length - 1; index += 1) {
-      const from = tileCenter(path[index].x, path[index].y);
-      const to = tileCenter(path[index + 1].x, path[index + 1].y);
+      const from = tileCenter(path[index].x, path[index].y, currentBoard.width, currentBoard.height);
+      const to = tileCenter(path[index + 1].x, path[index + 1].y, currentBoard.width, currentBoard.height);
       const direction = new THREE.Vector3(to.x - from.x, 0, to.z - from.z);
       const tileDistance = direction.length();
       if (tileDistance <= 0.01) continue;
@@ -437,7 +546,7 @@ export function createThreeBoardView({ state }) {
     const animations = state.game.animations || [];
     const { drawX, drawY } = movementPosition(unit, entityId, animations, now);
     const bump = bumpOffset(unit, entityId, animations, now);
-    const center = tileCenter(drawX, drawY);
+    const center = tileCenter(drawX, drawY, currentBoard.width, currentBoard.height);
     group.position.set(center.x + bump.x, 0.02, center.z + bump.z);
 
     group.userData.frameMaterial.color.set(
@@ -449,7 +558,11 @@ export function createThreeBoardView({ state }) {
     const desiredIds = new Set(['player']);
     updateUnit(state.game.player, 'player', true, now);
 
-    for (const monster of state.game.monsters) {
+    const units = state.game.mode === GAME_MODES.OVERWORLD
+      ? (state.game.overworld?.enemies || [])
+      : state.game.monsters;
+
+    for (const monster of units) {
       if (monster.hp <= 0) continue;
       desiredIds.add(monster.id);
       updateUnit(monster, monster.id, false, now);
@@ -463,7 +576,7 @@ export function createThreeBoardView({ state }) {
   }
 
   function tileAt(layout, px, py) {
-    const viewport = syncCamera(layout);
+    const viewport = syncCamera(layout, performance.now());
 
     if (
       px < viewport.x ||
@@ -480,10 +593,10 @@ export function createThreeBoardView({ state }) {
 
     if (!raycaster.ray.intersectPlane(boardPlane, rayHit)) return null;
 
-    const x = Math.floor(rayHit.x + BOARD_HALF);
-    const y = Math.floor(rayHit.z + BOARD_HALF);
+    const x = Math.floor(rayHit.x + currentBoard.width / 2);
+    const y = Math.floor(rayHit.z + currentBoard.height / 2);
 
-    if (x < 0 || y < 0 || x >= BOARD_SIZE || y >= BOARD_SIZE) return null;
+    if (x < 0 || y < 0 || x >= currentBoard.width || y >= currentBoard.height) return null;
     return { x, y };
   }
 
@@ -492,10 +605,15 @@ export function createThreeBoardView({ state }) {
   };
 
   return {
-    getViewport: boardViewport,
+    setVisible(visible) {
+      renderer.domElement.style.display = visible ? 'block' : 'none';
+    },
+    getViewport(layout) {
+      return boardViewport(layout, state.game.mode || GAME_MODES.DUNGEON_LEGACY);
+    },
     screenPositionForTile(layout, x, y, height = 0.95) {
-      const viewport = syncCamera(layout);
-      const center = tileCenter(x, y);
+      const viewport = syncCamera(layout, performance.now());
+      const center = tileCenter(x, y, currentBoard.width, currentBoard.height);
       const projected = new THREE.Vector3(center.x, height, center.z).project(camera);
 
       return {
@@ -505,6 +623,8 @@ export function createThreeBoardView({ state }) {
     },
     render({
       currentLayout,
+      boardWidth = BOARD_SIZE,
+      boardHeight = BOARD_SIZE,
       walls,
       hoverTile,
       hoverPath,
@@ -514,8 +634,9 @@ export function createThreeBoardView({ state }) {
       monsterAttackTiles,
       now,
     }) {
+      syncBoardGeometry(boardWidth, boardHeight);
       syncRendererSize(currentLayout);
-      const viewport = syncCamera(currentLayout);
+      const viewport = syncCamera(currentLayout, now);
       updateWalls(walls);
       updateHighlights({
         hoverTile,

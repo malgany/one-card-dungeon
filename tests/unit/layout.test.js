@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PHASES } from '../../js/config/game-data.js';
+import { GAME_MODES, PHASES } from '../../js/config/game-data.js';
 import { pointInRect, createLayoutTools } from '../../js/ui/layout.js';
 
 function createLayoutHarness() {
@@ -70,5 +70,21 @@ describe('layout tools', () => {
     state.mouse = { x: 55, y: 55 };
     expect(layout.hoveredDraggableDie()).toEqual(state.game.diceRects[0]);
     expect(layout.hoveredTile()).toBe(null);
+  });
+
+  it('uses the rendered 3D hit test for overworld tiles and enemies', () => {
+    const { state, layout } = createLayoutHarness();
+    state.game.mode = GAME_MODES.OVERWORLD;
+    state.game.overworld = {
+      width: 18,
+      height: 14,
+      enemies: [{ id: 'e1', x: 7, y: 9, hp: 10 }],
+    };
+    state.boardInteraction = {
+      tileAt: vi.fn(() => ({ x: 7, y: 9 })),
+    };
+
+    expect(layout.tileAt(layout.getLayout(), 100, 100)).toEqual({ x: 7, y: 9 });
+    expect(layout.hoveredOverworldEnemy()).toMatchObject({ id: 'e1' });
   });
 });

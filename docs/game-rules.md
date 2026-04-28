@@ -1,8 +1,16 @@
 # Regras Atuais
 
+## Modos de Jogo
+
+O jogo novo comeca no mapa aberto 3D/isometrico. No mapa, movimento por clique usa pathfinding, nao gasta AP e nao passa turno.
+
+Clicar em um inimigo inicia uma luta 6x6 contra todos os inimigos vivos do mesmo grupo. Ao derrotar o grupo, esses inimigos sao removidos do mapa e o aventureiro volta para a posicao de onde entrou na luta.
+
+A dungeon antiga de andares continua preservada como modo legado. Nela, vencer todos os monstros ainda abre recompensa e avanca para o proximo nivel.
+
 ## Vez e AP
 
-O jogo nao usa mais rolagem e distribuicao de dados no comeco da vez.
+O combate nao usa mais rolagem e distribuicao de dados no comeco da vez.
 O aventureiro comeca a vez direto na fase de heroi com 6 AP.
 
 AP e o recurso usado para executar acoes. Cada acao define o proprio custo.

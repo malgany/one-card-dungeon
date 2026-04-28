@@ -35,3 +35,35 @@ test('loads and renders the canvas game without console errors', async ({ page }
 
   expect(consoleErrors).toEqual([]);
 });
+
+test('moves from overworld into combat and returns after victory', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => window.__ONE_RPG_DEBUG__?.state?.game?.mode === 'overworld');
+
+  await page.evaluate(() => {
+    window.__ONE_RPG_DEBUG__.actions.moveOverworldPlayer({ x: 2, y: 9 });
+  });
+  await page.waitForFunction(() => window.__ONE_RPG_DEBUG__.state.game.player.y === 9);
+
+  await page.evaluate(() => {
+    const { state, actions } = window.__ONE_RPG_DEBUG__;
+    const target = state.game.overworld.enemies.find((enemy) => enemy.groupId === 'stone-c');
+    actions.startOverworldEncounter(target.id);
+  });
+  await page.waitForFunction(() => window.__ONE_RPG_DEBUG__.state.game.mode === 'combat');
+
+  await page.evaluate(() => {
+    const { state, actions } = window.__ONE_RPG_DEBUG__;
+    const target = state.game.monsters[0];
+    state.game.player.attackSlot.damage = 99;
+    state.game.player.rangeBase = 10;
+    state.game.apRemaining = 5;
+    state.game.selectedAttackId = state.game.player.attackSlot.id;
+    actions.attackMonster(target.id);
+  });
+
+  await page.waitForFunction(() => {
+    const game = window.__ONE_RPG_DEBUG__.state.game;
+    return game.mode === 'overworld' && !game.overworld.enemies.some((enemy) => enemy.groupId === 'stone-c');
+  });
+});

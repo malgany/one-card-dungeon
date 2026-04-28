@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { LEVELS, PHASES, SAVE_KEY, TIMING } from '../../js/config/game-data.js';
+import { GAME_MODES, LEVELS, PHASES, SAVE_KEY, TIMING } from '../../js/config/game-data.js';
 import { createGameActions } from '../../js/game/game-actions.js';
-import { createGame, createMonster } from '../../js/game/game-factories.js';
+import { createDungeonLegacyGame, createGame, createMonster } from '../../js/game/game-factories.js';
 
-function createActionHarness(game = createGame()) {
+function createActionHarness(game = createDungeonLegacyGame()) {
   const state = { game };
   return { state, actions: createGameActions(state) };
 }
@@ -67,7 +67,7 @@ describe('game actions', () => {
   it('attacks a reachable monster and removes it when defeated', () => {
     const monster = createMonster('spider', 1, 5, 0);
     monster.hp = 4;
-    const game = createGame();
+    const game = createDungeonLegacyGame();
     game.phase = PHASES.HERO;
     game.player = { ...game.player, x: 0, y: 5, health: 59, rangeBase: 2 };
     game.monsters = [monster];
@@ -92,7 +92,7 @@ describe('game actions', () => {
 
   it('requires selecting the equipped attack before targeting monsters', () => {
     const monster = createMonster('spider', 1, 5, 0);
-    const game = createGame();
+    const game = createDungeonLegacyGame();
     game.phase = PHASES.HERO;
     game.player = { ...game.player, x: 0, y: 5, rangeBase: 2 };
     game.monsters = [monster];
@@ -110,7 +110,7 @@ describe('game actions', () => {
   });
 
   it('attacks empty cells in range and keeps movement locked while aiming', () => {
-    const game = createGame();
+    const game = createDungeonLegacyGame();
     game.phase = PHASES.HERO;
     game.monsters = [];
     game.player = { ...game.player, x: 0, y: 5, rangeBase: 2 };
@@ -139,7 +139,7 @@ describe('game actions', () => {
     const monster = createMonster('boss', 1, 5, 0);
     monster.hp = 1;
     monster.defense = 1;
-    const game = createGame();
+    const game = createDungeonLegacyGame();
     game.levelIndex = LEVELS.length - 1;
     game.phase = PHASES.HERO;
     game.player = { ...game.player, x: 0, y: 5, rangeBase: 2 };
@@ -160,7 +160,7 @@ describe('game actions', () => {
     const monster = createMonster('spider', 3, 5, 0);
     monster.speed = 2;
     const blocker = createMonster('skeleton', 2, 5, 1);
-    const game = createGame();
+    const game = createDungeonLegacyGame();
     game.busy = false;
     game.levelIndex = 0;
     game.player = { ...game.player, x: 0, y: 5 };
@@ -175,6 +175,66 @@ describe('game actions', () => {
     expect(attackTiles.has('0,5')).toBe(false);
     expect(attackTiles.has('1,5')).toBe(false);
     expect(attackTiles.has('3,4')).toBe(true);
+  });
+
+  it('moves on the overworld without spending combat resources', () => {
+    const game = createGame();
+    const { state, actions } = createActionHarness(game);
+    const startingAp = state.game.apRemaining;
+    const startingSpeed = state.game.speedRemaining;
+
+    actions.moveOverworldPlayer({ x: 2, y: 9 });
+
+    expect(state.game.mode).toBe(GAME_MODES.OVERWORLD);
+    expect(state.game.player).toMatchObject({ x: 2, y: 9 });
+    expect(state.game.apRemaining).toBe(startingAp);
+    expect(state.game.speedRemaining).toBe(startingSpeed);
+    expect(state.game.busy).toBe(true);
+
+    vi.advanceTimersByTime(TIMING.PLAYER_MOVE_SPEED);
+    expect(state.game.busy).toBe(false);
+  });
+
+  it('starts an overworld encounter with the whole enemy group', () => {
+    const game = createGame();
+    const { state, actions } = createActionHarness(game);
+    const target = state.game.overworld.enemies.find((enemy) => enemy.groupId === 'nest-a');
+
+    actions.startOverworldEncounter(target.id);
+
+    expect(state.game.mode).toBe(GAME_MODES.COMBAT);
+    expect(state.game.combatContext).toMatchObject({
+      origin: GAME_MODES.OVERWORLD,
+      groupId: 'nest-a',
+      returnPosition: { x: 2, y: 10 },
+    });
+    expect(state.game.monsters.map((monster) => monster.groupId)).toEqual(['nest-a', 'nest-a']);
+    expect(state.game.turnQueue).toEqual(['player', ...state.game.monsters.map((monster) => monster.id)]);
+  });
+
+  it('returns to the overworld and removes the defeated group after map combat', () => {
+    const game = createGame();
+    const { state, actions } = createActionHarness(game);
+    const target = state.game.overworld.enemies.find((enemy) => enemy.groupId === 'stone-c');
+
+    actions.startOverworldEncounter(target.id);
+    state.game.player.attackSlot = {
+      ...state.game.player.attackSlot,
+      damage: 99,
+    };
+    state.game.player.rangeBase = 10;
+    state.game.apRemaining = 5;
+    state.game.selectedAttackId = state.game.player.attackSlot.id;
+
+    actions.attackMonster(target.id);
+    vi.advanceTimersByTime(TIMING.HERO_ATTACK_WAIT_TIME);
+
+    expect(state.game.mode).toBe(GAME_MODES.OVERWORLD);
+    expect(state.game.player).toMatchObject({ x: 2, y: 10 });
+    expect(state.game.monsters).toEqual([]);
+    expect(state.game.combatContext).toBe(null);
+    expect(state.game.overworld.enemies.some((enemy) => enemy.groupId === 'stone-c')).toBe(false);
+    expect(state.game.phase).toBe(PHASES.HERO);
   });
 
   it('applies level rewards and starts the next level', () => {
@@ -218,6 +278,7 @@ describe('game actions', () => {
 
     actions.loadGame();
 
+    expect(state.game.mode).toBe(GAME_MODES.DUNGEON_LEGACY);
     expect(state.game.levelIndex).toBe(LEVELS.length - 1);
     expect(state.game.player.health).toBe(3);
     expect(Array.isArray(state.game.monsters)).toBe(true);

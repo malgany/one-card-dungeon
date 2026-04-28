@@ -1,5 +1,6 @@
-import { ACTION_RULES, BOARD_SIZE, LEVELS, PHASES, SAVE_KEY, TIMING } from '../config/game-data.js';
+import { ACTION_RULES, BOARD_SIZE, GAME_MODES, LEVELS, PHASES, SAVE_KEY, TIMING } from '../config/game-data.js';
 import {
+  coordinatePairsToSet,
   dijkstra,
   distanceBetween,
   hasLineOfSight,
@@ -10,7 +11,12 @@ import {
   reconstructPath,
   samePos,
 } from './board-logic.js';
-import { createGame, levelMonsters } from './game-factories.js';
+import {
+  createCombatMonsterFromEnemy,
+  createDungeonLegacyGame,
+  createGame,
+  levelMonsters,
+} from './game-factories.js';
 
 export function createGameActions(state) {
 
@@ -21,6 +27,14 @@ export function createGameActions(state) {
   function setGame(nextGame) {
     state.game = nextGame;
     return state.game;
+  }
+
+  function isCombatMode(game = getGame()) {
+    return game.mode === GAME_MODES.COMBAT || game.mode === GAME_MODES.DUNGEON_LEGACY || !game.mode;
+  }
+
+  function isOverworldMode(game = getGame()) {
+    return game.mode === GAME_MODES.OVERWORLD;
   }
 
   function setEvent(text) {
@@ -96,8 +110,78 @@ export function createGameActions(state) {
     return null;
   }
 
+  function getOverworldBounds(overworld = getGame().overworld) {
+    return {
+      width: overworld?.width || BOARD_SIZE,
+      height: overworld?.height || BOARD_SIZE,
+    };
+  }
+
+  function getOverworldWalls(overworld = getGame().overworld) {
+    return coordinatePairsToSet(overworld?.walls || []);
+  }
+
+  function getAliveOverworldEnemies(game = getGame()) {
+    return (game.overworld?.enemies || []).filter((enemy) => enemy.hp !== 0);
+  }
+
+  function getOverworldEnemyAt(cell) {
+    const game = getGame();
+    if (!isOverworldMode(game)) return null;
+
+    return getAliveOverworldEnemies(game).find((enemy) => samePos(enemy, cell)) || null;
+  }
+
+  function getOverworldEnemyOccupiedKeys(exceptId = null) {
+    const occupied = new Set();
+
+    for (const enemy of getAliveOverworldEnemies()) {
+      if (exceptId && enemy.id === exceptId) continue;
+      occupied.add(posKey(enemy));
+    }
+
+    return occupied;
+  }
+
+  function getOverworldMovementData() {
+    const game = getGame();
+    if (!isOverworldMode(game) || !game.overworld) {
+      return { dist: new Map(), prev: new Map() };
+    }
+
+    const blocked = new Set([
+      ...getOverworldWalls(game.overworld),
+      ...getOverworldEnemyOccupiedKeys(),
+    ]);
+    blocked.delete(posKey(game.player));
+
+    return dijkstra(game.player, blocked, getOverworldBounds(game.overworld));
+  }
+
+  function getOverworldReachableTiles() {
+    const game = getGame();
+    if (!isOverworldMode(game) || game.busy) return new Map();
+
+    const { dist, prev } = getOverworldMovementData();
+    const reachable = new Map();
+
+    for (const [key, cost] of dist.entries()) {
+      if (cost === 0) continue;
+      reachable.set(key, {
+        cost,
+        path: reconstructPath(prev, parseKey(key)),
+      });
+    }
+
+    return reachable;
+  }
+
   function getMovementData() {
     const game = getGame();
+    if (!isCombatMode(game)) {
+      return { dist: new Map(), prev: new Map() };
+    }
+
     const blocked = new Set([
       ...levelWallsSet(game.levelIndex),
       ...monsterOccupiedKeys(game.monsters),
@@ -109,7 +193,7 @@ export function createGameActions(state) {
 
   function getReachableTiles() {
     const game = getGame();
-    if (game.phase !== PHASES.HERO || game.busy) return new Map();
+    if (!isCombatMode(game) || game.phase !== PHASES.HERO || game.busy) return new Map();
     if (game.selectedAttackId) return new Map();
 
     const { dist, prev } = getMovementData();
@@ -128,7 +212,7 @@ export function createGameActions(state) {
 
   function getMonsterReachableTiles(monsterId) {
     const game = getGame();
-    if (game.busy) return new Map();
+    if (!isCombatMode(game) || game.busy) return new Map();
 
     const monster = game.monsters.find((m) => m.id === monsterId);
     if (!monster || monster.hp <= 0) return new Map();
@@ -157,7 +241,7 @@ export function createGameActions(state) {
 
   function getMonsterAttackTiles(monsterId) {
     const game = getGame();
-    if (game.busy) return new Set();
+    if (!isCombatMode(game) || game.busy) return new Set();
 
     const monster = game.monsters.find((m) => m.id === monsterId);
     if (!monster || monster.hp <= 0) return new Set();
@@ -189,7 +273,7 @@ export function createGameActions(state) {
   function getPlayerAttackTiles() {
     const game = getGame();
     const attackTiles = new Set();
-    if (game.phase !== PHASES.HERO || game.busy) return attackTiles;
+    if (!isCombatMode(game) || game.phase !== PHASES.HERO || game.busy) return attackTiles;
 
     const attack = getEquippedAttack(game);
     if (game.selectedAttackId !== attack.id || game.apRemaining < attack.apCost) return attackTiles;
@@ -219,7 +303,7 @@ export function createGameActions(state) {
 
   function getAttackableMonsters() {
     const game = getGame();
-    if (game.phase !== PHASES.HERO || game.busy) return new Set();
+    if (!isCombatMode(game) || game.phase !== PHASES.HERO || game.busy) return new Set();
 
     const attackable = new Set();
     const attackTiles = getPlayerAttackTiles();
@@ -302,6 +386,116 @@ export function createGameActions(state) {
     return candidates[0] || { cell: { x: monster.x, y: monster.y }, path: [{ x: monster.x, y: monster.y }] };
   }
 
+  function moveOverworldPlayer(target) {
+    const game = getGame();
+    if (!isOverworldMode(game) || game.busy) return false;
+    if (getOverworldEnemyAt(target)) {
+      setEvent('Clique no inimigo para iniciar a luta.');
+      return false;
+    }
+
+    const reachable = getOverworldReachableTiles();
+    const data = reachable.get(posKey(target));
+    if (!data) {
+      setEvent('Caminho bloqueado.');
+      return false;
+    }
+
+    game.player.x = target.x;
+    game.player.y = target.y;
+    game.busy = true;
+    game.animations.push({
+      type: 'movement',
+      entityId: 'player',
+      path: data.path,
+      startTime: performance.now(),
+      durationPerTile: TIMING.OVERWORLD_PLAYER_MOVE_SPEED,
+    });
+
+    const totalDur = Math.max(0, (data.path.length - 1) * TIMING.OVERWORLD_PLAYER_MOVE_SPEED);
+    window.setTimeout(() => { game.busy = false; }, totalDur);
+    setEvent(`Movendo pelo mapa: ${data.cost} passos.`);
+    return true;
+  }
+
+  function startOverworldEncounter(enemyId) {
+    const game = getGame();
+    if (!isOverworldMode(game) || game.busy) return false;
+
+    const target = getAliveOverworldEnemies(game).find((enemy) => enemy.id === enemyId);
+    if (!target) return false;
+
+    const group = getAliveOverworldEnemies(game).filter((enemy) => enemy.groupId === target.groupId);
+    const arenaPositions = [
+      { x: 5, y: 0 },
+      { x: 5, y: 2 },
+      { x: 5, y: 4 },
+      { x: 4, y: 0 },
+      { x: 4, y: 4 },
+      { x: 3, y: 5 },
+    ];
+    const level = LEVELS[0];
+    const returnPosition = { x: game.player.x, y: game.player.y };
+
+    game.mode = GAME_MODES.COMBAT;
+    game.levelIndex = 0;
+    game.combatContext = {
+      origin: GAME_MODES.OVERWORLD,
+      mapId: game.overworld.mapId,
+      groupId: target.groupId,
+      enemyIds: group.map((enemy) => enemy.id),
+      returnPosition,
+    };
+    game.player.x = level.start.x;
+    game.player.y = level.start.y;
+    game.monsters = group.map((enemy, index) => {
+      const position = arenaPositions[index] || arenaPositions[arenaPositions.length - 1];
+      return createCombatMonsterFromEnemy(enemy, position.x, position.y, index);
+    });
+    game.turnQueue = ['player', ...game.monsters.map((monster) => monster.id)];
+    game.turnCount = 1;
+    game.animations = [];
+    game.selectedEntity = null;
+    game.selectedAttackId = null;
+    game.busy = false;
+
+    startHeroTurn(`Encontro iniciado: grupo ${target.groupId}.`);
+    return true;
+  }
+
+  function completeOverworldCombat() {
+    const game = getGame();
+    const context = game.combatContext;
+    if (!context || context.origin !== GAME_MODES.OVERWORLD) return false;
+
+    const defeatedIds = new Set(context.enemyIds || []);
+    if (game.overworld) {
+      game.overworld.enemies = game.overworld.enemies.filter((enemy) => !defeatedIds.has(enemy.id));
+    }
+
+    game.mode = GAME_MODES.OVERWORLD;
+    game.phase = PHASES.HERO;
+    game.player.x = context.returnPosition?.x ?? game.overworld?.playerStart?.x ?? 0;
+    game.player.y = context.returnPosition?.y ?? game.overworld?.playerStart?.y ?? 0;
+    game.monsters = [];
+    game.combatContext = null;
+    game.turnQueue = ['player'];
+    game.turnCount = 0;
+    game.speedRemaining = game.player.speedBase;
+    game.apRemaining = game.player.apMax;
+    game.selectedEntity = null;
+    game.selectedAttackId = null;
+    game.animations = [];
+    game.busy = false;
+
+    setEvent('Grupo derrotado. Voce voltou ao mapa.');
+    showBanner('Vitoria', 'Grupo removido do mapa aberto.', 1200, null, {
+      cardKey: 'player',
+      accent: '#34d399',
+    });
+    return true;
+  }
+
   function confirmEnergy() {
     const game = getGame();
     if (game.busy || game.phase !== PHASES.ENERGY) return;
@@ -310,6 +504,7 @@ export function createGameActions(state) {
 
   function movePlayer(target) {
     const game = getGame();
+    if (!isCombatMode(game)) return;
     if (game.busy) return;
     if (game.selectedAttackId) {
       setEvent('Desmarque o ataque para mover.');
@@ -352,6 +547,7 @@ export function createGameActions(state) {
 
   function attackTile(targetCell) {
     const game = getGame();
+    if (!isCombatMode(game)) return false;
     if (game.busy) return false;
 
     const attack = getEquippedAttack(game);
@@ -437,6 +633,11 @@ export function createGameActions(state) {
         game.monsters = game.monsters.filter((monster) => monster.hp > 0);
         
         if (game.monsters.length === 0) {
+          if (game.mode === GAME_MODES.COMBAT && game.combatContext?.origin === GAME_MODES.OVERWORLD) {
+            completeOverworldCombat();
+            return;
+          }
+
           if (game.levelIndex === LEVELS.length - 1) {
             game.phase = PHASES.WON;
             showBanner('Vitória!', 'Você encontrou o Cetro de M’Guf-yn.', 2000);
@@ -454,6 +655,7 @@ export function createGameActions(state) {
 
   function attackMonster(monsterId) {
     const game = getGame();
+    if (!isCombatMode(game)) return false;
     const target = game.monsters.find((monster) => monster.id === monsterId);
     if (!target) return false;
     return attackTile(target);
@@ -461,6 +663,7 @@ export function createGameActions(state) {
 
   function advanceTurn() {
     const game = getGame();
+    if (!isCombatMode(game)) return;
     if (game.phase === PHASES.WON || game.phase === PHASES.LOST || game.phase === PHASES.LEVELUP) return;
 
     const current = game.turnQueue.shift();
@@ -590,6 +793,7 @@ export function createGameActions(state) {
 
   function endHeroPhase() {
     const game = getGame();
+    if (!isCombatMode(game)) return;
     if (game.busy || game.phase !== PHASES.HERO) return;
 
     game.busy = true;
@@ -604,6 +808,7 @@ export function createGameActions(state) {
 
   function toggleAttackSelection() {
     const game = getGame();
+    if (!isCombatMode(game)) return;
     if (game.busy || game.phase !== PHASES.HERO) return;
 
     const attack = getEquippedAttack(game);
@@ -668,22 +873,46 @@ export function createGameActions(state) {
   }
 
   function normalizeLoadedGame(loaded) {
-    const fallback = createGame();
-    if (!loaded || typeof loaded !== 'object') return fallback;
+    if (!loaded || typeof loaded !== 'object') return createGame();
+
+    const knownModes = Object.values(GAME_MODES);
+    const mode = knownModes.includes(loaded.mode) ? loaded.mode : GAME_MODES.DUNGEON_LEGACY;
+    const fallback = mode === GAME_MODES.DUNGEON_LEGACY ? createDungeonLegacyGame() : createGame();
 
     const levelIndex = Number.isInteger(loaded.levelIndex)
       ? Math.max(0, Math.min(loaded.levelIndex, LEVELS.length - 1))
       : fallback.levelIndex;
+    const fallbackMonsters = mode === GAME_MODES.OVERWORLD
+      ? []
+      : levelMonsters(LEVELS[levelIndex]);
+    const loadedOverworld = loaded.overworld && typeof loaded.overworld === 'object'
+      ? loaded.overworld
+      : null;
+    const overworld = loadedOverworld
+      ? {
+          ...(fallback.overworld || {}),
+          ...loadedOverworld,
+          playerStart: {
+            ...(fallback.overworld?.playerStart || { x: 0, y: 0 }),
+            ...(loadedOverworld.playerStart || {}),
+          },
+          walls: Array.isArray(loadedOverworld.walls) ? loadedOverworld.walls : (fallback.overworld?.walls || []),
+          enemies: Array.isArray(loadedOverworld.enemies) ? loadedOverworld.enemies : (fallback.overworld?.enemies || []),
+        }
+      : fallback.overworld;
 
     const normalized = {
       ...fallback,
       ...loaded,
+      mode,
       levelIndex,
       player: {
         ...fallback.player,
         ...(loaded.player || {}),
       },
-      monsters: Array.isArray(loaded.monsters) ? loaded.monsters : levelMonsters(LEVELS[levelIndex]),
+      monsters: Array.isArray(loaded.monsters) ? loaded.monsters : fallbackMonsters,
+      overworld,
+      combatContext: loaded.combatContext && typeof loaded.combatContext === 'object' ? loaded.combatContext : null,
       energyAssigned: {
         speed: null,
         attack: null,
@@ -707,9 +936,14 @@ export function createGameActions(state) {
     normalized.busy = false;
     normalized.animations = [];
     normalized.banner = null;
-    
-    if (!normalized.turnQueue || normalized.turnQueue.length === 0) {
-       normalized.turnQueue = ['player', ...normalized.monsters.map(m => m.id)];
+
+    if (normalized.mode === GAME_MODES.OVERWORLD) {
+      normalized.turnQueue = ['player'];
+      normalized.monsters = [];
+      normalized.combatContext = null;
+      normalized.phase = PHASES.HERO;
+    } else if (!normalized.turnQueue || normalized.turnQueue.length === 0) {
+      normalized.turnQueue = ['player', ...normalized.monsters.map(m => m.id)];
     }
 
     normalized.roll = Array.isArray(normalized.roll) ? normalized.roll : [];
@@ -726,7 +960,9 @@ export function createGameActions(state) {
       normalized.speedRemaining = normalized.player.speedBase;
       normalized.apRemaining = normalized.player.apMax;
     }
-    if (!Number.isFinite(normalized.turnCount)) normalized.turnCount = 1;
+    if (!Number.isFinite(normalized.turnCount)) {
+      normalized.turnCount = normalized.mode === GAME_MODES.OVERWORLD ? 0 : 1;
+    }
 
     return normalized;
   }
@@ -740,7 +976,7 @@ export function createGameActions(state) {
       }
 
       setGame(normalizeLoadedGame(JSON.parse(raw)));
-      showBanner('Jogo carregado', 'Continue sua descida.', 900);
+      showBanner('Jogo carregado', 'Continue sua aventura.', 900);
     } catch {
       showBanner('Erro', 'Não foi possível carregar.', 900);
     }
@@ -748,7 +984,18 @@ export function createGameActions(state) {
 
   function newGame() {
     setGame(createGame());
-    showBanner('Novo jogo', `${getGame().player.apMax} AP para agir`, 1000);
+    showBanner('Mapa aberto', 'Clique para andar e encontrar inimigos.', 1000, null, {
+      cardKey: 'player',
+      accent: '#34d399',
+    });
+  }
+
+  function newDungeonLegacyGame() {
+    setGame(createDungeonLegacyGame());
+    showBanner('Dungeon legada', `${getGame().player.apMax} AP para agir`, 1000, null, {
+      cardKey: 'player',
+      accent: '#facc15',
+    });
   }
 
   function getTotals() {
@@ -779,18 +1026,23 @@ export function createGameActions(state) {
     getGame,
     getMonsterAttackTiles,
     getMonsterReachableTiles,
+    getOverworldEnemyAt,
+    getOverworldReachableTiles,
     getPlayerAttackTiles,
     getReachableTiles,
     getTotals,
     getEquippedAttack,
     loadGame,
+    moveOverworldPlayer,
     movePlayer,
     newGame,
+    newDungeonLegacyGame,
     saveGame,
     setEvent,
     showBanner,
     startHeroTurn,
     startEnergyTurn,
+    startOverworldEncounter,
     toggleAttackSelection,
   };
 }

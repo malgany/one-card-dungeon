@@ -1,4 +1,4 @@
-import { BOARD_SIZE, PHASES } from '../config/game-data.js';
+import { BOARD_SIZE, GAME_MODES, PHASES } from '../config/game-data.js';
 import { inBounds, samePos } from '../game/board-logic.js';
 
 export function pointInRect(px, py, rect) {
@@ -6,6 +6,10 @@ export function pointInRect(px, py, rect) {
 }
 
 export function createLayoutTools({ canvas, ctx, state }) {
+  function isOverworldMode() {
+    return state.game.mode === GAME_MODES.OVERWORLD;
+  }
+
   function resize() {
     canvas.width = window.innerWidth * devicePixelRatio;
     canvas.height = window.innerHeight * devicePixelRatio;
@@ -93,9 +97,79 @@ export function createLayoutTools({ canvas, ctx, state }) {
     };
   }
 
+  function overworldViewport(layout) {
+    const top = layout.compact ? layout.leftY + layout.leftH + 8 : 0;
+    const bottomPadding = layout.compact ? 10 : 0;
+    const x = layout.compact ? 0 : layout.sidebarW;
+    const y = Math.max(0, top);
+    const w = layout.compact ? layout.sw : layout.sw - layout.sidebarW;
+    const h = Math.max(1, layout.sh - y - bottomPadding);
+
+    return { x, y, w, h };
+  }
+
+  function overworldTileSize(layout) {
+    return layout.compact ? 44 : 56;
+  }
+
+  function overworldCamera(layout) {
+    const overworld = state.game.overworld;
+    const viewport = overworldViewport(layout);
+    const tileSize = overworldTileSize(layout);
+    if (!overworld) return { x: 0, y: 0 };
+
+    const mapW = overworld.width * tileSize;
+    const mapH = overworld.height * tileSize;
+    const desiredX = state.game.player.x * tileSize + tileSize / 2 - viewport.w / 2;
+    const desiredY = state.game.player.y * tileSize + tileSize / 2 - viewport.h / 2;
+
+    return {
+      x: Math.max(0, Math.min(Math.max(0, mapW - viewport.w), desiredX)),
+      y: Math.max(0, Math.min(Math.max(0, mapH - viewport.h), desiredY)),
+    };
+  }
+
+  function overworldTileRect(layout, x, y) {
+    const viewport = overworldViewport(layout);
+    const tileSize = overworldTileSize(layout);
+    const camera = overworldCamera(layout);
+
+    return {
+      x: viewport.x + x * tileSize - camera.x,
+      y: viewport.y + y * tileSize - camera.y,
+      w: tileSize,
+      h: tileSize,
+    };
+  }
+
+  function overworldTileAt(layout, px, py) {
+    const overworld = state.game.overworld;
+    if (!overworld) return null;
+
+    const viewport = overworldViewport(layout);
+    if (
+      px < viewport.x ||
+      py < viewport.y ||
+      px >= viewport.x + viewport.w ||
+      py >= viewport.y + viewport.h
+    ) {
+      return null;
+    }
+
+    const tileSize = overworldTileSize(layout);
+    const camera = overworldCamera(layout);
+    const x = Math.floor((px - viewport.x + camera.x) / tileSize);
+    const y = Math.floor((py - viewport.y + camera.y) / tileSize);
+    const bounds = { width: overworld.width, height: overworld.height };
+
+    return inBounds({ x, y }, bounds) ? { x, y } : null;
+  }
+
   function tileAt(layout, px, py) {
     const renderedTile = state.boardInteraction?.tileAt?.(layout, px, py);
     if (renderedTile !== undefined) return renderedTile;
+
+    if (isOverworldMode()) return overworldTileAt(layout, px, py);
 
     if (
       px < layout.boardX ||
@@ -117,9 +191,21 @@ export function createLayoutTools({ canvas, ctx, state }) {
   }
 
   function hoveredMonster() {
+    if (isOverworldMode()) return null;
+
     const tile = hoveredTile();
     if (!tile) return null;
     return state.game.monsters.find((monster) => monster.x === tile.x && monster.y === tile.y) || null;
+  }
+
+  function hoveredOverworldEnemy() {
+    if (!isOverworldMode()) return null;
+
+    const tile = hoveredTile();
+    if (!tile) return null;
+    return (state.game.overworld?.enemies || []).find((enemy) => {
+      return enemy.hp !== 0 && enemy.x === tile.x && enemy.y === tile.y;
+    }) || null;
   }
 
   function hoveredPlayer() {
@@ -141,8 +227,14 @@ export function createLayoutTools({ canvas, ctx, state }) {
     hoveredButton,
     hoveredDraggableDie,
     hoveredMonster,
+    hoveredOverworldEnemy,
     hoveredPlayer,
     hoveredTile,
+    overworldCamera,
+    overworldTileAt,
+    overworldTileRect,
+    overworldTileSize,
+    overworldViewport,
     pointInRect,
     resize,
     tileAt,

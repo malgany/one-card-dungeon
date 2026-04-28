@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PHASES } from '../../js/config/game-data.js';
+import { GAME_MODES, PHASES } from '../../js/config/game-data.js';
 import { registerCanvasInput } from '../../js/ui/input.js';
 
 function createInputHarness() {
@@ -41,7 +41,10 @@ function createInputHarness() {
     getAttackableMonsters: vi.fn(() => new Set()),
     attackMonster: vi.fn(),
     attackTile: vi.fn(),
+    getOverworldEnemyAt: vi.fn(() => null),
+    moveOverworldPlayer: vi.fn(),
     movePlayer: vi.fn(),
+    startOverworldEncounter: vi.fn(),
   };
   const layout = {
     pointInRect: (px, py, rect) => px >= rect.x && py >= rect.y && px <= rect.x + rect.w && py <= rect.y + rect.h,
@@ -124,5 +127,21 @@ describe('canvas input', () => {
 
     expect(actions.attackTile).toHaveBeenCalledWith({ x: 2, y: 0 });
     expect(actions.movePlayer).not.toHaveBeenCalled();
+  });
+
+  it('starts overworld encounters or moves on empty overworld tiles', () => {
+    const { actions, layout, listeners, state } = createInputHarness();
+    state.game.mode = GAME_MODES.OVERWORLD;
+    state.game.phase = PHASES.HERO;
+    state.game.player = { x: 0, y: 0 };
+    const enemy = { id: 'e1', x: 1, y: 0 };
+    layout.tileAt.mockReturnValueOnce({ x: 1, y: 0 }).mockReturnValueOnce({ x: 2, y: 0 });
+    actions.getOverworldEnemyAt.mockReturnValueOnce(enemy).mockReturnValueOnce(null);
+
+    listeners.get('click')();
+    expect(actions.startOverworldEncounter).toHaveBeenCalledWith('e1');
+
+    listeners.get('click')();
+    expect(actions.moveOverworldPlayer).toHaveBeenCalledWith({ x: 2, y: 0 });
   });
 });

@@ -1,5 +1,5 @@
-import { BOARD_SIZE, LEVELS, PHASES, STAT_META } from '../config/game-data.js';
-import { levelWallsSet, posKey, samePos } from '../game/board-logic.js';
+import { BOARD_SIZE, GAME_MODES, LEVELS, PHASES, STAT_META } from '../config/game-data.js';
+import { coordinatePairsToSet, levelWallsSet, posKey, samePos } from '../game/board-logic.js';
 import { createDrawPrimitives } from './draw-primitives.js';
 import { createThreeBoardView } from './three-board-view.js';
 
@@ -144,31 +144,37 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const h = currentLayout.leftH;
 
     draw.roundRect(x, y, w, h, 20, '#1e2328', '#111827');
+    const inOverworld = game.mode === GAME_MODES.OVERWORLD;
     
     let cy = y + 40;
     draw.drawText('ONE CARD', x + w / 2, cy, {
       align: 'center', font: 'bold 28px Inter, sans-serif', color: '#94a3b8',
     });
     cy += 30;
-    draw.drawText('DUNGEON', x + w / 2, cy, {
+    draw.drawText(inOverworld ? 'WORLD' : 'DUNGEON', x + w / 2, cy, {
       align: 'center', font: 'bold 28px Inter, sans-serif', color: '#94a3b8',
     });
     
     cy += 36;
-    draw.drawText(`Nível ${LEVELS[game.levelIndex].id}/12 • Vez ${game.turnCount}`, x + w / 2, cy, {
+    const progressLabel = inOverworld
+      ? `${game.overworld?.enemies?.length || 0} inimigos no mapa`
+      : `Nível ${LEVELS[game.levelIndex].id}/12 • Vez ${game.turnCount}`;
+    draw.drawText(progressLabel, x + w / 2, cy, {
       align: 'center', font: 'bold 18px Inter, sans-serif', color: '#facc15',
     });
 
-    const phaseName = {
-      energy: 'ENERGIA',
-      hero: 'AVENTUREIRO',
-      monsterTurn: 'MONSTROS',
-      monsterMove: 'MONSTROS',
-      monsterAttack: 'ATAQUE INIMIGO',
-      levelup: 'RECOMPENSA',
-      won: 'VITÓRIA',
-      lost: 'DERROTA',
-    }[game.phase];
+    const phaseName = inOverworld
+      ? 'MAPA ABERTO'
+      : {
+          energy: 'ENERGIA',
+          hero: 'AVENTUREIRO',
+          monsterTurn: 'MONSTROS',
+          monsterMove: 'MONSTROS',
+          monsterAttack: 'ATAQUE INIMIGO',
+          levelup: 'RECOMPENSA',
+          won: 'VITÓRIA',
+          lost: 'DERROTA',
+        }[game.phase];
 
     cy += 36;
     draw.drawText(phaseName, x + w / 2, cy, {
@@ -359,7 +365,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     if (!state.game.menuOpen) return;
 
     const w = 220;
-    const h = 142;
+    const h = 184;
     const x = (currentLayout.sw - w) / 2;
     const y = (currentLayout.sh - h) / 2;
 
@@ -377,7 +383,23 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       hoverFill: '#374151',
       stroke: '#64748b',
     });
-    draw.drawButton(x + 18, y + 90, w - 36, 34, 'Sair', () => {
+    draw.drawButton(x + 18, y + 90, w - 36, 34, 'Mapa aberto', () => {
+      state.game.menuOpen = false;
+      actions.newGame();
+    }, {
+      fill: '#064e3b',
+      hoverFill: '#065f46',
+      stroke: '#34d399',
+    });
+    draw.drawButton(x + 18, y + 132, w - 36, 34, 'Dungeon legada', () => {
+      state.game.menuOpen = false;
+      actions.newDungeonLegacyGame();
+    }, {
+      fill: '#1f2937',
+      hoverFill: '#374151',
+      stroke: '#64748b',
+    });
+    draw.drawButton(x + 132, y + 8, 70, 28, 'Sair', () => {
       state.game.menuOpen = false;
     }, {
       fill: '#1f2937',
@@ -1022,8 +1044,15 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const remaining = Math.max(0, banner.until - now);
     const alpha = Math.min(1, remaining / 250);
 
-    const cx = currentLayout.boardX + currentLayout.boardW / 2;
-    const cy = currentLayout.boardY + currentLayout.boardH / 2;
+    const activeViewport = state.game.mode === GAME_MODES.OVERWORLD
+      ? threeBoard.getViewport(currentLayout)
+      : null;
+    const cx = activeViewport
+      ? activeViewport.x + activeViewport.w / 2
+      : currentLayout.boardX + currentLayout.boardW / 2;
+    const cy = activeViewport
+      ? activeViewport.y + activeViewport.h / 2
+      : currentLayout.boardY + currentLayout.boardH / 2;
     const hasCard = !!banner.cardKey;
     const panelW = hasCard ? Math.min(620, Math.max(480, currentLayout.boardW * 0.82)) : 520;
     const panelH = hasCard ? 176 : 148;
@@ -1132,6 +1161,81 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     ctx.restore();
   }
 
+  function drawOverworld(currentLayout, now) {
+    const game = state.game;
+    const overworld = game.overworld;
+    if (!overworld) return;
+
+    state.game.animations = state.game.animations.filter((anim) => {
+      if (anim.type === 'movement') {
+        const totalDuration = (anim.path.length - 1) * anim.durationPerTile;
+        return now < anim.startTime + totalDuration;
+      }
+      if (anim.type === 'floatingText') {
+        return now < anim.startTime + anim.duration;
+      }
+      return false;
+    });
+
+    const walls = coordinatePairsToSet(overworld.walls);
+    const reachable = actions.getOverworldReachableTiles();
+    const hoverTile = layout.hoveredTile();
+    const hoverEnemy = layout.hoveredOverworldEnemy();
+    const hoverPath = hoverTile && reachable.has(posKey(hoverTile))
+      ? reachable.get(posKey(hoverTile)).path
+      : null;
+    const moveHighlight = new Map();
+    if (hoverTile && !hoverEnemy && reachable.has(posKey(hoverTile))) {
+      moveHighlight.set(posKey(hoverTile), reachable.get(posKey(hoverTile)));
+    }
+
+    threeBoard.render({
+      currentLayout,
+      boardWidth: overworld.width,
+      boardHeight: overworld.height,
+      walls,
+      hoverTile,
+      hoverPath: hoverEnemy ? null : hoverPath,
+      reachable: moveHighlight,
+      playerAttackTiles: new Set(),
+      monsterReachable: new Map(),
+      monsterAttackTiles: new Set(),
+      now,
+    });
+
+    const background = ctx.createLinearGradient(0, 0, 0, currentLayout.sh);
+    background.addColorStop(0, '#10151f');
+    background.addColorStop(0.55, '#07100d');
+    background.addColorStop(1, '#050608');
+
+    ctx.save();
+    ctx.fillStyle = background;
+    ctx.fillRect(0, 0, currentLayout.sw, currentLayout.sh);
+
+    drawSidebar(currentLayout);
+    clearThreeBoardViewport(currentLayout);
+
+    drawMenu(currentLayout);
+    draw.drawButton(currentLayout.sw - 48, 16, 32, 32, '⚙️', () => {
+      state.game.menuOpen = !state.game.menuOpen;
+    }, {
+      fill: '#111827', hoverFill: '#1f2937', stroke: '#64748b', font: '16px Inter, sans-serif',
+    });
+    drawBanner(currentLayout);
+
+    ctx.restore();
+
+    canvas.style.cursor = game.busy
+      ? 'default'
+      : (
+          layout.hoveredButton() ||
+          hoverEnemy ||
+          (hoverTile && reachable.has(posKey(hoverTile)))
+        )
+        ? 'pointer'
+        : 'default';
+  }
+
   function render() {
     requestAnimationFrame(render);
 
@@ -1144,6 +1248,14 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       state.game.energyConfirmStartTime = null;
       state.game.energyConfirmed = false;
     }
+
+    if (state.game.mode === GAME_MODES.OVERWORLD) {
+      threeBoard.setVisible?.(true);
+      drawOverworld(currentLayout, now);
+      return;
+    }
+
+    threeBoard.setVisible?.(true);
 
     const walls = levelWallsSet(state.game.levelIndex);
     const reachable = actions.getReachableTiles();

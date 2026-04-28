@@ -1,5 +1,9 @@
 import { BOARD_SIZE, LEVELS } from '../config/game-data.js';
 
+export function boundsFor(width = BOARD_SIZE, height = BOARD_SIZE) {
+  return { width, height };
+}
+
 export function posKey(pos) {
   return `${pos.x},${pos.y}`;
 }
@@ -13,8 +17,8 @@ export function samePos(a, b) {
   return a.x === b.x && a.y === b.y;
 }
 
-export function inBounds(pos) {
-  return pos.x >= 0 && pos.x < BOARD_SIZE && pos.y >= 0 && pos.y < BOARD_SIZE;
+export function inBounds(pos, bounds = boundsFor()) {
+  return pos.x >= 0 && pos.x < bounds.width && pos.y >= 0 && pos.y < bounds.height;
 }
 
 export function stepCost(a, b) {
@@ -25,6 +29,12 @@ export function levelWallsSet(levelIndex) {
   const walls = new Set();
   LEVELS[levelIndex].walls.forEach(([x, y]) => walls.add(`${x},${y}`));
   return walls;
+}
+
+export function coordinatePairsToSet(pairs = []) {
+  const cells = new Set();
+  pairs.forEach(([x, y]) => cells.add(`${x},${y}`));
+  return cells;
 }
 
 export function monsterOccupiedKeys(monsters, exceptId = null) {
@@ -39,7 +49,7 @@ export function monsterOccupiedKeys(monsters, exceptId = null) {
   return occupied;
 }
 
-export function neighbors(pos) {
+export function neighbors(pos, bounds = boundsFor()) {
   const result = [];
 
   const offsets = [
@@ -51,13 +61,13 @@ export function neighbors(pos) {
 
   for (const [dx, dy] of offsets) {
     const next = { x: pos.x + dx, y: pos.y + dy };
-    if (inBounds(next)) result.push(next);
+    if (inBounds(next, bounds)) result.push(next);
   }
 
   return result;
 }
 
-export function dijkstra(start, blockedKeys = new Set()) {
+export function dijkstra(start, blockedKeys = new Set(), bounds = boundsFor()) {
   const dist = new Map([[posKey(start), 0]]);
   const prev = new Map();
   const open = [{ x: start.x, y: start.y, cost: 0 }];
@@ -69,7 +79,7 @@ export function dijkstra(start, blockedKeys = new Set()) {
 
     if (current.cost > dist.get(currentKey)) continue;
 
-    for (const next of neighbors(current)) {
+    for (const next of neighbors(current, bounds)) {
       const key = posKey(next);
       if (blockedKeys.has(key)) continue;
 
@@ -97,10 +107,10 @@ export function reconstructPath(prevMap, target) {
   return path;
 }
 
-export function distanceBetween(start, target, blockedKeys = new Set(), allowTargetBlocked = false) {
+export function distanceBetween(start, target, blockedKeys = new Set(), allowTargetBlocked = false, bounds = boundsFor()) {
   const effectiveBlocked = new Set(blockedKeys);
   if (allowTargetBlocked) effectiveBlocked.delete(posKey(target));
-  const { dist } = dijkstra(start, effectiveBlocked);
+  const { dist } = dijkstra(start, effectiveBlocked, bounds);
   return dist.get(posKey(target)) ?? Number.POSITIVE_INFINITY;
 }
 

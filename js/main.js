@@ -32,6 +32,10 @@ const renderer = createRenderer({
   layout,
 });
 
+if (['localhost', '127.0.0.1'].includes(window.location.hostname)) {
+  window.__ONE_RPG_DEBUG__ = { state, actions, layout };
+}
+
 window.addEventListener('resize', layout.resize);
 layout.resize();
 registerCanvasInput({ canvas, state, actions, layout });

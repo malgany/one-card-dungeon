@@ -1,6 +1,12 @@
 export const BOARD_SIZE = 6;
 export const SAVE_KEY = 'one-card-dungeon-canvas-v4';
 
+export const GAME_MODES = {
+  OVERWORLD: 'overworld',
+  COMBAT: 'combat',
+  DUNGEON_LEGACY: 'dungeonLegacy',
+};
+
 export const PHASES = {
   ENERGY: 'energy',
   HERO: 'hero',
@@ -63,12 +69,39 @@ export const LEVELS = [
   { id: 11, start: { x: 0, y: 5 }, walls: [[2, 1], [2, 2], [2, 3], [4, 1], [4, 2], [4, 3]], monsters: [['golem', 5, 4], ['specter', 5, 0], ['specter', 0, 0]] },
 ];
 
+export const OVERWORLD_MAPS = [
+  {
+    id: 'open-road',
+    width: 18,
+    height: 14,
+    playerStart: { x: 2, y: 10 },
+    walls: [
+      [4, 2], [5, 2], [6, 2], [11, 2], [12, 2],
+      [4, 3], [12, 3], [15, 3],
+      [1, 4], [2, 4], [8, 4], [9, 4], [15, 4],
+      [8, 5], [15, 5], [16, 5],
+      [5, 7], [6, 7], [7, 7], [12, 7],
+      [12, 8], [3, 9], [12, 9],
+      [3, 10], [9, 10], [10, 10], [11, 10],
+      [3, 11], [15, 11], [16, 11],
+    ],
+    enemies: [
+      ['spider', 7, 9, 'nest-a'],
+      ['spider', 8, 9, 'nest-a'],
+      ['skeleton', 13, 4, 'ruins-b'],
+      ['archer', 14, 4, 'ruins-b'],
+      ['golem', 14, 10, 'stone-c'],
+    ],
+  },
+];
+
 export const TIMING = {
   TURN_BANNER: 1600,       // Duration of the "Turn of X" banner
   POST_BANNER_PAUSE: 1000, // Extra pause after banner disappears before action
   POST_ACTION_PAUSE: 1000, // Extra pause after action ends before next turn
   MONSTER_MOVE_SPEED: 250, // ms per tile for monsters
   PLAYER_MOVE_SPEED: 120,  // ms per tile for player
+  OVERWORLD_PLAYER_MOVE_SPEED: 300, // ms per tile in overworld
   ATTACK_BUMP_DURATION: 250,
   DAMAGE_SHAKE_DURATION: 350,
   HERO_ATTACK_WAIT_TIME: 600, // Wait time after hero attack before busy=false
