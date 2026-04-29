@@ -401,19 +401,30 @@ export function createGameActions(state) {
       return false;
     }
 
+    const movementPath = data.path;
+
+    let totalDist = 0;
+    for (let i = 0; i < movementPath.length - 1; i += 1) {
+      const p1 = movementPath[i];
+      const p2 = movementPath[i + 1];
+      totalDist += Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+    }
+
+    const duration = totalDist * TIMING.OVERWORLD_PLAYER_MOVE_SPEED;
     game.player.x = target.x;
     game.player.y = target.y;
     game.busy = true;
+
     game.animations.push({
       type: 'movement',
       entityId: 'player',
-      path: data.path,
+      path: movementPath,
       startTime: performance.now(),
-      durationPerTile: TIMING.OVERWORLD_PLAYER_MOVE_SPEED,
+      totalDuration: duration,
+      totalDistance: totalDist,
     });
 
-    const totalDur = Math.max(0, (data.path.length - 1) * TIMING.OVERWORLD_PLAYER_MOVE_SPEED);
-    window.setTimeout(() => { game.busy = false; }, totalDur);
+    window.setTimeout(() => { game.busy = false; }, duration);
     setEvent(`Movendo pelo mapa: ${data.cost} passos.`);
     return true;
   }

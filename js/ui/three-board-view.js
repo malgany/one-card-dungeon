@@ -7,10 +7,10 @@ const CARD_ROTATION_Y = Math.PI / 4;
 const ISO_AZIMUTH = Math.PI / 4;
 const ISO_ELEVATION = Math.atan(1 / Math.sqrt(2));
 const ISO_CAMERA_DISTANCE = 12;
-const ORTHO_VIEW_HEIGHT = 8.8;
-const COMPACT_ORTHO_VIEW_HEIGHT = 9.6;
-const OVERWORLD_ORTHO_VIEW_HEIGHT = 10.8;
-const COMPACT_OVERWORLD_ORTHO_VIEW_HEIGHT = 9.6;
+const ORTHO_VIEW_HEIGHT = 7.48;
+const COMPACT_ORTHO_VIEW_HEIGHT = 8.16;
+const OVERWORLD_ORTHO_VIEW_HEIGHT = 9.18;
+const COMPACT_OVERWORLD_ORTHO_VIEW_HEIGHT = 8.16;
 const FLOOR_COLORS = ['#3b3126', '#2f271f'];
 const HIGHLIGHT_ORDER = [
   'hover',
@@ -102,8 +102,33 @@ function movementPosition(unit, entityId, animations, now) {
   if (movement) {
     const elapsed = now - movement.startTime;
     if (elapsed >= 0) {
-      const tileIndex = Math.floor(elapsed / movement.durationPerTile);
-      const tileProgress = (elapsed % movement.durationPerTile) / movement.durationPerTile;
+      if (movement.totalDuration !== undefined) {
+        const progress = Math.min(1, elapsed / Math.max(1, movement.totalDuration));
+        const targetDist = progress * movement.totalDistance;
+        let currentDist = 0;
+
+        for (let i = 0; i < movement.path.length - 1; i += 1) {
+          const p1 = movement.path[i];
+          const p2 = movement.path[i + 1];
+          const d = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+          
+          if (currentDist + d >= targetDist || i === movement.path.length - 2) {
+            const segmentProgress = d > 0 ? (targetDist - currentDist) / d : 1;
+            const clampedProgress = Math.max(0, Math.min(1, segmentProgress));
+            drawX = p1.x + (p2.x - p1.x) * clampedProgress;
+            drawY = p1.y + (p2.y - p1.y) * clampedProgress;
+            return { drawX, drawY };
+          }
+          currentDist += d;
+        }
+        // Fallback for safety if loop somehow finishes
+        const last = movement.path[movement.path.length - 1];
+        return { drawX: last.x, drawY: last.y };
+      }
+
+      const tileDuration = movement.durationPerTile || 1;
+      const tileIndex = Math.floor(elapsed / tileDuration);
+      const tileProgress = (elapsed % tileDuration) / tileDuration;
 
       if (tileIndex < movement.path.length - 1) {
         const from = movement.path[tileIndex];
@@ -184,72 +209,94 @@ export function createThreeBoardView({ state }) {
   const boardGroup = new THREE.Group();
   scene.add(boardGroup);
 
+  const textureLoader = new THREE.TextureLoader();
+  const textureCache = new Map();
+
+  function textureFor(src) {
+    if (!src) return null;
+    if (textureCache.has(src)) return textureCache.get(src);
+
+    const texture = textureLoader.load(src);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 8;
+    textureCache.set(src, texture);
+    return texture;
+  }
+
   const baseMaterial = new THREE.MeshStandardMaterial({
     color: colorFromHex('#111827'),
     roughness: 0.82,
     metalness: 0.08,
   });
-  const base = new THREE.Mesh(new THREE.BoxGeometry(1, 0.18, 1), baseMaterial);
-  base.position.y = -0.13;
-  base.scale.set(BOARD_SIZE + 0.55, 1, BOARD_SIZE + 0.55);
-  base.receiveShadow = true;
-  boardGroup.add(base);
 
-  const tileGeometry = new THREE.BoxGeometry(0.94, 0.08, 0.94);
-  const tileMeshes = new Map();
+  const wallSideTexture = textureFor('./assets/grama-lado.png');
+  const wallTopTexture = textureFor('./assets/grama-topo.png');
 
-  for (let y = 0; y < BOARD_SIZE; y += 1) {
-    for (let x = 0; x < BOARD_SIZE; x += 1) {
-      const material = new THREE.MeshStandardMaterial({
-        color: colorFromHex(FLOOR_COLORS[(x + y) % FLOOR_COLORS.length]),
-        roughness: 0.92,
-        metalness: 0.02,
-      });
-      const tile = new THREE.Mesh(tileGeometry, material);
-      const center = tileCenter(x, y);
-      tile.position.set(center.x, 0, center.z);
-      tile.receiveShadow = true;
-      tileMeshes.set(keyFor(x, y), tile);
-      boardGroup.add(tile);
-    }
-  }
+  const overworldSideMaterial = new THREE.MeshStandardMaterial({ map: wallSideTexture, roughness: 0.85 });
+  const overworldTopMaterial = new THREE.MeshStandardMaterial({ map: wallTopTexture, roughness: 0.85 });
 
-  const highlights = new Map();
-  const highlightGeometry = new THREE.PlaneGeometry(0.86, 0.86);
+  const overworldWallMaterials = [
+    overworldSideMaterial, // +x
+    overworldSideMaterial, // -x
+    overworldTopMaterial,  // +y
+    overworldSideMaterial, // -y
+    overworldSideMaterial, // +z
+    overworldSideMaterial, // -z
+  ];
 
-  for (let y = 0; y < BOARD_SIZE; y += 1) {
-    for (let x = 0; x < BOARD_SIZE; x += 1) {
-      const material = new THREE.MeshBasicMaterial({
-        color: colorFromHex('#ffffff'),
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      });
-      const highlight = new THREE.Mesh(highlightGeometry, material);
-      const center = tileCenter(x, y);
-      highlight.position.set(center.x, 0.055, center.z);
-      highlight.rotation.x = -Math.PI / 2;
-      highlight.visible = false;
-      highlights.set(keyFor(x, y), highlight);
-      boardGroup.add(highlight);
-    }
-  }
-
-  const wallMeshes = new Map();
-  const wallGeometry = new THREE.BoxGeometry(0.9, 0.54, 0.9);
-  const wallMaterial = new THREE.MeshStandardMaterial({
+  const combatWallMaterial = new THREE.MeshStandardMaterial({
     color: colorFromHex('#64748b'),
     roughness: 0.78,
     metalness: 0.06,
   });
 
-  const textureLoader = new THREE.TextureLoader();
-  const textureCache = new Map();
+  const groundMaterial = new THREE.MeshStandardMaterial({
+    roughness: 0.9,
+    metalness: 0.05,
+    map: textureFor('./assets/chao1.png'),
+  });
+
+  const wallMeshes = new Map();
   const unitMeshes = new Map();
+  const wallGeometry = new THREE.BoxGeometry(0.9, 0.54, 0.9);
+  
+  const base = new THREE.Mesh(new THREE.BoxGeometry(1, 0.18, 1), baseMaterial);
+  base.position.y = -0.13;
+  base.scale.set(BOARD_SIZE + 0.55, 1, BOARD_SIZE + 0.55);
+  base.receiveShadow = true;
+  base.frustumCulled = true;
+  boardGroup.add(base);
+
+  const groundPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), groundMaterial);
+  groundPlane.rotation.x = -Math.PI / 2;
+  groundPlane.position.y = 0.01; // Slightly above base
+  groundPlane.receiveShadow = true;
+  boardGroup.add(groundPlane);
+
+  const MAX_TILES = 5000;
+  const tileGeometry = new THREE.BoxGeometry(0.94, 0.08, 0.94);
+  const tileMaterial = new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0.02 });
+  const tileInstance = new THREE.InstancedMesh(tileGeometry, tileMaterial, MAX_TILES);
+  tileInstance.receiveShadow = true;
+  tileInstance.frustumCulled = true;
+  boardGroup.add(tileInstance);
+
+  const highlightGeometry = new THREE.PlaneGeometry(0.86, 0.86);
+  highlightGeometry.rotateX(-Math.PI / 2);
+  const highlightMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.28,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const highlightInstance = new THREE.InstancedMesh(highlightGeometry, highlightMaterial, MAX_TILES);
+  highlightInstance.frustumCulled = true;
+  boardGroup.add(highlightInstance);
+
+  const dummy = new THREE.Object3D();
   const pathArrowGroup = new THREE.Group();
   scene.add(pathArrowGroup);
-
   const hemisphere = new THREE.HemisphereLight(colorFromHex('#dbeafe'), colorFromHex('#25170f'), 1.05);
   scene.add(hemisphere);
 
@@ -282,9 +329,10 @@ export function createThreeBoardView({ state }) {
     const viewport = boardViewport(layout, mode);
     const aspect = viewport.w / viewport.h;
     const isOverworld = mode === GAME_MODES.OVERWORLD;
-    const viewHeight = isOverworld
+    const baseViewHeight = isOverworld
       ? (layout.compact ? COMPACT_OVERWORLD_ORTHO_VIEW_HEIGHT : OVERWORLD_ORTHO_VIEW_HEIGHT)
       : (layout.compact ? COMPACT_ORTHO_VIEW_HEIGHT : ORTHO_VIEW_HEIGHT);
+    const viewHeight = baseViewHeight / (state.debugZoom || 1.0);
     const viewWidth = viewHeight * aspect;
 
     let target = { x: 0, z: 0 };
@@ -307,79 +355,66 @@ export function createThreeBoardView({ state }) {
     return viewport;
   }
 
-  function textureFor(src) {
-    if (!src) return null;
-    if (textureCache.has(src)) return textureCache.get(src);
-
-    const texture = textureLoader.load(src);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = 8;
-    textureCache.set(src, texture);
-    return texture;
-  }
-
-  function ensureTileMesh(x, y) {
-    const tileKey = keyFor(x, y);
-    if (tileMeshes.has(tileKey)) return tileMeshes.get(tileKey);
-
-    const material = new THREE.MeshStandardMaterial({
-      color: colorFromHex(FLOOR_COLORS[(x + y) % FLOOR_COLORS.length]),
-      roughness: 0.92,
-      metalness: 0.02,
-    });
-    const tile = new THREE.Mesh(tileGeometry, material);
-    tile.receiveShadow = true;
-    tileMeshes.set(tileKey, tile);
-    boardGroup.add(tile);
-    return tile;
-  }
-
-  function ensureHighlightMesh(x, y) {
-    const tileKey = keyFor(x, y);
-    if (highlights.has(tileKey)) return highlights.get(tileKey);
-
-    const material = new THREE.MeshBasicMaterial({
-      color: colorFromHex('#ffffff'),
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    const highlight = new THREE.Mesh(highlightGeometry, material);
-    highlight.rotation.x = -Math.PI / 2;
-    highlight.visible = false;
-    highlights.set(tileKey, highlight);
-    boardGroup.add(highlight);
-    return highlight;
-  }
-
   function syncBoardGeometry(width = BOARD_SIZE, height = BOARD_SIZE) {
+    const isOverworld = state.game.mode === GAME_MODES.OVERWORLD;
+    const hasGround = !!groundMaterial.map && isOverworld;
+
+    if (currentBoard.width === width && currentBoard.height === height && currentBoard.hasGround === hasGround) {
+      return;
+    }
+
     currentBoard.width = width;
     currentBoard.height = height;
+    currentBoard.hasGround = hasGround;
+
     base.scale.set(width + 0.55, 1, height + 0.55);
 
+    // Update ground plane
+    groundPlane.scale.set(width, height, 1);
+    groundPlane.position.set(0, 0.01, 0);
+    groundPlane.visible = hasGround;
+
+    // Toggle tiles
+    tileInstance.visible = !hasGround;
+
+    if (!hasGround) {
+      let count = 0;
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          if (count >= MAX_TILES) break;
+          const center = tileCenter(x, y, width, height);
+          
+          dummy.position.set(center.x, 0, center.z);
+          dummy.scale.set(1, 1, 1);
+          dummy.updateMatrix();
+          tileInstance.setMatrixAt(count, dummy.matrix);
+          tileInstance.setColorAt(count, colorFromHex(FLOOR_COLORS[(x + y) % FLOOR_COLORS.length]));
+
+          count += 1;
+        }
+      }
+      tileInstance.count = count;
+      tileInstance.instanceMatrix.needsUpdate = true;
+      tileInstance.instanceColor.needsUpdate = true;
+    }
+
+    // Always update highlights (on top of ground/tiles)
+    let hCount = 0;
     for (let y = 0; y < height; y += 1) {
       for (let x = 0; x < width; x += 1) {
+        if (hCount >= MAX_TILES) break;
         const center = tileCenter(x, y, width, height);
-        const tile = ensureTileMesh(x, y);
-        tile.position.set(center.x, 0, center.z);
-        tile.visible = true;
-
-        const highlight = ensureHighlightMesh(x, y);
-        highlight.position.set(center.x, 0.055, center.z);
-        highlight.visible = false;
+        dummy.position.set(center.x, 0.055, center.z);
+        dummy.updateMatrix();
+        highlightInstance.setMatrixAt(hCount, dummy.matrix);
+        highlightInstance.setColorAt(hCount, colorFromHex('#ffffff'));
+        hCount += 1;
       }
     }
-
-    for (const [tileKey, tile] of tileMeshes.entries()) {
-      const [x, y] = tileKey.split(',').map(Number);
-      if (x >= width || y >= height) tile.visible = false;
-    }
-
-    for (const [tileKey, highlight] of highlights.entries()) {
-      const [x, y] = tileKey.split(',').map(Number);
-      if (x >= width || y >= height) highlight.visible = false;
-    }
+    
+    highlightInstance.count = hCount;
+    highlightInstance.instanceMatrix.needsUpdate = true;
+    highlightInstance.instanceColor.needsUpdate = true;
   }
 
   function createUnitMesh(unit, isPlayer) {
@@ -432,16 +467,29 @@ export function createThreeBoardView({ state }) {
 
   function updateWalls(walls) {
     const active = new Set(walls);
+    const isOverworld = state.game.mode === GAME_MODES.OVERWORLD;
+    const material = isOverworld ? overworldWallMaterials : combatWallMaterial;
 
     for (const wallKey of active) {
       const [x, y] = wallKey.split(',').map(Number);
       const center = tileCenter(x, y, currentBoard.width, currentBoard.height);
-      const wall = wallMeshes.get(wallKey) || new THREE.Mesh(wallGeometry, wallMaterial);
-      wall.position.set(center.x, 0.31, center.z);
-      if (!wallMeshes.has(wallKey)) {
+      
+      let wall = wallMeshes.get(wallKey);
+      
+      // If mode changed, we might need to recreate or update material
+      if (wall && wall.userData.isOverworld !== isOverworld) {
+        boardGroup.remove(wall);
+        wall = null;
+      }
+
+      if (!wall) {
+        wall = new THREE.Mesh(wallGeometry, material);
+        wall.userData.isOverworld = isOverworld;
         wallMeshes.set(wallKey, wall);
         boardGroup.add(wall);
       }
+      
+      wall.position.set(center.x, 0.31, center.z);
     }
 
     for (const [wallKey, wall] of wallMeshes.entries()) {
@@ -458,12 +506,13 @@ export function createThreeBoardView({ state }) {
     monsterReachable,
     monsterAttackTiles,
   }) {
-    for (const highlight of highlights.values()) {
-      highlight.visible = false;
-    }
+    const width = currentBoard.width;
+    const height = currentBoard.height;
+    let count = 0;
 
-    for (let y = 0; y < currentBoard.height; y += 1) {
-      for (let x = 0; x < currentBoard.width; x += 1) {
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        if (count >= MAX_TILES) break;
         const tileKey = keyFor(x, y);
         const flags = {
           hover: hoverTile && hoverTile.x === x && hoverTile.y === y,
@@ -473,20 +522,24 @@ export function createThreeBoardView({ state }) {
           monsterAttack: monsterAttackTiles.has(tileKey),
         };
         const type = HIGHLIGHT_ORDER.find((name) => flags[name]);
-        const mesh = highlights.get(tileKey);
-        if (!mesh) continue;
-
+        
         if (!type) {
-          mesh.visible = false;
-          continue;
+          dummy.scale.set(0, 0, 0);
+        } else {
+          dummy.scale.set(1, 1, 1);
+          const style = HIGHLIGHT_COLORS[type];
+          highlightInstance.setColorAt(count, colorFromHex(style.color));
         }
 
-        const style = HIGHLIGHT_COLORS[type];
-        mesh.visible = true;
-        mesh.material.color.set(style.color);
-        mesh.material.opacity = style.opacity;
+        const center = tileCenter(x, y, width, height);
+        dummy.position.set(center.x, 0.055, center.z);
+        dummy.updateMatrix();
+        highlightInstance.setMatrixAt(count, dummy.matrix);
+        count += 1;
       }
     }
+    highlightInstance.instanceMatrix.needsUpdate = true;
+    highlightInstance.instanceColor.needsUpdate = true;
   }
 
   function clearPathArrows() {

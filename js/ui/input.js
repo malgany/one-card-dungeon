@@ -1,4 +1,4 @@
-import { GAME_MODES, STAT_META, PHASES } from '../config/game-data.js';
+import { GAME_MODES, STAT_META, PHASES, DEBUG_CONFIG } from '../config/game-data.js';
 
 export function registerCanvasInput({ canvas, state, actions, layout }) {
   canvas.addEventListener('mousemove', (event) => {
@@ -6,6 +6,13 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     state.mouse.x = event.clientX - rect.left;
     state.mouse.y = event.clientY - rect.top;
   });
+ 
+  canvas.addEventListener('wheel', (event) => {
+    if (!DEBUG_CONFIG.SHOW_STATS) return;
+    event.preventDefault();
+    const delta = event.deltaY > 0 ? 0.92 : 1.08;
+    state.debugZoom = Math.min(8.0, Math.max(0.2, (state.debugZoom || 1.0) * delta));
+  }, { passive: false });
 
   canvas.addEventListener('mousedown', () => {
     if (state.game.phase !== PHASES.ENERGY || state.game.busy) return;

@@ -8,6 +8,7 @@ Projeto de dungeon crawler tático com **tabuleiro 3D (Three.js)**, inspirado em
 - **Transicao Mapa/Luta**: Clicar em um inimigo do mapa inicia uma luta tatica 6x6; ao vencer, o grupo derrotado some do mapa e o jogador volta ao ponto onde estava.
 - **Grupos de Encontro**: Inimigos com o mesmo grupo entram juntos na arena.
 - **Dungeon Legada**: O fluxo antigo de andares/salas continua preservado como modo legado acessivel pelo menu.
+- **Independência de Modos**: Alterações em um modo (Overworld, Luta ou Legado) são isoladas e não afetam os outros, a menos que especificado.
 
 - **Tabuleiro 3D**: Visão isométrica com renderização via Three.js, incluindo animações de movimento e combate.
 - **Sistema de Turnos Individual**: Cada entidade (jogador e monstros) possui sua própria vez na fila de iniciativa.

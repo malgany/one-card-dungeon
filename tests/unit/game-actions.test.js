@@ -182,16 +182,21 @@ describe('game actions', () => {
     const { state, actions } = createActionHarness(game);
     const startingAp = state.game.apRemaining;
     const startingSpeed = state.game.speedRemaining;
+    const start = { x: state.game.player.x, y: state.game.player.y };
 
     actions.moveOverworldPlayer({ x: 2, y: 9 });
 
+    const movement = state.game.animations.find((anim) => anim.type === 'movement' && anim.entityId === 'player');
     expect(state.game.mode).toBe(GAME_MODES.OVERWORLD);
     expect(state.game.player).toMatchObject({ x: 2, y: 9 });
     expect(state.game.apRemaining).toBe(startingAp);
     expect(state.game.speedRemaining).toBe(startingSpeed);
     expect(state.game.busy).toBe(true);
+    expect(movement.path[0]).toEqual(start);
+    expect(movement.path[movement.path.length - 1]).toEqual({ x: 2, y: 9 });
+    expect(movement.totalDuration).toBe((movement.path.length - 1) * TIMING.OVERWORLD_PLAYER_MOVE_SPEED);
 
-    vi.advanceTimersByTime(TIMING.PLAYER_MOVE_SPEED);
+    vi.advanceTimersByTime(movement.totalDuration);
     expect(state.game.busy).toBe(false);
   });
 
@@ -199,6 +204,7 @@ describe('game actions', () => {
     const game = createGame();
     const { state, actions } = createActionHarness(game);
     const target = state.game.overworld.enemies.find((enemy) => enemy.groupId === 'nest-a');
+    const returnPosition = { x: state.game.player.x, y: state.game.player.y };
 
     actions.startOverworldEncounter(target.id);
 
@@ -206,7 +212,7 @@ describe('game actions', () => {
     expect(state.game.combatContext).toMatchObject({
       origin: GAME_MODES.OVERWORLD,
       groupId: 'nest-a',
-      returnPosition: { x: 2, y: 10 },
+      returnPosition,
     });
     expect(state.game.monsters.map((monster) => monster.groupId)).toEqual(['nest-a', 'nest-a']);
     expect(state.game.turnQueue).toEqual(['player', ...state.game.monsters.map((monster) => monster.id)]);
@@ -216,6 +222,7 @@ describe('game actions', () => {
     const game = createGame();
     const { state, actions } = createActionHarness(game);
     const target = state.game.overworld.enemies.find((enemy) => enemy.groupId === 'stone-c');
+    const returnPosition = { x: state.game.player.x, y: state.game.player.y };
 
     actions.startOverworldEncounter(target.id);
     state.game.player.attackSlot = {
@@ -230,7 +237,7 @@ describe('game actions', () => {
     vi.advanceTimersByTime(TIMING.HERO_ATTACK_WAIT_TIME);
 
     expect(state.game.mode).toBe(GAME_MODES.OVERWORLD);
-    expect(state.game.player).toMatchObject({ x: 2, y: 10 });
+    expect(state.game.player).toMatchObject(returnPosition);
     expect(state.game.monsters).toEqual([]);
     expect(state.game.combatContext).toBe(null);
     expect(state.game.overworld.enemies.some((enemy) => enemy.groupId === 'stone-c')).toBe(false);

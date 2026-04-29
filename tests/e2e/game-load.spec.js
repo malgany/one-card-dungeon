@@ -44,6 +44,7 @@ test('moves from overworld into combat and returns after victory', async ({ page
     window.__ONE_RPG_DEBUG__.actions.moveOverworldPlayer({ x: 2, y: 9 });
   });
   await page.waitForFunction(() => window.__ONE_RPG_DEBUG__.state.game.player.y === 9);
+  await page.waitForFunction(() => !window.__ONE_RPG_DEBUG__.state.game.busy);
 
   await page.evaluate(() => {
     const { state, actions } = window.__ONE_RPG_DEBUG__;

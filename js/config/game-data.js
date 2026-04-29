@@ -72,9 +72,9 @@ export const LEVELS = [
 export const OVERWORLD_MAPS = [
   {
     id: 'open-road',
-    width: 18,
-    height: 14,
-    playerStart: { x: 2, y: 10 },
+    width: 20,
+    height: 20,
+    playerStart: { x: 5, y: 15 },
     walls: [
       [4, 2], [5, 2], [6, 2], [11, 2], [12, 2],
       [4, 3], [12, 3], [15, 3],
@@ -91,6 +91,8 @@ export const OVERWORLD_MAPS = [
       ['skeleton', 13, 4, 'ruins-b'],
       ['archer', 14, 4, 'ruins-b'],
       ['golem', 14, 10, 'stone-c'],
+      ['specter', 15, 15, 'grave-h'],
+      ['skeleton', 5, 5, 'ruins-j'],
     ],
   },
 ];
@@ -105,4 +107,8 @@ export const TIMING = {
   ATTACK_BUMP_DURATION: 250,
   DAMAGE_SHAKE_DURATION: 350,
   HERO_ATTACK_WAIT_TIME: 600, // Wait time after hero attack before busy=false
+};
+
+export const DEBUG_CONFIG = {
+  SHOW_STATS: true,
 };

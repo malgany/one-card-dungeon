@@ -31,3 +31,8 @@ O fluxo principal agora comeca em um mapa aberto 3D/isometrico; clicar em grupos
 2. Se a mudanca for de regra, abra `js/game/game-actions.js` e `js/game/board-logic.js`.
 3. Se a mudanca for visual, abra `js/ui/renderer.js` e `js/ui/draw-primitives.js`.
 4. Se a mudanca for interacao do mouse, abra `js/ui/input.js`.
+
+## Independência de Modos
+
+- **Isolamento**: Alterações no **Mundo Aberto (Overworld)** não afetam necessariamente a **Dungeon Legada** ou o **Modo de Luta (Combate)**, e vice-versa.
+- **Regra de Ouro**: A menos que seja explicitamente solicitado que uma mudança seja global, considere que modificações em um modo são isoladas para não quebrar a lógica dos outros estados do jogo.

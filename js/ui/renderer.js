@@ -1,7 +1,31 @@
-import { BOARD_SIZE, GAME_MODES, LEVELS, PHASES, STAT_META } from '../config/game-data.js';
+import { BOARD_SIZE, DEBUG_CONFIG, GAME_MODES, LEVELS, PHASES, STAT_META } from '../config/game-data.js';
 import { coordinatePairsToSet, levelWallsSet, posKey, samePos } from '../game/board-logic.js';
 import { createDrawPrimitives } from './draw-primitives.js';
 import { createThreeBoardView } from './three-board-view.js';
+
+export function getAnimationEndTime(anim) {
+  const startTime = Number.isFinite(anim.startTime) ? anim.startTime : 0;
+
+  if (anim.type === 'movement') {
+    if (Number.isFinite(anim.totalDuration)) {
+      return startTime + Math.max(0, anim.totalDuration);
+    }
+
+    const pathSteps = Math.max(0, (anim.path?.length || 1) - 1);
+    const durationPerTile = Number.isFinite(anim.durationPerTile) ? anim.durationPerTile : 0;
+    return startTime + pathSteps * durationPerTile;
+  }
+
+  if (anim.type === 'floatingText' || anim.type === 'bumpAttack' || anim.type === 'damageShake') {
+    return startTime + Math.max(0, anim.duration || 0);
+  }
+
+  return startTime;
+}
+
+function isAnimationActive(anim, now) {
+  return now < getAnimationEndTime(anim);
+}
 
 export function createRenderer({ canvas, ctx, cardImages, state, actions, layout }) {
   const draw = createDrawPrimitives({ ctx, state, cardImages });
@@ -1166,16 +1190,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const overworld = game.overworld;
     if (!overworld) return;
 
-    state.game.animations = state.game.animations.filter((anim) => {
-      if (anim.type === 'movement') {
-        const totalDuration = (anim.path.length - 1) * anim.durationPerTile;
-        return now < anim.startTime + totalDuration;
-      }
-      if (anim.type === 'floatingText') {
-        return now < anim.startTime + anim.duration;
-      }
-      return false;
-    });
+    state.game.animations = state.game.animations.filter((anim) => isAnimationActive(anim, now));
 
     const walls = coordinatePairsToSet(overworld.walls);
     const reachable = actions.getOverworldReachableTiles();
@@ -1222,7 +1237,11 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       fill: '#111827', hoverFill: '#1f2937', stroke: '#64748b', font: '16px Inter, sans-serif',
     });
     drawBanner(currentLayout);
-
+ 
+    if (DEBUG_CONFIG.SHOW_STATS) {
+      drawStats(currentLayout);
+    }
+ 
     ctx.restore();
 
     canvas.style.cursor = game.busy
@@ -1401,19 +1420,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     // now is computed at the top
 
-    state.game.animations = state.game.animations.filter((anim) => {
-      if (anim.type === 'floatingText') {
-        return now < anim.startTime + anim.duration;
-      }
-      if (anim.type === 'movement') {
-        const totalDuration = (anim.path.length - 1) * anim.durationPerTile;
-        return now < anim.startTime + totalDuration;
-      }
-      if (anim.type === 'bumpAttack' || anim.type === 'damageShake') {
-        return now < anim.startTime + anim.duration;
-      }
-      return false;
-    });
+    state.game.animations = state.game.animations.filter((anim) => isAnimationActive(anim, now));
 
     for (const monster of state.game.monsters) {
       let drawX = monster.x;
@@ -1540,6 +1547,10 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     drawEnergyFocusMask(currentLayout);
     drawBanner(currentLayout);
     
+    if (DEBUG_CONFIG.SHOW_STATS) {
+      drawStats(currentLayout);
+    }
+    
     ctx.restore();
 
     if (screenFlashRed) {
@@ -1557,6 +1568,53 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         )
         ? 'pointer'
         : 'default';
+  }
+
+  let frameCount = 0;
+  let lastTime = performance.now();
+  let currentFps = 0;
+
+  function drawStats(currentLayout) {
+    frameCount += 1;
+    const now = performance.now();
+    if (now - lastTime >= 1000) {
+      currentFps = frameCount;
+      frameCount = 0;
+      lastTime = now;
+    }
+
+    const x = 16;
+    const y = currentLayout.sh - 40;
+    const w = 210;
+    const h = 24;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#34d399';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x, y, w, h);
+    
+    draw.drawText(`FPS: ${currentFps}`, x + 10, y + 17, {
+      font: 'bold 12px Inter, sans-serif',
+      color: '#34d399',
+    });
+    
+    const zoomPct = Math.round((state.debugZoom || 1.0) * 100);
+    draw.drawText(`ZOOM: ${zoomPct}%`, x + 65, y + 17, {
+      font: 'bold 12px Inter, sans-serif',
+      color: '#fbbf24',
+    });
+
+    // Simple memory check for Chrome
+    if (window.performance && window.performance.memory) {
+      const mb = Math.round(window.performance.memory.usedJSHeapSize / 1048576);
+      draw.drawText(`MEM: ${mb}MB`, x + 145, y + 17, {
+        font: 'bold 12px Inter, sans-serif',
+        color: '#60a5fa',
+      });
+    }
+    ctx.restore();
   }
 
   return {
