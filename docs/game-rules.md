@@ -2,7 +2,7 @@
 
 ## Modos de Jogo
 
-O jogo novo comeca no mapa aberto 3D/isometrico. No mapa, movimento por clique usa pathfinding, nao gasta AP e nao passa turno.
+O jogo novo comeca no mapa aberto 3D/isometrico. O mundo aberto e dividido em chunks 20x20 conectaveis; cada chunk pode definir bioma, terreno, objetos, encontros e conexoes. No mapa, movimento por clique usa pathfinding, nao gasta AP e nao passa turno.
 
 Clicar em um inimigo inicia uma luta 6x6 contra todos os inimigos vivos do mesmo grupo. Ao derrotar o grupo, esses inimigos sao removidos do mapa e o aventureiro volta para a posicao de onde entrou na luta.
 

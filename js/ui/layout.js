@@ -1,5 +1,6 @@
 import { BOARD_SIZE, GAME_MODES, PHASES } from '../config/game-data.js';
 import { inBounds, samePos } from '../game/board-logic.js';
+import { getCurrentWorldBounds, getCurrentWorldEnemies } from '../game/world-state.js';
 
 export function pointInRect(px, py, rect) {
   return px >= rect.x && py >= rect.y && px <= rect.x + rect.w && py <= rect.y + rect.h;
@@ -118,8 +119,9 @@ export function createLayoutTools({ canvas, ctx, state }) {
     const tileSize = overworldTileSize(layout);
     if (!overworld) return { x: 0, y: 0 };
 
-    const mapW = overworld.width * tileSize;
-    const mapH = overworld.height * tileSize;
+    const bounds = getCurrentWorldBounds(overworld);
+    const mapW = bounds.width * tileSize;
+    const mapH = bounds.height * tileSize;
     const desiredX = state.game.player.x * tileSize + tileSize / 2 - viewport.w / 2;
     const desiredY = state.game.player.y * tileSize + tileSize / 2 - viewport.h / 2;
 
@@ -160,7 +162,7 @@ export function createLayoutTools({ canvas, ctx, state }) {
     const camera = overworldCamera(layout);
     const x = Math.floor((px - viewport.x + camera.x) / tileSize);
     const y = Math.floor((py - viewport.y + camera.y) / tileSize);
-    const bounds = { width: overworld.width, height: overworld.height };
+    const bounds = getCurrentWorldBounds(overworld);
 
     return inBounds({ x, y }, bounds) ? { x, y } : null;
   }
@@ -203,7 +205,7 @@ export function createLayoutTools({ canvas, ctx, state }) {
 
     const tile = hoveredTile();
     if (!tile) return null;
-    return (state.game.overworld?.enemies || []).find((enemy) => {
+    return getCurrentWorldEnemies(state.game.overworld).find((enemy) => {
       return enemy.hp !== 0 && enemy.x === tile.x && enemy.y === tile.y;
     }) || null;
   }

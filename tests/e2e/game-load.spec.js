@@ -48,7 +48,8 @@ test('moves from overworld into combat and returns after victory', async ({ page
 
   await page.evaluate(() => {
     const { state, actions } = window.__ONE_RPG_DEBUG__;
-    const target = state.game.overworld.enemies.find((enemy) => enemy.groupId === 'stone-c');
+    const mapState = state.game.overworld.mapStates[state.game.overworld.currentMapId];
+    const target = mapState.enemies.find((enemy) => enemy.groupId === 'stone-c');
     actions.startOverworldEncounter(target.id);
   });
   await page.waitForFunction(() => window.__ONE_RPG_DEBUG__.state.game.mode === 'combat');
@@ -65,6 +66,30 @@ test('moves from overworld into combat and returns after victory', async ({ page
 
   await page.waitForFunction(() => {
     const game = window.__ONE_RPG_DEBUG__.state.game;
-    return game.mode === 'overworld' && !game.overworld.enemies.some((enemy) => enemy.groupId === 'stone-c');
+    const mapState = game.overworld.mapStates[game.overworld.currentMapId];
+    return game.mode === 'overworld' && !mapState.enemies.some((enemy) => enemy.groupId === 'stone-c');
+  });
+});
+
+test('moves between connected overworld chunks', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => window.__ONE_RPG_DEBUG__?.state?.game?.mode === 'overworld');
+
+  await page.evaluate(() => {
+    const { state, actions } = window.__ONE_RPG_DEBUG__;
+    state.game.player.x = 18;
+    state.game.player.y = 10;
+    actions.moveOverworldPlayer({ x: 19, y: 10 });
+  });
+
+  await page.waitForFunction(() => {
+    const game = window.__ONE_RPG_DEBUG__.state.game;
+    return (
+      game.mode === 'overworld' &&
+      game.overworld.currentMapId === 'stone-grove' &&
+      game.player.x === 0 &&
+      game.player.y === 10 &&
+      !game.busy
+    );
   });
 });

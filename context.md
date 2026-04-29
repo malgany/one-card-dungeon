@@ -9,8 +9,10 @@ O fluxo principal agora comeca em um mapa aberto 3D/isometrico; clicar em grupos
 
 - `script.js`: ponto de entrada curto para manter o carregamento principal do projeto.
 - `js/main.js`: composicao da aplicacao. Cria estado, carrega assets, conecta input, regras e renderizacao.
-- `js/config/game-data.js`: constantes do jogo, modos, fases, mapa aberto, fases legadas, templates de monstros, assets e mapa dos niveis.
-- `js/game/game-factories.js`: criacao do estado inicial do mapa aberto, dungeon legada, ataques equipados, valores iniciais de vida/AP e preload das imagens das cartas.
+- `js/config/game-data.js`: constantes do jogo, modos, fases, fases legadas, templates de monstros, cartas, niveis e reexports do mundo aberto.
+- `js/config/world/`: configuracao do mundo aberto em chunks 20x20, incluindo mapas, biomas, terrenos, objetos, encontros e conexoes.
+- `js/game/game-factories.js`: criacao do estado inicial do mapa aberto por chunk, dungeon legada, ataques equipados, valores iniciais de vida/AP e preload das imagens das cartas.
+- `js/game/world-state.js`: helpers de leitura do chunk ativo, inimigos, objetos bloqueantes, terreno e conexoes.
 - `js/game/board-logic.js`: utilitarios de tabuleiro, pathfinding, linha de visao e ocupacao.
 - `js/game/game-actions.js`: fluxo do mapa aberto, entrada/saida de combate, turno, recompensas, banners e persistencia em `localStorage`.
 - `js/ui/layout.js`: calculo de layout do canvas, hit testing e helpers de hover.
@@ -23,14 +25,15 @@ O fluxo principal agora comeca em um mapa aberto 3D/isometrico; clicar em grupos
 
 - `README.md`: resumo rapido do projeto e da estrutura.
 - `docs/game-rules.md`: regras atuais do jogo.
-- `assets/`: imagens usadas nas cartas do jogador e dos monstros.
+- `assets/`: imagens das cartas (`characters/`) e texturas (`textures/`) usadas no mundo aberto.
 
 ## Fluxo Rapido Para Se Orientar
 
 1. Comece por `js/main.js` para ver como o jogo e montado.
-2. Se a mudanca for de regra, abra `js/game/game-actions.js` e `js/game/board-logic.js`.
-3. Se a mudanca for visual, abra `js/ui/renderer.js` e `js/ui/draw-primitives.js`.
-4. Se a mudanca for interacao do mouse, abra `js/ui/input.js`.
+2. Se a mudanca for em mapa/bioma/objeto do mundo aberto, abra `js/config/world/`.
+3. Se a mudanca for de regra, abra `js/game/game-actions.js` e `js/game/board-logic.js`.
+4. Se a mudanca for visual, abra `js/ui/renderer.js`, `js/ui/three-board-view.js` e `js/ui/draw-primitives.js`.
+5. Se a mudanca for interacao do mouse, abra `js/ui/input.js`.
 
 ## Independência de Modos
 

@@ -5,6 +5,7 @@ Projeto de dungeon crawler tático com **tabuleiro 3D (Three.js)**, inspirado em
 ## Funcionalidades Atuais
 
 - **Mapa Aberto 3D**: O jogo novo inicia em um mapa isometrico maior, com camera seguindo o aventureiro.
+- **Chunks de Mundo**: O mapa aberto e configurado em chunks 20x20 conectaveis, com bioma, terreno, objetos, encontros e conexoes por arquivo.
 - **Transicao Mapa/Luta**: Clicar em um inimigo do mapa inicia uma luta tatica 6x6; ao vencer, o grupo derrotado some do mapa e o jogador volta ao ponto onde estava.
 - **Grupos de Encontro**: Inimigos com o mesmo grupo entram juntos na arena.
 - **Dungeon Legada**: O fluxo antigo de andares/salas continua preservado como modo legado acessivel pelo menu.
@@ -44,9 +45,11 @@ Depois abra `http://localhost:8080` ou a porta indicada pelo servidor.
 - `style.css`: estilos basicos da pagina e do canvas.
 - `script.js`: entrypoint pequeno que importa a aplicacao modular.
 - `js/config`: configuracoes e dados fixos do jogo.
+- `js/config/world`: mapas, biomas, terrenos, objetos e assets do mundo aberto.
 - `js/game`: regras, fabrica de estado e logica de tabuleiro.
 - `js/ui`: layout, input e renderizacao.
-- `assets`: imagens das cartas.
+- `assets`: imagens das cartas e texturas do mundo aberto.
+- `js/game/world-state.js`: helpers do chunk ativo, inimigos, objetos e conexoes.
 - `docs`: documentacao das regras atuais.
 - `context.md`: mapa rapido para localizar cada responsabilidade.
 

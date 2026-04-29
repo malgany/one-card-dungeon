@@ -46,13 +46,13 @@ export const MONSTER_TEMPLATES = {
 };
 
 export const CARD_SOURCES = {
-  player: './assets/aventureiro.png',
-  spider: './assets/aranha.png',
-  skeleton: './assets/esqueleto.png',
-  archer: './assets/arqueiro.png',
-  specter: './assets/espectro.png',
-  golem: './assets/golem.png',
-  boss: './assets/guardiao.png',
+  player: './assets/characters/aventureiro.png',
+  spider: './assets/characters/aranha.png',
+  skeleton: './assets/characters/esqueleto.png',
+  archer: './assets/characters/arqueiro.png',
+  specter: './assets/characters/espectro.png',
+  golem: './assets/characters/golem.png',
+  boss: './assets/characters/guardiao.png',
 };
 
 export const LEVELS = [
@@ -69,33 +69,15 @@ export const LEVELS = [
   { id: 11, start: { x: 0, y: 5 }, walls: [[2, 1], [2, 2], [2, 3], [4, 1], [4, 2], [4, 3]], monsters: [['golem', 5, 4], ['specter', 5, 0], ['specter', 0, 0]] },
 ];
 
-export const OVERWORLD_MAPS = [
-  {
-    id: 'open-road',
-    width: 20,
-    height: 20,
-    playerStart: { x: 5, y: 15 },
-    walls: [
-      [4, 2], [5, 2], [6, 2], [11, 2], [12, 2],
-      [4, 3], [12, 3], [15, 3],
-      [1, 4], [2, 4], [8, 4], [9, 4], [15, 4],
-      [8, 5], [15, 5], [16, 5],
-      [5, 7], [6, 7], [7, 7], [12, 7],
-      [12, 8], [3, 9], [12, 9],
-      [3, 10], [9, 10], [10, 10], [11, 10],
-      [3, 11], [15, 11], [16, 11],
-    ],
-    enemies: [
-      ['spider', 7, 9, 'nest-a'],
-      ['spider', 8, 9, 'nest-a'],
-      ['skeleton', 13, 4, 'ruins-b'],
-      ['archer', 14, 4, 'ruins-b'],
-      ['golem', 14, 10, 'stone-c'],
-      ['specter', 15, 15, 'grave-h'],
-      ['skeleton', 5, 5, 'ruins-j'],
-    ],
-  },
-];
+export {
+  BIOMES,
+  START_WORLD_MAP_ID,
+  TERRAIN_TYPES,
+  WORLD_ASSETS,
+  WORLD_MAPS,
+  WORLD_OBJECT_TYPES,
+  getWorldMap,
+} from './world/index.js';
 
 export const TIMING = {
   TURN_BANNER: 1600,       // Duration of the "Turn of X" banner

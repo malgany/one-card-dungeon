@@ -1,6 +1,5 @@
-import { ACTION_RULES, BOARD_SIZE, GAME_MODES, LEVELS, PHASES, SAVE_KEY, TIMING } from '../config/game-data.js';
+import { ACTION_RULES, BOARD_SIZE, GAME_MODES, LEVELS, PHASES, SAVE_KEY, TIMING, getWorldMap } from '../config/game-data.js';
 import {
-  coordinatePairsToSet,
   dijkstra,
   distanceBetween,
   hasLineOfSight,
@@ -15,8 +14,17 @@ import {
   createCombatMonsterFromEnemy,
   createDungeonLegacyGame,
   createGame,
+  ensureOverworldMapState,
   levelMonsters,
 } from './game-factories.js';
+import {
+  getCurrentWorldBounds,
+  getCurrentWorldEnemies,
+  getCurrentWorldMap,
+  getCurrentWorldMapState,
+  getWorldConnectionAt,
+  getWorldObjectBlockedKeys,
+} from './world-state.js';
 
 export function createGameActions(state) {
 
@@ -111,18 +119,15 @@ export function createGameActions(state) {
   }
 
   function getOverworldBounds(overworld = getGame().overworld) {
-    return {
-      width: overworld?.width || BOARD_SIZE,
-      height: overworld?.height || BOARD_SIZE,
-    };
+    return getCurrentWorldBounds(overworld);
   }
 
-  function getOverworldWalls(overworld = getGame().overworld) {
-    return coordinatePairsToSet(overworld?.walls || []);
+  function getOverworldBlockedKeys(overworld = getGame().overworld) {
+    return getWorldObjectBlockedKeys(overworld);
   }
 
   function getAliveOverworldEnemies(game = getGame()) {
-    return (game.overworld?.enemies || []).filter((enemy) => enemy.hp !== 0);
+    return getCurrentWorldEnemies(game.overworld).filter((enemy) => enemy.hp !== 0);
   }
 
   function getOverworldEnemyAt(cell) {
@@ -150,7 +155,7 @@ export function createGameActions(state) {
     }
 
     const blocked = new Set([
-      ...getOverworldWalls(game.overworld),
+      ...getOverworldBlockedKeys(game.overworld),
       ...getOverworldEnemyOccupiedKeys(),
     ]);
     blocked.delete(posKey(game.player));
@@ -424,7 +429,29 @@ export function createGameActions(state) {
       totalDistance: totalDist,
     });
 
-    window.setTimeout(() => { game.busy = false; }, duration);
+    window.setTimeout(() => {
+      if (isOverworldMode(game)) {
+        const connection = getWorldConnectionAt(game.overworld, target);
+        if (connection) {
+          const targetMap = getWorldMap(connection.targetMapId);
+          const targetState = ensureOverworldMapState(game.overworld, connection.targetMapId);
+
+          if (targetMap && targetState) {
+            game.overworld.currentMapId = targetMap.id;
+            game.player.x = connection.spawn.x;
+            game.player.y = connection.spawn.y;
+            game.animations = [];
+            setEvent(`Entrou em ${targetMap.name}.`);
+            showBanner(targetMap.name, 'Novo trecho do mapa aberto.', 900, null, {
+              cardKey: 'player',
+              accent: '#34d399',
+            });
+          }
+        }
+      }
+
+      game.busy = false;
+    }, duration);
     setEvent(`Movendo pelo mapa: ${data.cost} passos.`);
     return true;
   }
@@ -452,7 +479,7 @@ export function createGameActions(state) {
     game.levelIndex = 0;
     game.combatContext = {
       origin: GAME_MODES.OVERWORLD,
-      mapId: game.overworld.mapId,
+      mapId: game.overworld.currentMapId,
       groupId: target.groupId,
       enemyIds: group.map((enemy) => enemy.id),
       returnPosition,
@@ -481,13 +508,20 @@ export function createGameActions(state) {
 
     const defeatedIds = new Set(context.enemyIds || []);
     if (game.overworld) {
-      game.overworld.enemies = game.overworld.enemies.filter((enemy) => !defeatedIds.has(enemy.id));
+      const mapId = context.mapId || game.overworld.currentMapId;
+      ensureOverworldMapState(game.overworld, mapId);
+      game.overworld.currentMapId = mapId;
+      const mapState = getCurrentWorldMapState(game.overworld);
+      if (mapState) {
+        mapState.enemies = mapState.enemies.filter((enemy) => !defeatedIds.has(enemy.id));
+      }
     }
 
     game.mode = GAME_MODES.OVERWORLD;
     game.phase = PHASES.HERO;
-    game.player.x = context.returnPosition?.x ?? game.overworld?.playerStart?.x ?? 0;
-    game.player.y = context.returnPosition?.y ?? game.overworld?.playerStart?.y ?? 0;
+    const map = getCurrentWorldMap(game.overworld);
+    game.player.x = context.returnPosition?.x ?? map?.playerStart?.x ?? 0;
+    game.player.y = context.returnPosition?.y ?? map?.playerStart?.y ?? 0;
     game.monsters = [];
     game.combatContext = null;
     game.turnQueue = ['player'];
@@ -883,6 +917,50 @@ export function createGameActions(state) {
     }
   }
 
+  function normalizeLoadedOverworld(loadedOverworld, fallbackOverworld) {
+    if (!fallbackOverworld) return null;
+    if (!loadedOverworld || typeof loadedOverworld !== 'object') return fallbackOverworld;
+
+    const currentMapId = loadedOverworld.currentMapId || loadedOverworld.mapId || fallbackOverworld.currentMapId;
+    const normalized = {
+      currentMapId,
+      mapStates: {
+        ...(fallbackOverworld.mapStates || {}),
+      },
+    };
+
+    if (loadedOverworld.mapStates && typeof loadedOverworld.mapStates === 'object') {
+      for (const [mapId, loadedMapState] of Object.entries(loadedOverworld.mapStates)) {
+        if (!getWorldMap(mapId)) continue;
+
+        ensureOverworldMapState(normalized, mapId);
+        const fallbackMapState = normalized.mapStates[mapId];
+        normalized.mapStates[mapId] = {
+          mapId,
+          enemies: Array.isArray(loadedMapState?.enemies)
+            ? loadedMapState.enemies
+            : fallbackMapState.enemies,
+          removedObjectIds: Array.isArray(loadedMapState?.removedObjectIds)
+            ? loadedMapState.removedObjectIds
+            : (fallbackMapState.removedObjectIds || []),
+        };
+      }
+    } else if (Array.isArray(loadedOverworld.enemies)) {
+      ensureOverworldMapState(normalized, currentMapId);
+      normalized.mapStates[currentMapId].enemies = loadedOverworld.enemies;
+      normalized.mapStates[currentMapId].removedObjectIds = Array.isArray(loadedOverworld.removedObjectIds)
+        ? loadedOverworld.removedObjectIds
+        : [];
+    }
+
+    if (!ensureOverworldMapState(normalized, normalized.currentMapId)) {
+      normalized.currentMapId = fallbackOverworld.currentMapId;
+      ensureOverworldMapState(normalized, normalized.currentMapId);
+    }
+
+    return normalized;
+  }
+
   function normalizeLoadedGame(loaded) {
     if (!loaded || typeof loaded !== 'object') return createGame();
 
@@ -899,18 +977,7 @@ export function createGameActions(state) {
     const loadedOverworld = loaded.overworld && typeof loaded.overworld === 'object'
       ? loaded.overworld
       : null;
-    const overworld = loadedOverworld
-      ? {
-          ...(fallback.overworld || {}),
-          ...loadedOverworld,
-          playerStart: {
-            ...(fallback.overworld?.playerStart || { x: 0, y: 0 }),
-            ...(loadedOverworld.playerStart || {}),
-          },
-          walls: Array.isArray(loadedOverworld.walls) ? loadedOverworld.walls : (fallback.overworld?.walls || []),
-          enemies: Array.isArray(loadedOverworld.enemies) ? loadedOverworld.enemies : (fallback.overworld?.enemies || []),
-        }
-      : fallback.overworld;
+    const overworld = normalizeLoadedOverworld(loadedOverworld, fallback.overworld);
 
     const normalized = {
       ...fallback,
@@ -994,8 +1061,9 @@ export function createGameActions(state) {
   }
 
   function newGame() {
-    setGame(createGame());
-    showBanner('Mapa aberto', 'Clique para andar e encontrar inimigos.', 1000, null, {
+    const game = setGame(createGame());
+    const map = getCurrentWorldMap(game.overworld);
+    showBanner(map?.name || 'Mapa aberto', 'Clique para andar e encontrar inimigos.', 1000, null, {
       cardKey: 'player',
       accent: '#34d399',
     });

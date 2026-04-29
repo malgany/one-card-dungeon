@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { BOARD_SIZE, CARD_SOURCES, GAME_MODES } from '../config/game-data.js';
+import { BOARD_SIZE, CARD_SOURCES, DEBUG_CONFIG, GAME_MODES, WORLD_OBJECT_TYPES } from '../config/game-data.js';
+import { getCurrentWorldEnemies } from '../game/world-state.js';
 
 const CARD_WIDTH = 0.56;
 const CARD_HEIGHT = 0.82;
@@ -190,6 +191,9 @@ export function createThreeBoardView({ state }) {
   };
   const scene = new THREE.Scene();
   scene.background = colorFromHex('#07090f');
+  if (state.visuals?.fogDensity > 0) {
+    scene.fog = new THREE.FogExp2('#07090f', state.visuals.fogDensity);
+  }
 
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 40);
   setIsometricCameraPosition(camera);
@@ -201,6 +205,20 @@ export function createThreeBoardView({ state }) {
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setClearColor(colorFromHex('#07090f'), 1);
+  
+  // Visual settings from state
+  const visuals = state.visuals || {
+    exposure: 1.0,
+    ambientIntensity: 1.0,
+    keyIntensity: 1.5,
+    fogDensity: 0.015,
+    shadowMapEnabled: false,
+  };
+
+  renderer.shadowMap.enabled = visuals.shadowMapEnabled;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.NoToneMapping;
+  renderer.toneMappingExposure = visuals.exposure;
   renderer.domElement.className = 'board-webgl';
   renderer.domElement.setAttribute('aria-hidden', 'true');
   renderer.domElement.tabIndex = -1;
@@ -223,14 +241,74 @@ export function createThreeBoardView({ state }) {
     return texture;
   }
 
+  const materialCache = new Map();
+  const geometryCache = new Map();
+
+  function standardMaterial({ color = '#64748b', texture = null, roughness = 0.86, metalness = 0.04 } = {}) {
+    const textureMap = textureFor(texture);
+
+    return new THREE.MeshStandardMaterial({
+      color: textureMap ? colorFromHex('#ffffff') : colorFromHex(color),
+      map: textureMap,
+      roughness,
+      metalness,
+    });
+  }
+
+  function objectMaterialFor(type) {
+    const cacheKey = `object:${type.id}`;
+    if (materialCache.has(cacheKey)) return materialCache.get(cacheKey);
+
+    if (type.shape === 'box' && type.materials?.top && type.materials?.side) {
+      const side = standardMaterial({ color: type.color, texture: type.materials.side, roughness: 0.85 });
+      const top = standardMaterial({ color: type.color, texture: type.materials.top, roughness: 0.85 });
+      const materials = [side, side, top, side, side, side];
+      materialCache.set(cacheKey, materials);
+      return materials;
+    }
+
+    if (type.shape === 'sprite') {
+      const textureMap = textureFor(type.texture);
+      const material = new THREE.MeshBasicMaterial({
+        map: textureMap,
+        transparent: true,
+        alphaTest: 0.5,
+        side: THREE.DoubleSide,
+      });
+      materialCache.set(cacheKey, material);
+      return material;
+    }
+
+    const material = standardMaterial({ color: type.color, texture: type.texture, roughness: 0.82 });
+    materialCache.set(cacheKey, material);
+    return material;
+  }
+
+  function objectGeometryFor(type) {
+    const cacheKey = `object:${type.id}:${type.shape}`;
+    if (geometryCache.has(cacheKey)) return geometryCache.get(cacheKey);
+
+    let geometry;
+    if (type.shape === 'cylinder') {
+      geometry = new THREE.CylinderGeometry(type.radius || 0.35, type.radius || 0.35, type.height || 0.45, 32);
+    } else if (type.shape === 'sprite') {
+      geometry = new THREE.PlaneGeometry(type.size?.width || 0.82, type.size?.height || 0.82);
+    } else {
+      geometry = new THREE.BoxGeometry(type.size?.width || 0.82, type.size?.height || 0.48, type.size?.depth || 0.82);
+    }
+
+    geometryCache.set(cacheKey, geometry);
+    return geometry;
+  }
+
   const baseMaterial = new THREE.MeshStandardMaterial({
     color: colorFromHex('#111827'),
     roughness: 0.82,
     metalness: 0.08,
   });
 
-  const wallSideTexture = textureFor('./assets/grama-lado.png');
-  const wallTopTexture = textureFor('./assets/grama-topo.png');
+  const wallSideTexture = textureFor('./assets/textures/grama-lado.webp');
+  const wallTopTexture = textureFor('./assets/textures/grama-topo.webp');
 
   const overworldSideMaterial = new THREE.MeshStandardMaterial({ map: wallSideTexture, roughness: 0.85 });
   const overworldTopMaterial = new THREE.MeshStandardMaterial({ map: wallTopTexture, roughness: 0.85 });
@@ -253,10 +331,17 @@ export function createThreeBoardView({ state }) {
   const groundMaterial = new THREE.MeshStandardMaterial({
     roughness: 0.9,
     metalness: 0.05,
-    map: textureFor('./assets/chao1.png'),
+    map: textureFor('./assets/textures/chao1.webp'),
   });
+  if (groundMaterial.map) {
+    groundMaterial.map.wrapS = THREE.RepeatWrapping;
+    groundMaterial.map.wrapT = THREE.RepeatWrapping;
+    groundMaterial.map.repeat.set(1, 1);
+    groundMaterial.map.needsUpdate = true;
+  }
 
   const wallMeshes = new Map();
+  const objectMeshes = new Map();
   const unitMeshes = new Map();
   const wallGeometry = new THREE.BoxGeometry(0.9, 0.54, 0.9);
   
@@ -297,14 +382,22 @@ export function createThreeBoardView({ state }) {
   const dummy = new THREE.Object3D();
   const pathArrowGroup = new THREE.Group();
   scene.add(pathArrowGroup);
-  const hemisphere = new THREE.HemisphereLight(colorFromHex('#dbeafe'), colorFromHex('#25170f'), 1.05);
+  const hemisphere = new THREE.HemisphereLight(colorFromHex('#dbeafe'), colorFromHex('#25170f'), state.visuals?.ambientIntensity ?? 1.0);
   scene.add(hemisphere);
 
-  const keyLight = new THREE.DirectionalLight(colorFromHex('#fff7ed'), 1.75);
-  keyLight.position.set(2.8, 6.2, 4.8);
+  const keyLight = new THREE.DirectionalLight(colorFromHex('#fff7ed'), state.visuals?.keyIntensity ?? 1.5);
+  keyLight.position.set(5, 10, 5);
+  keyLight.castShadow = state.visuals?.shadowMapEnabled ?? false;
+  keyLight.shadow.mapSize.width = 1024;
+  keyLight.shadow.mapSize.height = 1024;
+  keyLight.shadow.camera.left = -15;
+  keyLight.shadow.camera.right = 15;
+  keyLight.shadow.camera.top = 15;
+  keyLight.shadow.camera.bottom = -15;
+  keyLight.shadow.bias = -0.0005;
   scene.add(keyLight);
 
-  const rimLight = new THREE.DirectionalLight(colorFromHex('#7dd3fc'), 0.86);
+  const rimLight = new THREE.DirectionalLight(colorFromHex('#7dd3fc'), 0.7);
   rimLight.position.set(-4, 3.2, -3.5);
   scene.add(rimLight);
 
@@ -359,7 +452,11 @@ export function createThreeBoardView({ state }) {
     const isOverworld = state.game.mode === GAME_MODES.OVERWORLD;
     const hasGround = !!groundMaterial.map && isOverworld;
 
-    if (currentBoard.width === width && currentBoard.height === height && currentBoard.hasGround === hasGround) {
+    if (
+      currentBoard.width === width &&
+      currentBoard.height === height &&
+      currentBoard.hasGround === hasGround
+    ) {
       return;
     }
 
@@ -485,6 +582,8 @@ export function createThreeBoardView({ state }) {
       if (!wall) {
         wall = new THREE.Mesh(wallGeometry, material);
         wall.userData.isOverworld = isOverworld;
+        wall.castShadow = true;
+        wall.receiveShadow = true;
         wallMeshes.set(wallKey, wall);
         boardGroup.add(wall);
       }
@@ -496,6 +595,84 @@ export function createThreeBoardView({ state }) {
       if (active.has(wallKey)) continue;
       boardGroup.remove(wall);
       wallMeshes.delete(wallKey);
+    }
+  }
+
+  function createWorldObjectMesh(object, type) {
+    const mesh = new THREE.Mesh(objectGeometryFor(type), objectMaterialFor(type));
+    mesh.userData.typeId = type.id;
+    mesh.userData.hasOutline = !!state.visuals.showOutlines;
+    
+    if (type.shape === 'sprite') {
+      mesh.rotation.y = CARD_ROTATION_Y;
+    } else {
+      mesh.castShadow = true;
+    }
+    mesh.receiveShadow = true;
+
+    // Add outline if debug enabled
+    if (state.visuals.showOutlines) {
+      const outlineMaterial = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide });
+      const outlineMesh = new THREE.Mesh(mesh.geometry, outlineMaterial);
+      
+      if (type.shape === 'sprite') {
+        // For sprites, we use a slightly larger plane behind it
+        outlineMesh.scale.set(1.08, 1.08, 1.08);
+        outlineMesh.position.z = -0.01;
+        outlineMesh.material.side = THREE.DoubleSide; // Sprites need double side or front side behind
+      } else {
+        // For 3D shapes, we use the inverted hull technique
+        outlineMesh.scale.multiplyScalar(1.05);
+      }
+      
+      mesh.add(outlineMesh);
+    }
+
+    boardGroup.add(mesh);
+    return mesh;
+  }
+
+  function updateWorldObjects(objects) {
+    const activeObjectIds = new Set();
+
+    for (const object of objects || []) {
+      const type = WORLD_OBJECT_TYPES[object.type];
+      if (!type) continue;
+
+      activeObjectIds.add(object.id);
+      let mesh = objectMeshes.get(object.id);
+
+      if (mesh && (mesh.userData.typeId !== type.id || mesh.userData.hasOutline !== state.visuals.showOutlines)) {
+        boardGroup.remove(mesh);
+        objectMeshes.delete(object.id);
+        mesh = null;
+      }
+
+      if (!mesh) {
+        mesh = createWorldObjectMesh(object, type);
+        objectMeshes.set(object.id, mesh);
+      }
+
+      const center = tileCenter(object.x, object.y, currentBoard.width, currentBoard.height);
+      const height = type.height || type.size?.height || 0.45;
+      
+      let posX = center.x;
+      let posZ = center.z;
+      
+      if (type.alignment === 'bottom') {
+        // Offset towards the camera (southeast in this coordinate system)
+        const offset = 0.38;
+        posX += offset;
+        posZ += offset;
+      }
+
+      mesh.position.set(posX, height / 2 + 0.05, posZ);
+    }
+
+    for (const [objectId, mesh] of objectMeshes.entries()) {
+      if (activeObjectIds.has(objectId)) continue;
+      boardGroup.remove(mesh);
+      objectMeshes.delete(objectId);
     }
   }
 
@@ -612,7 +789,7 @@ export function createThreeBoardView({ state }) {
     updateUnit(state.game.player, 'player', true, now);
 
     const units = state.game.mode === GAME_MODES.OVERWORLD
-      ? (state.game.overworld?.enemies || [])
+      ? getCurrentWorldEnemies(state.game.overworld)
       : state.game.monsters;
 
     for (const monster of units) {
@@ -679,6 +856,7 @@ export function createThreeBoardView({ state }) {
       boardWidth = BOARD_SIZE,
       boardHeight = BOARD_SIZE,
       walls,
+      objects = [],
       hoverTile,
       hoverPath,
       reachable,
@@ -690,7 +868,24 @@ export function createThreeBoardView({ state }) {
       syncBoardGeometry(boardWidth, boardHeight);
       syncRendererSize(currentLayout);
       const viewport = syncCamera(currentLayout, now);
+      
+      // Update visuals from state
+      if (state.visuals) {
+        renderer.toneMappingExposure = state.visuals.exposure;
+        renderer.shadowMap.enabled = state.visuals.shadowMapEnabled;
+        if (state.visuals.fogDensity > 0) {
+          if (!scene.fog) scene.fog = new THREE.FogExp2('#07090f', state.visuals.fogDensity);
+          scene.fog.density = state.visuals.fogDensity;
+        } else {
+          scene.fog = null;
+        }
+        hemisphere.intensity = state.visuals.ambientIntensity;
+        keyLight.intensity = state.visuals.keyIntensity;
+        keyLight.castShadow = state.visuals.shadowMapEnabled;
+      }
+
       updateWalls(walls);
+      updateWorldObjects(objects);
       updateHighlights({
         hoverTile,
         reachable,

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GAME_MODES, LEVELS, PHASES, SAVE_KEY, TIMING } from '../../js/config/game-data.js';
 import { createGameActions } from '../../js/game/game-actions.js';
 import { createDungeonLegacyGame, createGame, createMonster } from '../../js/game/game-factories.js';
+import { getCurrentWorldEnemies, getCurrentWorldMapState } from '../../js/game/world-state.js';
 
 function createActionHarness(game = createDungeonLegacyGame()) {
   const state = { game };
@@ -200,10 +201,28 @@ describe('game actions', () => {
     expect(state.game.busy).toBe(false);
   });
 
+  it('transitions between world chunks and blocks round objects by grid cell', () => {
+    const game = createGame();
+    const { state, actions } = createActionHarness(game);
+
+    actions.moveOverworldPlayer({ x: 19, y: 10 });
+    const movement = state.game.animations.find((anim) => anim.type === 'movement' && anim.entityId === 'player');
+
+    vi.advanceTimersByTime(movement.totalDuration);
+
+    expect(state.game.overworld.currentMapId).toBe('stone-grove');
+    expect(state.game.player).toMatchObject({ x: 0, y: 10 });
+    expect(getCurrentWorldMapState(state.game.overworld).enemies.length).toBeGreaterThan(0);
+    expect(state.game.busy).toBe(false);
+
+    expect(actions.moveOverworldPlayer({ x: 3, y: 10 })).toBe(false);
+    expect(state.game.player).toMatchObject({ x: 0, y: 10 });
+  });
+
   it('starts an overworld encounter with the whole enemy group', () => {
     const game = createGame();
     const { state, actions } = createActionHarness(game);
-    const target = state.game.overworld.enemies.find((enemy) => enemy.groupId === 'nest-a');
+    const target = getCurrentWorldEnemies(state.game.overworld).find((enemy) => enemy.groupId === 'nest-a');
     const returnPosition = { x: state.game.player.x, y: state.game.player.y };
 
     actions.startOverworldEncounter(target.id);
@@ -211,6 +230,7 @@ describe('game actions', () => {
     expect(state.game.mode).toBe(GAME_MODES.COMBAT);
     expect(state.game.combatContext).toMatchObject({
       origin: GAME_MODES.OVERWORLD,
+      mapId: 'open-road',
       groupId: 'nest-a',
       returnPosition,
     });
@@ -221,7 +241,7 @@ describe('game actions', () => {
   it('returns to the overworld and removes the defeated group after map combat', () => {
     const game = createGame();
     const { state, actions } = createActionHarness(game);
-    const target = state.game.overworld.enemies.find((enemy) => enemy.groupId === 'stone-c');
+    const target = getCurrentWorldEnemies(state.game.overworld).find((enemy) => enemy.groupId === 'stone-c');
     const returnPosition = { x: state.game.player.x, y: state.game.player.y };
 
     actions.startOverworldEncounter(target.id);
@@ -237,10 +257,11 @@ describe('game actions', () => {
     vi.advanceTimersByTime(TIMING.HERO_ATTACK_WAIT_TIME);
 
     expect(state.game.mode).toBe(GAME_MODES.OVERWORLD);
+    expect(state.game.overworld.currentMapId).toBe('open-road');
     expect(state.game.player).toMatchObject(returnPosition);
     expect(state.game.monsters).toEqual([]);
     expect(state.game.combatContext).toBe(null);
-    expect(state.game.overworld.enemies.some((enemy) => enemy.groupId === 'stone-c')).toBe(false);
+    expect(getCurrentWorldEnemies(state.game.overworld).some((enemy) => enemy.groupId === 'stone-c')).toBe(false);
     expect(state.game.phase).toBe(PHASES.HERO);
   });
 

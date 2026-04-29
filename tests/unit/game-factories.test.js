@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { GAME_MODES, LEVELS, MONSTER_TEMPLATES, OVERWORLD_MAPS, PHASES } from '../../js/config/game-data.js';
+import { GAME_MODES, LEVELS, MONSTER_TEMPLATES, PHASES, START_WORLD_MAP_ID, getWorldMap } from '../../js/config/game-data.js';
 import {
+  createOverworldMapState,
   createDungeonLegacyGame,
   createGame,
   createMonster,
@@ -10,6 +11,7 @@ import {
   overworldEnemies,
   randDie,
 } from '../../js/game/game-factories.js';
+import { getCurrentWorldMapState } from '../../js/game/world-state.js';
 
 describe('game factories', () => {
   afterEach(() => {
@@ -49,6 +51,7 @@ describe('game factories', () => {
 
   it('creates overworld enemies with group ids', () => {
     const enemy = createOverworldEnemy('spider', 4, 5, 'nest-a', 0);
+    const startMap = getWorldMap(START_WORLD_MAP_ID);
 
     expect(enemy).toMatchObject({
       id: 'overworld-nest-a-0',
@@ -58,19 +61,22 @@ describe('game factories', () => {
       groupId: 'nest-a',
       hp: MONSTER_TEMPLATES.spider.hp,
     });
-    expect(overworldEnemies(OVERWORLD_MAPS[0]).map((e) => e.groupId)).toContain('nest-a');
+    expect(overworldEnemies(startMap).map((e) => e.groupId)).toContain('nest-a');
+    expect(createOverworldMapState(startMap).enemies.length).toBe(startMap.encounters.length);
   });
 
   it('creates the initial game state in the open map', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
 
     const game = createGame();
+    const startMap = getWorldMap(START_WORLD_MAP_ID);
+    const startMapState = getCurrentWorldMapState(game.overworld);
 
     expect(game.mode).toBe(GAME_MODES.OVERWORLD);
     expect(game.levelIndex).toBe(0);
     expect(game.player).toMatchObject({
-      x: OVERWORLD_MAPS[0].playerStart.x,
-      y: OVERWORLD_MAPS[0].playerStart.y,
+      x: startMap.playerStart.x,
+      y: startMap.playerStart.y,
       health: 60,
       maxHealth: 60,
       apMax: 6,
@@ -83,11 +89,12 @@ describe('game factories', () => {
       },
     });
     expect(game.phase).toBe(PHASES.HERO);
-    expect(game.overworld.mapId).toBe(OVERWORLD_MAPS[0].id);
-    expect(game.overworld.enemies.length).toBeGreaterThan(0);
+    expect(game.overworld.currentMapId).toBe(startMap.id);
+    expect(game.overworld.mapStates[startMap.id]).toBeDefined();
+    expect(startMapState.enemies.length).toBeGreaterThan(0);
     expect(game.monsters).toEqual([]);
     expect(game.turnQueue).toEqual(['player']);
-    expect(game.banner.title).toBe('Mapa aberto');
+    expect(game.banner.title).toBe(startMap.name);
   });
 
   it('preserves the legacy dungeon factory', () => {

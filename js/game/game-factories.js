@@ -4,8 +4,9 @@ import {
   GAME_MODES,
   LEVELS,
   MONSTER_TEMPLATES,
-  OVERWORLD_MAPS,
   PHASES,
+  START_WORLD_MAP_ID,
+  getWorldMap,
 } from '../config/game-data.js';
 
 export function loadCardImages() {
@@ -48,15 +49,33 @@ export function createMonster(type, x, y, index) {
   };
 }
 
-export function createOverworldEnemy(type, x, y, groupId, index) {
-  const template = MONSTER_TEMPLATES[type];
+export function createOverworldEnemy(typeOrEncounter, x, y, groupId, index, mapId = null) {
+  let encounter;
+  let encounterIndex;
+  let activeMapId;
+
+  if (typeOrEncounter && typeof typeOrEncounter === 'object') {
+    encounter = typeOrEncounter;
+    encounterIndex = Number.isInteger(x) ? x : 0;
+    activeMapId = y || encounter.mapId || null;
+  } else {
+    encounter = { type: typeOrEncounter, x, y, groupId };
+    encounterIndex = Number.isInteger(index) ? index : 0;
+    activeMapId = mapId;
+  }
+
+  const template = MONSTER_TEMPLATES[encounter.type];
+  const group = encounter.groupId || encounter.id || `${encounter.type}-${encounterIndex}`;
+  const idPrefix = activeMapId ? `overworld-${activeMapId}` : 'overworld';
 
   return {
-    id: `overworld-${groupId}-${index}`,
-    type,
-    x,
-    y,
-    groupId,
+    id: `${idPrefix}-${group}-${encounterIndex}`,
+    encounterId: encounter.id || `${group}-${encounterIndex}`,
+    mapId: activeMapId,
+    type: encounter.type,
+    x: encounter.x,
+    y: encounter.y,
+    groupId: group,
     hp: template.hp,
     maxHp: template.hp,
     name: template.name,
@@ -83,9 +102,38 @@ export function levelMonsters(level) {
 }
 
 export function overworldEnemies(map) {
-  return map.enemies.map((enemy, index) => {
-    return createOverworldEnemy(enemy[0], enemy[1], enemy[2], enemy[3], index);
+  return (map.encounters || []).map((encounter, index) => {
+    return createOverworldEnemy(encounter, index, map.id);
   });
+}
+
+export function createOverworldMapState(map) {
+  return {
+    mapId: map.id,
+    enemies: overworldEnemies(map),
+    removedObjectIds: [],
+  };
+}
+
+export function createOverworldRuntime(map = getWorldMap(START_WORLD_MAP_ID)) {
+  return {
+    currentMapId: map.id,
+    mapStates: {
+      [map.id]: createOverworldMapState(map),
+    },
+  };
+}
+
+export function ensureOverworldMapState(overworld, mapId) {
+  if (!overworld || !mapId) return null;
+  if (!overworld.mapStates) overworld.mapStates = {};
+  if (overworld.mapStates[mapId]) return overworld.mapStates[mapId];
+
+  const map = getWorldMap(mapId);
+  if (!map) return null;
+
+  overworld.mapStates[mapId] = createOverworldMapState(map);
+  return overworld.mapStates[mapId];
 }
 
 export function createPlayer(position) {
@@ -119,7 +167,7 @@ function createBaseUiState() {
   };
 }
 
-export function createOverworldGame(map = OVERWORLD_MAPS[0]) {
+export function createOverworldGame(map = getWorldMap(START_WORLD_MAP_ID)) {
   const player = createPlayer(map.playerStart);
 
   return {
@@ -127,14 +175,7 @@ export function createOverworldGame(map = OVERWORLD_MAPS[0]) {
     levelIndex: 0,
     player,
     monsters: [],
-    overworld: {
-      mapId: map.id,
-      width: map.width,
-      height: map.height,
-      walls: map.walls.map(([x, y]) => [x, y]),
-      playerStart: { ...map.playerStart },
-      enemies: overworldEnemies(map),
-    },
+    overworld: createOverworldRuntime(map),
     combatContext: null,
     phase: PHASES.HERO,
     ...createBaseUiState(),
@@ -143,7 +184,7 @@ export function createOverworldGame(map = OVERWORLD_MAPS[0]) {
     turnCount: 0,
     turnQueue: ['player'],
     banner: {
-      title: 'Mapa aberto',
+      title: map.name,
       subtitle: 'Clique para andar. Clique em inimigos para lutar.',
       until: performance.now() + 1400,
       cardKey: 'player',

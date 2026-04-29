@@ -76,9 +76,14 @@ describe('layout tools', () => {
     const { state, layout } = createLayoutHarness();
     state.game.mode = GAME_MODES.OVERWORLD;
     state.game.overworld = {
-      width: 18,
-      height: 14,
-      enemies: [{ id: 'e1', x: 7, y: 9, hp: 10 }],
+      currentMapId: 'open-road',
+      mapStates: {
+        'open-road': {
+          mapId: 'open-road',
+          enemies: [{ id: 'e1', x: 7, y: 9, hp: 10 }],
+          removedObjectIds: [],
+        },
+      },
     };
     state.boardInteraction = {
       tileAt: vi.fn(() => ({ x: 7, y: 9 })),

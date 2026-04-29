@@ -1,5 +1,11 @@
 import { BOARD_SIZE, DEBUG_CONFIG, GAME_MODES, LEVELS, PHASES, STAT_META } from '../config/game-data.js';
-import { coordinatePairsToSet, levelWallsSet, posKey, samePos } from '../game/board-logic.js';
+import { levelWallsSet, posKey, samePos } from '../game/board-logic.js';
+import {
+  getCurrentWorldBounds,
+  getCurrentWorldMap,
+  getCurrentWorldMapState,
+  getCurrentWorldObjects,
+} from '../game/world-state.js';
 import { createDrawPrimitives } from './draw-primitives.js';
 import { createThreeBoardView } from './three-board-view.js';
 
@@ -169,6 +175,8 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     draw.roundRect(x, y, w, h, 20, '#1e2328', '#111827');
     const inOverworld = game.mode === GAME_MODES.OVERWORLD;
+    const worldMap = inOverworld ? getCurrentWorldMap(game.overworld) : null;
+    const worldMapState = inOverworld ? getCurrentWorldMapState(game.overworld) : null;
     
     let cy = y + 40;
     draw.drawText('ONE CARD', x + w / 2, cy, {
@@ -181,7 +189,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     
     cy += 36;
     const progressLabel = inOverworld
-      ? `${game.overworld?.enemies?.length || 0} inimigos no mapa`
+      ? `${worldMapState?.enemies?.length || 0} inimigos em ${worldMap?.name || 'mapa'}`
       : `Nível ${LEVELS[game.levelIndex].id}/12 • Vez ${game.turnCount}`;
     draw.drawText(progressLabel, x + w / 2, cy, {
       align: 'center', font: 'bold 18px Inter, sans-serif', color: '#facc15',
@@ -383,7 +391,45 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       });
     }
 
+    // Visual Debug Controls
+    if (DEBUG_CONFIG.SHOW_STATS) {
+      cy = h - 220;
+      draw.drawText('AJUSTES VISUAIS', x + w / 2, cy, { align: 'center', font: '900 12px Inter, sans-serif', color: '#64748b' });
+      cy += 24;
+
+      const controls = [
+        { label: 'Exposição', key: 'exposure', step: 0.1, min: 0.1, max: 3.0 },
+        { label: 'Luz Amb.', key: 'ambientIntensity', step: 0.1, min: 0, max: 3.0 },
+        { label: 'Luz Dir.', key: 'keyIntensity', step: 0.1, min: 0, max: 5.0 },
+        { label: 'Névoa', key: 'fogDensity', step: 0.005, min: 0, max: 0.1 },
+      ];
+
+      controls.forEach(ctrl => {
+        const val = state.visuals[ctrl.key];
+        draw.drawText(`${ctrl.label}: ${val.toFixed(3)}`, x + 20, cy + 14, { font: '11px Inter, sans-serif', color: '#94a3b8' });
+        
+        draw.drawButton(x + w - 70, cy, 24, 20, '-', () => {
+          state.visuals[ctrl.key] = Math.max(ctrl.min, state.visuals[ctrl.key] - ctrl.step);
+        }, { fill: '#1f2937', stroke: '#475569', font: 'bold 14px Inter' });
+
+        draw.drawButton(x + w - 40, cy, 24, 20, '+', () => {
+          state.visuals[ctrl.key] = Math.min(ctrl.max, state.visuals[ctrl.key] + ctrl.step);
+        }, { fill: '#1f2937', stroke: '#475569', font: 'bold 14px Inter' });
+
+        cy += 26;
+      });
+
+      const shadowLabel = state.visuals.shadowMapEnabled ? 'Sombras: ON' : 'Sombras: OFF';
+      draw.drawButton(x + 20, cy, (w / 2) - 24, 24, shadowLabel, () => {
+        state.visuals.shadowMapEnabled = !state.visuals.shadowMapEnabled;
+      }, { fill: state.visuals.shadowMapEnabled ? '#065f46' : '#1f2937', stroke: '#475569', font: 'bold 11px Inter' });
+
+      const outlineLabel = state.visuals.showOutlines ? 'Bordas: ON' : 'Bordas: OFF';
+      draw.drawButton(x + (w / 2) + 4, cy, (w / 2) - 24, 24, outlineLabel, () => {
+        state.visuals.showOutlines = !state.visuals.showOutlines;
+      }, { fill: state.visuals.showOutlines ? '#065f46' : '#1f2937', stroke: '#475569', font: 'bold 11px Inter' });
     }
+  }
 
   function drawMenu(currentLayout) {
     if (!state.game.menuOpen) return;
@@ -1192,7 +1238,9 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     state.game.animations = state.game.animations.filter((anim) => isAnimationActive(anim, now));
 
-    const walls = coordinatePairsToSet(overworld.walls);
+    const worldMap = getCurrentWorldMap(overworld);
+    const bounds = getCurrentWorldBounds(overworld);
+    const objects = getCurrentWorldObjects(overworld);
     const reachable = actions.getOverworldReachableTiles();
     const hoverTile = layout.hoveredTile();
     const hoverEnemy = layout.hoveredOverworldEnemy();
@@ -1206,9 +1254,10 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     threeBoard.render({
       currentLayout,
-      boardWidth: overworld.width,
-      boardHeight: overworld.height,
-      walls,
+      boardWidth: bounds.width,
+      boardHeight: bounds.height,
+      walls: new Set(),
+      objects,
       hoverTile,
       hoverPath: hoverEnemy ? null : hoverPath,
       reachable: moveHighlight,

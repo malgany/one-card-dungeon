@@ -19,6 +19,14 @@ const state = {
   mouse: { x: 0, y: 0 },
   suppressClick: false,
   debugZoom: 1.0,
+  visuals: {
+    exposure: 1.0,
+    ambientIntensity: 1.05,
+    keyIntensity: 1.75,
+    fogDensity: 0.0,
+    shadowMapEnabled: false,
+    showOutlines: false,
+  },
 };
 
 const cardImages = loadCardImages();
