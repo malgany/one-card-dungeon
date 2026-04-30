@@ -143,7 +143,7 @@ export function createPlayer(position) {
     health: 60,
     maxHealth: 60,
     apMax: ACTION_RULES.BASE_AP,
-    speedBase: 4,
+    speedBase: 3,
     attackSlot: { ...ACTION_RULES.BASIC_ATTACK },
     defenseBase: 2,
     rangeBase: 2,
@@ -207,7 +207,7 @@ export function createDungeonLegacyGame() {
     combatContext: null,
     phase: PHASES.HERO,
     ...createBaseUiState(),
-    speedRemaining: 4,
+    speedRemaining: 3,
     apRemaining: ACTION_RULES.BASE_AP,
     turnCount: 1,
     turnQueue: ['player', ...monsters.map(m => m.id)],
@@ -218,7 +218,7 @@ export function createDungeonLegacyGame() {
       cardKey: 'player',
       accent: '#34d399',
     },
-    lastEvent: `Sua vez. ${ACTION_RULES.BASE_AP} AP, ${4} movimento.`,
+    lastEvent: `Sua vez. ${ACTION_RULES.BASE_AP} AP, ${3} movimento.`,
   };
 }
 

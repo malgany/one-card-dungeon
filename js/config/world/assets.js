@@ -7,5 +7,6 @@ export const WORLD_ASSETS = {
     grassTop: './assets/textures/grama-topo.webp',
     grassSide: './assets/textures/grama-lado.webp',
     grassDecorative: './assets/textures/grama-decorativa.png',
+    portal: './assets/textures/portal.png',
   },
 };

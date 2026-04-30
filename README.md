@@ -5,7 +5,7 @@ Projeto de dungeon crawler tático com **tabuleiro 3D (Three.js)**, inspirado em
 ## Funcionalidades Atuais
 
 - **Mapa Aberto 3D**: O jogo novo inicia em um mapa isometrico maior, com camera seguindo o aventureiro.
-- **Chunks de Mundo**: O mapa aberto e configurado em chunks 20x20 conectaveis, com bioma, terreno, objetos, encontros e conexoes por arquivo.
+- **Chunks de Mundo**: O mapa aberto e configurado em chunks 10x10 conectaveis, com bioma, terreno, objetos, encontros e conexoes por arquivo.
 - **Transicao Mapa/Luta**: Clicar em um inimigo do mapa inicia uma luta tatica 6x6; ao vencer, o grupo derrotado some do mapa e o jogador volta ao ponto onde estava.
 - **Grupos de Encontro**: Inimigos com o mesmo grupo entram juntos na arena.
 - **Dungeon Legada**: O fluxo antigo de andares/salas continua preservado como modo legado acessivel pelo menu.
@@ -16,28 +16,38 @@ Projeto de dungeon crawler tático com **tabuleiro 3D (Three.js)**, inspirado em
 - **Fase de Herói Simplificada**: O turno do aventureiro começa direto na ação, com **6 AP** fixos por turno.
 - **Ações Estratégicas**:
   - **Movimento**: 4 pontos de movimento por turno (passos ortogonais apenas).
-  - **Ataque**: Equipado com `Golpe` (5 AP, 5 Dano, 1 Roubo de Vida).
+  - **Ataque**: Equipado com `Golpe` (5 AP, 10 Dano, 10 Roubo de Vida).
 - **Combate**: Defesa mitiga dano (Dano Final = Ataque - Defesa, min 0).
 - **Vida**: Aventureiro tem 60 HP; monstros têm vida proporcional à sua periculosidade.
 - **Interface**: HUD interativo, tooltips e animações de texto flutuante.
 
 ## Como abrir
 
-Como o projeto agora usa modulos JavaScript, o ideal e servir a pasta com um servidor estatico simples.
-
-Exemplos:
+Como o projeto usa imports de pacote (`three` e addons), rode pelo Vite para que as dependencias sejam resolvidas corretamente.
 
 ```bash
-python -m http.server 8080
+npm install
+npm run dev
 ```
 
-ou
+Depois abra a URL indicada pelo Vite.
+
+Para gerar a versao de producao:
 
 ```bash
-npx serve .
+npm run build
 ```
 
-Depois abra `http://localhost:8080` ou a porta indicada pelo servidor.
+A pasta publicada em producao e `dist`.
+
+## Deploy Na Vercel
+
+Use estas configuracoes:
+
+- Framework Preset: `Vite`
+- Build Command: `npm run build`
+- Output Directory: `dist`
+- Root Directory: raiz do repositorio
 
 ## Estrutura
 
@@ -56,3 +66,7 @@ Depois abra `http://localhost:8080` ou a porta indicada pelo servidor.
 ## Documento de Regras
 
 As regras atuais tambem estao descritas em `docs/game-rules.md`.
+
+## Guia 3D
+
+Se for adicionar ou ajustar modelos GLTF no mundo aberto, consulte `docs/gltf-models.md` antes de mexer em `js/ui/three-board-view.js` ou em `js/config/world/objects.js`.

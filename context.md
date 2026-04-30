@@ -25,6 +25,7 @@ O fluxo principal agora comeca em um mapa aberto 3D/isometrico; clicar em grupos
 
 - `README.md`: resumo rapido do projeto e da estrutura.
 - `docs/game-rules.md`: regras atuais do jogo.
+- `docs/gltf-models.md`: guia para organizar, importar e depurar modelos GLTF/3D no mundo aberto.
 - `assets/`: imagens das cartas (`characters/`) e texturas (`textures/`) usadas no mundo aberto.
 
 ## Fluxo Rapido Para Se Orientar
@@ -32,8 +33,9 @@ O fluxo principal agora comeca em um mapa aberto 3D/isometrico; clicar em grupos
 1. Comece por `js/main.js` para ver como o jogo e montado.
 2. Se a mudanca for em mapa/bioma/objeto do mundo aberto, abra `js/config/world/`.
 3. Se a mudanca for de regra, abra `js/game/game-actions.js` e `js/game/board-logic.js`.
-4. Se a mudanca for visual, abra `js/ui/renderer.js`, `js/ui/three-board-view.js` e `js/ui/draw-primitives.js`.
-5. Se a mudanca for interacao do mouse, abra `js/ui/input.js`.
+4. Se a mudanca envolver GLTF/3D, leia `docs/gltf-models.md` e depois abra `js/ui/three-board-view.js` e `js/config/world/objects.js`.
+5. Se a mudanca for visual em geral, abra `js/ui/renderer.js`, `js/ui/three-board-view.js` e `js/ui/draw-primitives.js`.
+6. Se a mudanca for interacao do mouse, abra `js/ui/input.js`.
 
 ## Independência de Modos
 

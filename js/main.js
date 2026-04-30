@@ -18,7 +18,7 @@ const state = {
   game: createGame(),
   mouse: { x: 0, y: 0 },
   suppressClick: false,
-  debugZoom: 1.0,
+  debugZoom: 1.15,
   visuals: {
     exposure: 1.0,
     ambientIntensity: 1.05,

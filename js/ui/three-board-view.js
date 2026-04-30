@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { BOARD_SIZE, CARD_SOURCES, DEBUG_CONFIG, GAME_MODES, WORLD_OBJECT_TYPES } from '../config/game-data.js';
+import { BOARD_SIZE, CARD_SOURCES, DEBUG_CONFIG, GAME_MODES, WORLD_ASSETS, WORLD_OBJECT_TYPES } from '../config/game-data.js';
 import { getCurrentWorldEnemies } from '../game/world-state.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const CARD_WIDTH = 0.56;
 const CARD_HEIGHT = 0.82;
@@ -10,6 +11,8 @@ const ISO_ELEVATION = Math.atan(1 / Math.sqrt(2));
 const ISO_CAMERA_DISTANCE = 12;
 const ORTHO_VIEW_HEIGHT = 7.48;
 const COMPACT_ORTHO_VIEW_HEIGHT = 8.16;
+const COMBAT_ORTHO_VIEW_HEIGHT = 8.26;
+const COMPACT_COMBAT_ORTHO_VIEW_HEIGHT = 8.98;
 const OVERWORLD_ORTHO_VIEW_HEIGHT = 9.18;
 const COMPACT_OVERWORLD_ORTHO_VIEW_HEIGHT = 8.16;
 const FLOOR_COLORS = ['#3b3126', '#2f271f'];
@@ -228,6 +231,9 @@ export function createThreeBoardView({ state }) {
   scene.add(boardGroup);
 
   const textureLoader = new THREE.TextureLoader();
+  const gltfLoader = new GLTFLoader();
+  const animationTimer = new THREE.Clock();
+  const mixers = new Map();
   const textureCache = new Map();
 
   function textureFor(src) {
@@ -337,7 +343,6 @@ export function createThreeBoardView({ state }) {
     groundMaterial.map.wrapS = THREE.RepeatWrapping;
     groundMaterial.map.wrapT = THREE.RepeatWrapping;
     groundMaterial.map.repeat.set(1, 1);
-    groundMaterial.map.needsUpdate = true;
   }
 
   const wallMeshes = new Map();
@@ -368,6 +373,15 @@ export function createThreeBoardView({ state }) {
 
   const highlightGeometry = new THREE.PlaneGeometry(0.86, 0.86);
   highlightGeometry.rotateX(-Math.PI / 2);
+
+  const portalMeshes = new Map();
+  const portalGeometry = new THREE.PlaneGeometry(0.85, 0.85);
+  portalGeometry.rotateX(-Math.PI / 2);
+  const portalMaterial = new THREE.MeshBasicMaterial({
+    map: textureFor(WORLD_ASSETS.objects.portal),
+    transparent: true,
+    alphaTest: 0.5,
+  });
   const highlightMaterial = new THREE.MeshBasicMaterial({
     color: 0xffffff,
     transparent: true,
@@ -424,8 +438,10 @@ export function createThreeBoardView({ state }) {
     const isOverworld = mode === GAME_MODES.OVERWORLD;
     const baseViewHeight = isOverworld
       ? (layout.compact ? COMPACT_OVERWORLD_ORTHO_VIEW_HEIGHT : OVERWORLD_ORTHO_VIEW_HEIGHT)
-      : (layout.compact ? COMPACT_ORTHO_VIEW_HEIGHT : ORTHO_VIEW_HEIGHT);
-    const viewHeight = baseViewHeight / (state.debugZoom || 1.0);
+      : mode === GAME_MODES.COMBAT
+        ? (layout.compact ? COMPACT_COMBAT_ORTHO_VIEW_HEIGHT : COMBAT_ORTHO_VIEW_HEIGHT)
+        : (layout.compact ? COMPACT_ORTHO_VIEW_HEIGHT : ORTHO_VIEW_HEIGHT);
+    const viewHeight = baseViewHeight / (state.debugZoom || 1.15);
     const viewWidth = viewHeight * aspect;
 
     let target = { x: 0, z: 0 };
@@ -599,6 +615,66 @@ export function createThreeBoardView({ state }) {
   }
 
   function createWorldObjectMesh(object, type) {
+    if (type.shape === 'model' && type.modelUrl) {
+      const group = new THREE.Group();
+      group.userData.typeId = type.id;
+      group.userData.hasOutline = !!state.visuals.showOutlines;
+      boardGroup.add(group);
+      
+      gltfLoader.load(type.modelUrl, (gltf) => {
+        const model = gltf.scene;
+        
+        // Center model and sit on ground
+        const box = new THREE.Box3().setFromObject(model);
+        const center = box.getCenter(new THREE.Vector3());
+        
+        model.position.x = -center.x;
+        model.position.y = -box.min.y;
+        model.position.z = -center.z;
+
+        model.traverse((node) => {
+          if (node.isMesh) {
+            node.castShadow = true;
+            node.receiveShadow = true;
+            node.frustumCulled = false;
+
+            if (node.geometry?.attributes && !node.geometry.attributes.normal) {
+              node.geometry.computeVertexNormals();
+            }
+
+            const materials = Array.isArray(node.material) ? node.material : [node.material];
+            for (const material of materials) {
+              if (!material) continue;
+              material.side = THREE.DoubleSide;
+              if (material.map) {
+                material.map.colorSpace = THREE.SRGBColorSpace;
+              }
+              material.needsUpdate = true;
+            }
+          }
+        });
+        // Setup Animations
+        if (gltf.animations && gltf.animations.length > 0) {
+          const mixer = new THREE.AnimationMixer(model);
+          gltf.animations.forEach((clip) => {
+            mixer.clipAction(clip).play();
+          });
+          mixers.set(object.id, mixer);
+        }
+
+        group.add(model);
+        
+        // Apply custom scale/rotation from config
+        const finalScale = type.scale || 1.0;
+        group.scale.set(finalScale, finalScale, finalScale);
+        if (type.rotation) group.rotation.set(type.rotation.x || 0, type.rotation.y || 0, type.rotation.z || 0);
+      }, undefined, (error) => {
+        console.error('Erro ao carregar modelo:', type.modelUrl, error);
+      });
+      
+      return group;
+    }
+
     const mesh = new THREE.Mesh(objectGeometryFor(type), objectMaterialFor(type));
     mesh.userData.typeId = type.id;
     mesh.userData.hasOutline = !!state.visuals.showOutlines;
@@ -645,6 +721,7 @@ export function createThreeBoardView({ state }) {
       if (mesh && (mesh.userData.typeId !== type.id || mesh.userData.hasOutline !== state.visuals.showOutlines)) {
         boardGroup.remove(mesh);
         objectMeshes.delete(object.id);
+        mixers.delete(object.id); // Limpar mixer associado
         mesh = null;
       }
 
@@ -666,13 +743,18 @@ export function createThreeBoardView({ state }) {
         posZ += offset;
       }
 
-      mesh.position.set(posX, height / 2 + 0.05, posZ);
+      const posY = type.shape === 'model'
+        ? (type.groundOffset ?? 0)
+        : height / 2 + 0.05;
+
+      mesh.position.set(posX, posY, posZ);
     }
 
     for (const [objectId, mesh] of objectMeshes.entries()) {
       if (activeObjectIds.has(objectId)) continue;
       boardGroup.remove(mesh);
       objectMeshes.delete(objectId);
+      mixers.delete(objectId); // Limpar mixer associado
     }
   }
 
@@ -805,6 +887,27 @@ export function createThreeBoardView({ state }) {
     }
   }
 
+  function updateConnections(connections) {
+    const active = new Set();
+    for (const conn of connections || []) {
+      active.add(conn.id);
+      let mesh = portalMeshes.get(conn.id);
+      if (!mesh) {
+        mesh = new THREE.Mesh(portalGeometry, portalMaterial);
+        portalMeshes.set(conn.id, mesh);
+        boardGroup.add(mesh);
+      }
+      const center = tileCenter(conn.x, conn.y, currentBoard.width, currentBoard.height);
+      mesh.position.set(center.x, 0.045, center.z);
+    }
+    for (const [id, mesh] of portalMeshes.entries()) {
+      if (!active.has(id)) {
+        boardGroup.remove(mesh);
+        portalMeshes.delete(id);
+      }
+    }
+  }
+
   function tileAt(layout, px, py) {
     const viewport = syncCamera(layout, performance.now());
 
@@ -863,6 +966,7 @@ export function createThreeBoardView({ state }) {
       playerAttackTiles,
       monsterReachable,
       monsterAttackTiles,
+      connections = [],
       now,
     }) {
       syncBoardGeometry(boardWidth, boardHeight);
@@ -895,6 +999,13 @@ export function createThreeBoardView({ state }) {
       });
       updatePathArrows(hoverPath);
       updateUnits(now);
+      updateConnections(connections);
+
+      // Atualizar animações 3D
+      const delta = animationTimer.getDelta();
+      for (const mixer of mixers.values()) {
+        mixer.update(delta);
+      }
 
       const y = currentLayout.sh - viewport.y - viewport.h;
       renderer.setScissorTest(false);

@@ -11,7 +11,7 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     if (!DEBUG_CONFIG.SHOW_STATS) return;
     event.preventDefault();
     const delta = event.deltaY > 0 ? 0.92 : 1.08;
-    state.debugZoom = Math.min(8.0, Math.max(0.2, (state.debugZoom || 1.0) * delta));
+    state.debugZoom = Math.min(8.0, Math.max(0.2, (state.debugZoom || 1.15) * delta));
   }, { passive: false });
 
   canvas.addEventListener('mousedown', () => {

@@ -205,18 +205,18 @@ describe('game actions', () => {
     const game = createGame();
     const { state, actions } = createActionHarness(game);
 
-    actions.moveOverworldPlayer({ x: 19, y: 10 });
+    actions.moveOverworldPlayer({ x: 9, y: 5 });
     const movement = state.game.animations.find((anim) => anim.type === 'movement' && anim.entityId === 'player');
 
     vi.advanceTimersByTime(movement.totalDuration);
 
     expect(state.game.overworld.currentMapId).toBe('stone-grove');
-    expect(state.game.player).toMatchObject({ x: 0, y: 10 });
+    expect(state.game.player).toMatchObject({ x: 0, y: 5 });
     expect(getCurrentWorldMapState(state.game.overworld).enemies.length).toBeGreaterThan(0);
     expect(state.game.busy).toBe(false);
 
-    expect(actions.moveOverworldPlayer({ x: 3, y: 10 })).toBe(false);
-    expect(state.game.player).toMatchObject({ x: 0, y: 10 });
+    expect(actions.moveOverworldPlayer({ x: 3, y: 3 })).toBe(false);
+    expect(state.game.player).toMatchObject({ x: 0, y: 5 });
   });
 
   it('starts an overworld encounter with the whole enemy group', () => {
@@ -234,7 +234,7 @@ describe('game actions', () => {
       groupId: 'nest-a',
       returnPosition,
     });
-    expect(state.game.monsters.map((monster) => monster.groupId)).toEqual(['nest-a', 'nest-a']);
+    expect(state.game.monsters.map((monster) => monster.groupId)).toEqual(['nest-a']);
     expect(state.game.turnQueue).toEqual(['player', ...state.game.monsters.map((monster) => monster.id)]);
   });
 

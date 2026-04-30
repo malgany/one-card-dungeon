@@ -77,9 +77,9 @@ test('moves between connected overworld chunks', async ({ page }) => {
 
   await page.evaluate(() => {
     const { state, actions } = window.__ONE_RPG_DEBUG__;
-    state.game.player.x = 18;
-    state.game.player.y = 10;
-    actions.moveOverworldPlayer({ x: 19, y: 10 });
+    state.game.player.x = 8;
+    state.game.player.y = 5;
+    actions.moveOverworldPlayer({ x: 9, y: 5 });
   });
 
   await page.waitForFunction(() => {
@@ -88,7 +88,7 @@ test('moves between connected overworld chunks', async ({ page }) => {
       game.mode === 'overworld' &&
       game.overworld.currentMapId === 'stone-grove' &&
       game.player.x === 0 &&
-      game.player.y === 10 &&
+      game.player.y === 5 &&
       !game.busy
     );
   });

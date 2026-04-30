@@ -24,8 +24,8 @@ export const ACTION_RULES = {
     id: 'strike',
     name: 'Golpe',
     apCost: 5,
-    damage: 5,
-    lifeSteal: 1,
+    damage: 10,
+    lifeSteal: 10,
   },
 };
 
@@ -37,12 +37,12 @@ export const STAT_META = {
 };
 
 export const MONSTER_TEMPLATES = {
-  spider: { name: 'Aranha', emoji: '🕷️', hp: 20, attack: 2, defense: 1, range: 3, speed: 5, tint: '#8b2f2f' },
-  skeleton: { name: 'Esqueleto', emoji: '💀', hp: 30, attack: 3, defense: 2, range: 3, speed: 5, tint: '#58606c' },
-  archer: { name: 'Arqueiro', emoji: '🏹', hp: 20, attack: 2, defense: 2, range: 5, speed: 4, tint: '#9a5b13' },
-  specter: { name: 'Espectro', emoji: '👻', hp: 30, attack: 4, defense: 2, range: 4, speed: 6, tint: '#5934a3' },
-  golem: { name: 'Golem', emoji: '🪨', hp: 50, attack: 4, defense: 3, range: 2, speed: 4, tint: '#4f4943' },
-  boss: { name: 'Guardião', emoji: '👹', hp: 60, attack: 5, defense: 4, range: 4, speed: 6, tint: '#8f1414' },
+  spider: { name: 'Aranha', emoji: '🕷️', hp: 20, attack: 2, defense: 1, range: 3, speed: 3, tint: '#8b2f2f' },
+  skeleton: { name: 'Esqueleto', emoji: '💀', hp: 30, attack: 3, defense: 2, range: 3, speed: 3, tint: '#58606c' },
+  archer: { name: 'Arqueiro', emoji: '🏹', hp: 20, attack: 2, defense: 2, range: 5, speed: 3, tint: '#9a5b13' },
+  specter: { name: 'Espectro', emoji: '👻', hp: 30, attack: 4, defense: 2, range: 4, speed: 3, tint: '#5934a3' },
+  golem: { name: 'Golem', emoji: '🪨', hp: 50, attack: 4, defense: 3, range: 2, speed: 3, tint: '#4f4943' },
+  boss: { name: 'Guardião', emoji: '👹', hp: 60, attack: 5, defense: 4, range: 4, speed: 3, tint: '#8f1414' },
 };
 
 export const CARD_SOURCES = {
@@ -92,5 +92,5 @@ export const TIMING = {
 };
 
 export const DEBUG_CONFIG = {
-  SHOW_STATS: true,
+  SHOW_STATS: false,
 };

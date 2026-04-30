@@ -1258,6 +1258,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       boardHeight: bounds.height,
       walls: new Set(),
       objects,
+      connections: worldMap.connections,
       hoverTile,
       hoverPath: hoverEnemy ? null : hoverPath,
       reachable: moveHighlight,
@@ -1649,7 +1650,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       color: '#34d399',
     });
     
-    const zoomPct = Math.round((state.debugZoom || 1.0) * 100);
+    const zoomPct = Math.round((state.debugZoom || 1.15) * 100);
     draw.drawText(`ZOOM: ${zoomPct}%`, x + 65, y + 17, {
       font: 'bold 12px Inter, sans-serif',
       color: '#fbbf24',

@@ -37,4 +37,12 @@ export const WORLD_OBJECT_TYPES = {
     height: 0.32,
     color: '#64748b',
   },
+  'test-model': {
+    id: 'test-model',
+    name: 'Objeto 3D Teste',
+    shape: 'model',
+    modelUrl: './assets/models/test/unnamed.gltf',
+    blocksMovement: true,
+    scale: 0.8,
+  },
 };

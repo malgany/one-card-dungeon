@@ -8,6 +8,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
 </head>
 <body>
 <canvas id="game"></canvas>
@@ -50,8 +58,8 @@
         <p>Diagonal não é um passo permitido. Para ir em diagonal, você precisa fazer dois passos ortogonais.</p>
 
         <h2 id="tut-ataque">4. Ataque</h2>
-        <p>O aventureiro tem um slot de ataque equipado. Por enquanto, o ataque inicial é <strong>Golpe</strong>: custa 5 AP, tem dano 5 e suga 1 vida quando causa dano.</p>
-        <p>O dano final é simples: <strong>dano do ataque - defesa do alvo</strong>. Exemplo: dano 5 contra defesa 1 tira 4 de vida.</p>
+        <p>O aventureiro tem um slot de ataque equipado. Por enquanto, o ataque inicial é <strong>Golpe</strong>: custa 5 AP, tem dano 10 e suga 10 de vida quando causa dano.</p>
+        <p>O dano final é simples: <strong>dano do ataque - defesa do alvo</strong>. Exemplo: dano 10 contra defesa 1 tira 9 de vida.</p>
         <p>Para atacar, o monstro precisa estar dentro do alcance e com linha de visão livre.</p>
 
         <h2 id="tut-defesa">5. Defesa</h2>
@@ -83,13 +91,6 @@
   </div>
 </div>
 
-<script type="importmap">
-  {
-    "imports": {
-      "three": "./node_modules/three/build/three.module.js"
-    }
-  }
-</script>
 <script type="module" src="script.js"></script>
 </body>
 </html>

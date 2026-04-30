@@ -80,12 +80,12 @@ describe('game factories', () => {
       health: 60,
       maxHealth: 60,
       apMax: 6,
-      speedBase: 4,
+      speedBase: 3,
       attackSlot: {
         name: 'Golpe',
         apCost: 5,
-        damage: 5,
-        lifeSteal: 1,
+        damage: 10,
+        lifeSteal: 10,
       },
     });
     expect(game.phase).toBe(PHASES.HERO);
@@ -106,7 +106,7 @@ describe('game factories', () => {
       y: LEVELS[0].start.y,
     });
     expect(game.roll).toEqual([]);
-    expect(game.speedRemaining).toBe(4);
+    expect(game.speedRemaining).toBe(3);
     expect(game.apRemaining).toBe(6);
     expect(game.turnQueue).toEqual(['player', ...game.monsters.map((m) => m.id)]);
     expect(game.banner.title).toBe('Sua vez');

@@ -72,8 +72,8 @@ describe('game data', () => {
     Object.values(WORLD_MAPS).forEach((map) => {
       expect(BIOMES[map.biome]).toBeDefined();
       expect(TERRAIN_TYPES[map.defaultTerrain]).toBeDefined();
-      expect(map.size.width).toBe(20);
-      expect(map.size.height).toBe(20);
+      expect(map.size.width).toBe(10);
+      expect(map.size.height).toBe(10);
       expect(map.size.width).toBeGreaterThan(BOARD_SIZE);
       expect(map.size.height).toBeGreaterThan(BOARD_SIZE);
       expect(map.playerStart.x).toBeGreaterThanOrEqual(0);
