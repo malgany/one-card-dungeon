@@ -32,7 +32,7 @@ Ataque inicial:
 - Nome: `Golpe`
 - Custo: 5 AP
 - Dano: 10
-- Suga: 10 de vida quando causa dano
+- Roubo de vida: 0
 
 ## Defesa e Dano
 

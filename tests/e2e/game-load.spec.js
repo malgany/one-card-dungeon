@@ -49,7 +49,7 @@ test('moves from overworld into combat and returns after victory', async ({ page
   await page.evaluate(() => {
     const { state, actions } = window.__ONE_RPG_DEBUG__;
     const mapState = state.game.overworld.mapStates[state.game.overworld.currentMapId];
-    const target = mapState.enemies.find((enemy) => enemy.groupId === 'stone-c');
+    const target = mapState.enemies.find((enemy) => enemy.groupId === 'skeleton-mages');
     actions.startOverworldEncounter(target.id);
   });
   await page.waitForFunction(() => window.__ONE_RPG_DEBUG__.state.game.mode === 'combat');
@@ -67,7 +67,7 @@ test('moves from overworld into combat and returns after victory', async ({ page
   await page.waitForFunction(() => {
     const game = window.__ONE_RPG_DEBUG__.state.game;
     const mapState = game.overworld.mapStates[game.overworld.currentMapId];
-    return game.mode === 'overworld' && !mapState.enemies.some((enemy) => enemy.groupId === 'stone-c');
+    return game.mode === 'overworld' && !mapState.enemies.some((enemy) => enemy.groupId === 'skeleton-mages');
   });
 });
 

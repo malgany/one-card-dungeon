@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { BOARD_SIZE, CARD_SOURCES, DEBUG_CONFIG, GAME_MODES, WORLD_ASSETS, WORLD_OBJECT_TYPES } from '../config/game-data.js';
 import { getCurrentWorldEnemies } from '../game/world-state.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 
 const CARD_WIDTH = 0.56;
 const CARD_HEIGHT = 0.82;
@@ -16,6 +17,7 @@ const COMPACT_COMBAT_ORTHO_VIEW_HEIGHT = 8.98;
 const OVERWORLD_ORTHO_VIEW_HEIGHT = 9.18;
 const COMPACT_OVERWORLD_ORTHO_VIEW_HEIGHT = 8.16;
 const FLOOR_COLORS = ['#3b3126', '#2f271f'];
+const SPECULAR_GLOSSINESS_EXTENSION = 'KHR_materials_pbrSpecularGlossiness';
 const HIGHLIGHT_ORDER = [
   'hover',
   'playerAttack',
@@ -29,6 +31,53 @@ const HIGHLIGHT_COLORS = {
   playerAttack: { color: '#f472b6', opacity: 0.3 },
   monsterMove: { color: '#22c55e', opacity: 0.22 },
   monsterAttack: { color: '#ef4444', opacity: 0.28 },
+};
+const PLAYER_MODEL = {
+  modelUrl: WORLD_ASSETS.characters.mage,
+  idleAnimation: 'Idle_A',
+  walkAnimation: 'Walking_A',
+  attackAnimation: 'Hit_A',
+  damageAnimation: 'Hit_B',
+  walkTimeScale: 1.65,
+  scale: 0.42,
+  groundOffset: -0.16,
+  initialRotationY: CARD_ROTATION_Y,
+  animations: [
+    WORLD_ASSETS.animations.rigMedium.general,
+    WORLD_ASSETS.animations.rigMedium.movementBasic,
+  ],
+};
+const SKELETON_MODEL_BASE = {
+  idleAnimation: 'Idle_A',
+  walkAnimation: 'Walking_A',
+  attackAnimation: 'Hit_A',
+  damageAnimation: 'Hit_B',
+  walkTimeScale: 1.65,
+  scale: 0.42,
+  groundOffset: -0.16,
+  initialRotationY: CARD_ROTATION_Y,
+  animations: [
+    WORLD_ASSETS.animations.skeletons.rigMedium.general,
+    WORLD_ASSETS.animations.skeletons.rigMedium.movementBasic,
+  ],
+};
+const UNIT_MODELS = {
+  skeletonMinion: {
+    ...SKELETON_MODEL_BASE,
+    modelUrl: WORLD_ASSETS.characters.skeletonMinion,
+  },
+  skeletonRogue: {
+    ...SKELETON_MODEL_BASE,
+    modelUrl: WORLD_ASSETS.characters.skeletonRogue,
+  },
+  skeletonMage: {
+    ...SKELETON_MODEL_BASE,
+    modelUrl: WORLD_ASSETS.characters.skeletonMage,
+  },
+  skeletonWarrior: {
+    ...SKELETON_MODEL_BASE,
+    modelUrl: WORLD_ASSETS.characters.skeletonWarrior,
+  },
 };
 
 function colorFromHex(hex, fallback = '#64748b') {
@@ -59,17 +108,11 @@ function setIsometricCameraPosition(camera, target = { x: 0, z: 0 }) {
 
 function boardViewport(layout, mode = GAME_MODES.DUNGEON_LEGACY) {
   if (mode === GAME_MODES.OVERWORLD) {
-    const top = layout.compact ? Math.max(0, layout.leftY + layout.leftH + 8) : 0;
-    const x = layout.compact ? 0 : layout.sidebarW;
-    const y = top;
-    const right = layout.sw;
-    const bottom = layout.sh;
-
     return {
-      x,
-      y,
-      w: Math.max(1, right - x),
-      h: Math.max(1, bottom - y),
+      x: 0,
+      y: 0,
+      w: Math.max(1, layout.sw),
+      h: Math.max(1, layout.sh),
     };
   }
 
@@ -95,13 +138,85 @@ function imageSourceForUnit(unit, isPlayer) {
   return CARD_SOURCES[isPlayer ? 'player' : unit.type] || null;
 }
 
+function modelConfigForUnit(unit, isPlayer) {
+  return isPlayer ? PLAYER_MODEL : UNIT_MODELS[unit?.type] || null;
+}
+
+function movementAnimationFor(entityId, animations) {
+  return animations.find((animation) => {
+    return animation.type === 'movement' && animation.entityId === entityId;
+  });
+}
+
+function movementEndTime(movement) {
+  if (!movement) return 0;
+  if (Number.isFinite(movement.totalDuration)) {
+    return movement.startTime + Math.max(0, movement.totalDuration);
+  }
+
+  const pathSteps = Math.max(0, (movement.path?.length || 1) - 1);
+  const durationPerTile = Number.isFinite(movement.durationPerTile) ? movement.durationPerTile : 0;
+  return movement.startTime + pathSteps * durationPerTile;
+}
+
+function isMovementActive(movement, now) {
+  return !!movement && now >= movement.startTime && now < movementEndTime(movement);
+}
+
+function modelActionFor(entityId, animations, now) {
+  return animations.find((animation) => {
+    if (animation.type !== 'modelAction' || animation.entityId !== entityId) return false;
+    const startTime = Number.isFinite(animation.startTime) ? animation.startTime : 0;
+    const duration = Math.max(0, animation.duration || 0);
+    return now >= startTime && now < startTime + duration;
+  });
+}
+
+function movementDirection(movement, now) {
+  if (!movement?.path || movement.path.length < 2) return null;
+
+  const elapsed = now - movement.startTime;
+  if (elapsed < 0) return null;
+
+  if (Number.isFinite(movement.totalDuration)) {
+    const progress = Math.min(1, elapsed / Math.max(1, movement.totalDuration));
+    const targetDist = progress * movement.totalDistance;
+    let currentDist = 0;
+
+    for (let i = 0; i < movement.path.length - 1; i += 1) {
+      const from = movement.path[i];
+      const to = movement.path[i + 1];
+      const distance = Math.sqrt(Math.pow(to.x - from.x, 2) + Math.pow(to.y - from.y, 2));
+
+      if (currentDist + distance >= targetDist || i === movement.path.length - 2) {
+        return { x: to.x - from.x, y: to.y - from.y };
+      }
+
+      currentDist += distance;
+    }
+  }
+
+  const tileDuration = movement.durationPerTile || 1;
+  const tileIndex = Math.min(
+    movement.path.length - 2,
+    Math.max(0, Math.floor(elapsed / tileDuration)),
+  );
+  const from = movement.path[tileIndex];
+  const to = movement.path[tileIndex + 1];
+
+  return { x: to.x - from.x, y: to.y - from.y };
+}
+
+function faceDirection(group, direction) {
+  if (!direction || (direction.x === 0 && direction.y === 0)) return;
+  group.rotation.y = Math.atan2(direction.x, direction.y);
+}
+
 function movementPosition(unit, entityId, animations, now) {
   let drawX = unit.x;
   let drawY = unit.y;
 
-  const movement = animations.find((animation) => {
-    return animation.type === 'movement' && animation.entityId === entityId;
-  });
+  const movement = movementAnimationFor(entityId, animations);
 
   if (movement) {
     const elapsed = now - movement.startTime;
@@ -235,6 +350,17 @@ export function createThreeBoardView({ state }) {
   const animationTimer = new THREE.Clock();
   const mixers = new Map();
   const textureCache = new Map();
+  const gltfCache = new Map();
+
+  function loadGltfAsset(url) {
+    if (!gltfCache.has(url)) {
+      gltfCache.set(url, new Promise((resolve, reject) => {
+        gltfLoader.load(url, resolve, undefined, reject);
+      }));
+    }
+
+    return gltfCache.get(url);
+  }
 
   function textureFor(src) {
     if (!src) return null;
@@ -258,6 +384,82 @@ export function createThreeBoardView({ state }) {
       map: textureMap,
       roughness,
       metalness,
+    });
+  }
+
+  function applyLegacyDiffuseTexture(gltf, material) {
+    if (!gltf.parser?.associations || material.map) return;
+
+    const materialRef = gltf.parser.associations.get(material);
+    const materialIndex = materialRef?.materials;
+    const materialDef = Number.isInteger(materialIndex)
+      ? gltf.parser.json.materials?.[materialIndex]
+      : null;
+    const specGloss = materialDef?.extensions?.[SPECULAR_GLOSSINESS_EXTENSION];
+    if (!specGloss) return;
+
+    const diffuseTexture = specGloss?.diffuseTexture;
+
+    if (Array.isArray(specGloss?.diffuseFactor) && material.color) {
+      material.color.setRGB(
+        specGloss.diffuseFactor[0],
+        specGloss.diffuseFactor[1],
+        specGloss.diffuseFactor[2],
+        THREE.LinearSRGBColorSpace,
+      );
+      material.opacity = specGloss.diffuseFactor[3] ?? material.opacity;
+      material.transparent = material.transparent || material.opacity < 1;
+    }
+
+    if (diffuseTexture?.index === undefined) {
+      material.needsUpdate = true;
+      return;
+    }
+
+    gltf.parser.getDependency('texture', diffuseTexture.index).then((texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      material.map = texture;
+
+      if ('metalness' in material) material.metalness = 0;
+      if ('roughness' in material) material.roughness = 0.88;
+
+      material.needsUpdate = true;
+    }).catch((error) => {
+      console.error('Erro ao aplicar textura difusa do modelo:', error);
+    });
+  }
+
+  function centerModelOnGround(model) {
+    const box = new THREE.Box3().setFromObject(model);
+    const center = box.getCenter(new THREE.Vector3());
+
+    model.position.x = -center.x;
+    model.position.y = -box.min.y;
+    model.position.z = -center.z;
+  }
+
+  function prepareGltfModel(gltf, model) {
+    model.traverse((node) => {
+      if (!node.isMesh) return;
+
+      node.castShadow = true;
+      node.receiveShadow = true;
+      node.frustumCulled = false;
+
+      if (node.geometry?.attributes && !node.geometry.attributes.normal) {
+        node.geometry.computeVertexNormals();
+      }
+
+      const materials = Array.isArray(node.material) ? node.material : [node.material];
+      for (const material of materials) {
+        if (!material) continue;
+        applyLegacyDiffuseTexture(gltf, material);
+        material.side = THREE.DoubleSide;
+        if (material.map) {
+          material.map.colorSpace = THREE.SRGBColorSpace;
+        }
+        material.needsUpdate = true;
+      }
     });
   }
 
@@ -337,7 +539,7 @@ export function createThreeBoardView({ state }) {
   const groundMaterial = new THREE.MeshStandardMaterial({
     roughness: 0.9,
     metalness: 0.05,
-    map: textureFor('./assets/textures/chao1.webp'),
+    map: textureFor(WORLD_ASSETS.terrain.grass),
   });
   if (groundMaterial.map) {
     groundMaterial.map.wrapS = THREE.RepeatWrapping;
@@ -530,26 +732,67 @@ export function createThreeBoardView({ state }) {
     highlightInstance.instanceColor.needsUpdate = true;
   }
 
-  function createUnitMesh(unit, isPlayer) {
-    const group = new THREE.Group();
-    const tint = isPlayer ? '#047857' : unit.tint;
-    const source = imageSourceForUnit(unit, isPlayer);
-    const texture = textureFor(source);
-    group.rotation.y = CARD_ROTATION_Y;
-
+  function createUnitShadow(radius = 0.38, opacity = 0.3) {
     const shadow = new THREE.Mesh(
-      new THREE.CircleGeometry(0.38, 32),
+      new THREE.CircleGeometry(radius, 32),
       new THREE.MeshBasicMaterial({
         color: colorFromHex('#000000'),
         transparent: true,
-        opacity: 0.3,
+        opacity,
         depthWrite: false,
       }),
     );
     shadow.rotation.x = -Math.PI / 2;
     shadow.position.y = 0.065;
     shadow.scale.y = 0.62;
-    group.add(shadow);
+    return shadow;
+  }
+
+  function playModelUnitAnimation(group, clipName) {
+    const actions = group.userData.actions;
+    const next = actions?.[clipName];
+    if (!next || group.userData.activeAnimation === clipName) return;
+
+    const previous = actions[group.userData.activeAnimation];
+    next.enabled = true;
+    next.reset().fadeIn(0.12).play();
+    if (previous && previous !== next) previous.fadeOut(0.12);
+
+    group.userData.activeAnimation = clipName;
+  }
+
+  function updateModelUnitState(group, movement, action, now) {
+    const modelConfig = group.userData.modelConfig || PLAYER_MODEL;
+
+    if (action) {
+      faceDirection(group, {
+        x: action.targetX - action.sourceX,
+        y: action.targetY - action.sourceY,
+      });
+      playModelUnitAnimation(group, action.animation || modelConfig.attackAnimation);
+      return;
+    }
+
+    const isMoving = isMovementActive(movement, now);
+    playModelUnitAnimation(
+      group,
+      isMoving ? modelConfig.walkAnimation : modelConfig.idleAnimation,
+    );
+
+    if (!isMoving) return;
+
+    const direction = movementDirection(movement, now);
+    faceDirection(group, direction);
+  }
+
+  function createCardUnitMesh(unit, isPlayer) {
+    const group = new THREE.Group();
+    const tint = isPlayer ? '#047857' : unit.tint;
+    const source = imageSourceForUnit(unit, isPlayer);
+    const texture = textureFor(source);
+    group.rotation.y = CARD_ROTATION_Y;
+
+    group.add(createUnitShadow());
 
     const frameMaterial = new THREE.MeshBasicMaterial({
       color: colorFromHex(tint),
@@ -571,11 +814,89 @@ export function createThreeBoardView({ state }) {
     group.userData = {
       faceMaterial,
       frameMaterial,
+      isPlayer,
       tint,
+      unitType: unit?.type || 'player',
     };
 
     scene.add(group);
     return group;
+  }
+
+  function createModelUnitMesh(unit, isPlayer, entityId, modelConfig) {
+    const group = new THREE.Group();
+    group.rotation.y = modelConfig.initialRotationY;
+    group.add(createUnitShadow(0.42, 0.32));
+    group.userData = {
+      isModelUnit: true,
+      isPlayer,
+      tint: isPlayer ? '#047857' : unit.tint,
+      unitType: unit?.type || 'player',
+      modelConfig,
+      activeAnimation: null,
+      actions: {},
+    };
+    scene.add(group);
+
+    Promise.all([
+      loadGltfAsset(modelConfig.modelUrl),
+      ...modelConfig.animations.map((url) => loadGltfAsset(url)),
+    ]).then(([modelGltf, ...animationGltfs]) => {
+      const model = cloneSkeleton(modelGltf.scene);
+      model.scale.setScalar(modelConfig.scale);
+      centerModelOnGround(model);
+      model.position.y += modelConfig.groundOffset;
+      prepareGltfModel(modelGltf, model);
+      group.add(model);
+
+      const mixer = new THREE.AnimationMixer(model);
+      const clips = new Map();
+      for (const gltf of animationGltfs) {
+        for (const clip of gltf.animations || []) {
+          clips.set(clip.name, clip);
+        }
+      }
+
+      for (const clipName of [
+        modelConfig.idleAnimation,
+        modelConfig.walkAnimation,
+        modelConfig.attackAnimation,
+        modelConfig.damageAnimation,
+      ]) {
+        const clip = clips.get(clipName);
+        if (!clip) continue;
+        const action = mixer.clipAction(clip);
+        if (clipName === modelConfig.attackAnimation) {
+          action.setLoop(THREE.LoopOnce, 1);
+          action.clampWhenFinished = true;
+        } else if (clipName === modelConfig.damageAnimation) {
+          action.setLoop(THREE.LoopOnce, 1);
+          action.clampWhenFinished = true;
+        } else {
+          action.setLoop(THREE.LoopRepeat, Infinity);
+        }
+        if (clipName === modelConfig.walkAnimation) {
+          action.timeScale = modelConfig.walkTimeScale;
+        }
+        group.userData.actions[clipName] = action;
+      }
+
+      mixers.set(`unit:${entityId}`, mixer);
+      playModelUnitAnimation(group, modelConfig.idleAnimation);
+    }).catch((error) => {
+      console.error('Erro ao carregar modelo da unidade:', error);
+    });
+
+    return group;
+  }
+
+  function createUnitMesh(unit, isPlayer, entityId) {
+    const modelConfig = modelConfigForUnit(unit, isPlayer);
+    if (modelConfig?.modelUrl) {
+      return createModelUnitMesh(unit, isPlayer, entityId, modelConfig);
+    }
+
+    return createCardUnitMesh(unit, isPlayer);
   }
 
   function updateWalls(walls) {
@@ -623,36 +944,9 @@ export function createThreeBoardView({ state }) {
       
       gltfLoader.load(type.modelUrl, (gltf) => {
         const model = gltf.scene;
-        
-        // Center model and sit on ground
-        const box = new THREE.Box3().setFromObject(model);
-        const center = box.getCenter(new THREE.Vector3());
-        
-        model.position.x = -center.x;
-        model.position.y = -box.min.y;
-        model.position.z = -center.z;
+        centerModelOnGround(model);
+        prepareGltfModel(gltf, model);
 
-        model.traverse((node) => {
-          if (node.isMesh) {
-            node.castShadow = true;
-            node.receiveShadow = true;
-            node.frustumCulled = false;
-
-            if (node.geometry?.attributes && !node.geometry.attributes.normal) {
-              node.geometry.computeVertexNormals();
-            }
-
-            const materials = Array.isArray(node.material) ? node.material : [node.material];
-            for (const material of materials) {
-              if (!material) continue;
-              material.side = THREE.DoubleSide;
-              if (material.map) {
-                material.map.colorSpace = THREE.SRGBColorSpace;
-              }
-              material.needsUpdate = true;
-            }
-          }
-        });
         // Setup Animations
         if (gltf.animations && gltf.animations.length > 0) {
           const mixer = new THREE.AnimationMixer(model);
@@ -849,21 +1143,43 @@ export function createThreeBoardView({ state }) {
   }
 
   function updateUnit(unit, entityId, isPlayer, now) {
+    const modelConfig = modelConfigForUnit(unit, isPlayer);
     let group = unitMeshes.get(entityId);
+    const needsRecreate = group && (
+      group.userData.unitType !== (unit?.type || 'player') ||
+      !!group.userData.isModelUnit !== !!modelConfig?.modelUrl
+    );
+
+    if (needsRecreate) {
+      scene.remove(group);
+      unitMeshes.delete(entityId);
+      mixers.delete(`unit:${entityId}`);
+      group = null;
+    }
+
     if (!group) {
-      group = createUnitMesh(unit, isPlayer);
+      group = createUnitMesh(unit, isPlayer, entityId);
       unitMeshes.set(entityId, group);
     }
 
     const animations = state.game.animations || [];
+    const movement = movementAnimationFor(entityId, animations);
+    const modelAction = modelActionFor(entityId, animations, now);
     const { drawX, drawY } = movementPosition(unit, entityId, animations, now);
     const bump = bumpOffset(unit, entityId, animations, now);
     const center = tileCenter(drawX, drawY, currentBoard.width, currentBoard.height);
     group.position.set(center.x + bump.x, 0.02, center.z + bump.z);
 
-    group.userData.frameMaterial.color.set(
-      isFlashing(entityId, animations, now) ? '#ef4444' : group.userData.tint,
-    );
+    if (group.userData.isModelUnit) {
+      updateModelUnitState(group, movement, modelAction, now);
+      return;
+    }
+
+    if (group.userData.frameMaterial) {
+      group.userData.frameMaterial.color.set(
+        isFlashing(entityId, animations, now) ? '#ef4444' : group.userData.tint,
+      );
+    }
   }
 
   function updateUnits(now) {
@@ -884,6 +1200,7 @@ export function createThreeBoardView({ state }) {
       if (desiredIds.has(entityId)) continue;
       scene.remove(mesh);
       unitMeshes.delete(entityId);
+      mixers.delete(`unit:${entityId}`);
     }
   }
 

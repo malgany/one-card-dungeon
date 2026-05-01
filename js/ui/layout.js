@@ -99,14 +99,12 @@ export function createLayoutTools({ canvas, ctx, state }) {
   }
 
   function overworldViewport(layout) {
-    const top = layout.compact ? layout.leftY + layout.leftH + 8 : 0;
-    const bottomPadding = layout.compact ? 10 : 0;
-    const x = layout.compact ? 0 : layout.sidebarW;
-    const y = Math.max(0, top);
-    const w = layout.compact ? layout.sw : layout.sw - layout.sidebarW;
-    const h = Math.max(1, layout.sh - y - bottomPadding);
-
-    return { x, y, w, h };
+    return {
+      x: 0,
+      y: 0,
+      w: Math.max(1, layout.sw),
+      h: Math.max(1, layout.sh),
+    };
   }
 
   function overworldTileSize(layout) {

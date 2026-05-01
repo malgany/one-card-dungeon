@@ -35,34 +35,50 @@ describe('game factories', () => {
   });
 
   it('creates monsters from templates and level data', () => {
-    const monster = createMonster('spider', 4, 0, 0);
+    const monster = createMonster('skeletonMinion', 4, 0, 0);
 
     expect(monster).toMatchObject({
-      id: 'spider-0-4-0',
-      type: 'spider',
+      id: 'skeletonMinion-0-4-0',
+      type: 'skeletonMinion',
       x: 4,
       y: 0,
-      hp: MONSTER_TEMPLATES.spider.hp,
-      maxHp: MONSTER_TEMPLATES.spider.hp,
-      name: MONSTER_TEMPLATES.spider.name,
+      hp: MONSTER_TEMPLATES.skeletonMinion.hp,
+      maxHp: MONSTER_TEMPLATES.skeletonMinion.hp,
+      name: MONSTER_TEMPLATES.skeletonMinion.name,
     });
-    expect(levelMonsters(LEVELS[0]).map((m) => m.id)).toEqual(['spider-0-4-0', 'spider-1-5-2']);
+    expect(levelMonsters(LEVELS[0]).map((m) => m.id)).toEqual([
+      'skeletonMinion-0-4-0',
+      'skeletonMinion-1-5-2',
+    ]);
   });
 
   it('creates overworld enemies with group ids', () => {
-    const enemy = createOverworldEnemy('spider', 4, 5, 'nest-a', 0);
+    const enemy = createOverworldEnemy('skeletonMinion', 4, 5, 'skeleton-minions', 0);
     const startMap = getWorldMap(START_WORLD_MAP_ID);
 
     expect(enemy).toMatchObject({
-      id: 'overworld-nest-a-0',
-      type: 'spider',
+      id: 'overworld-skeleton-minions-0',
+      type: 'skeletonMinion',
       x: 4,
       y: 5,
-      groupId: 'nest-a',
-      hp: MONSTER_TEMPLATES.spider.hp,
+      groupId: 'skeleton-minions',
+      hp: MONSTER_TEMPLATES.skeletonMinion.hp,
     });
-    expect(overworldEnemies(startMap).map((e) => e.groupId)).toContain('nest-a');
+    expect(overworldEnemies(startMap).map((e) => e.groupId)).toContain('skeleton-minions');
     expect(createOverworldMapState(startMap).enemies.length).toBe(startMap.encounters.length);
+  });
+
+  it('normalizes legacy monster inputs', () => {
+    expect(createMonster('spider', 4, 0, 0)).toMatchObject({
+      id: 'skeletonMinion-0-4-0',
+      type: 'skeletonMinion',
+      name: MONSTER_TEMPLATES.skeletonMinion.name,
+    });
+    expect(createOverworldEnemy('spider', 4, 5, 'nest-a', 0)).toMatchObject({
+      id: 'overworld-skeleton-minions-0',
+      type: 'skeletonMinion',
+      groupId: 'skeleton-minions',
+    });
   });
 
   it('creates the initial game state in the open map', () => {
@@ -85,7 +101,7 @@ describe('game factories', () => {
         name: 'Golpe',
         apCost: 5,
         damage: 10,
-        lifeSteal: 10,
+        lifeSteal: 0,
       },
     });
     expect(game.phase).toBe(PHASES.HERO);

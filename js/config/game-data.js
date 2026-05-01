@@ -25,7 +25,7 @@ export const ACTION_RULES = {
     name: 'Golpe',
     apCost: 5,
     damage: 10,
-    lifeSteal: 10,
+    lifeSteal: 0,
   },
 };
 
@@ -37,36 +37,77 @@ export const STAT_META = {
 };
 
 export const MONSTER_TEMPLATES = {
-  spider: { name: 'Aranha', emoji: '🕷️', hp: 20, attack: 2, defense: 1, range: 3, speed: 3, tint: '#8b2f2f' },
-  skeleton: { name: 'Esqueleto', emoji: '💀', hp: 30, attack: 3, defense: 2, range: 3, speed: 3, tint: '#58606c' },
-  archer: { name: 'Arqueiro', emoji: '🏹', hp: 20, attack: 2, defense: 2, range: 5, speed: 3, tint: '#9a5b13' },
+  skeletonMinion: { name: 'Esqueleto Minion', emoji: '💀', hp: 20, attack: 2, defense: 1, range: 3, speed: 3, tint: '#6b7280' },
+  skeletonWarrior: { name: 'Esqueleto Guerreiro', emoji: '💀', hp: 30, attack: 3, defense: 2, range: 3, speed: 3, tint: '#58606c' },
+  skeletonRogue: { name: 'Esqueleto Rogue', emoji: '💀', hp: 20, attack: 2, defense: 2, range: 5, speed: 3, tint: '#7c5c35' },
   specter: { name: 'Espectro', emoji: '👻', hp: 30, attack: 4, defense: 2, range: 4, speed: 3, tint: '#5934a3' },
-  golem: { name: 'Golem', emoji: '🪨', hp: 50, attack: 4, defense: 3, range: 2, speed: 3, tint: '#4f4943' },
+  skeletonMage: { name: 'Esqueleto Mago', emoji: '💀', hp: 50, attack: 4, defense: 3, range: 2, speed: 3, tint: '#52525b' },
   boss: { name: 'Guardião', emoji: '👹', hp: 60, attack: 5, defense: 4, range: 4, speed: 3, tint: '#8f1414' },
 };
 
+export const LEGACY_MONSTER_TYPE_MAP = {
+  spider: 'skeletonMinion',
+  skeleton: 'skeletonWarrior',
+  archer: 'skeletonRogue',
+  golem: 'skeletonMage',
+};
+
+export const LEGACY_ENCOUNTER_GROUP_MAP = {
+  'nest-a': 'skeleton-minions',
+  'ruins-b': 'skeleton-warriors',
+  'stone-c': 'skeleton-mages',
+  'stone-grove-watch': 'skeleton-warrior-watch',
+};
+
+export function normalizeMonsterType(type) {
+  return LEGACY_MONSTER_TYPE_MAP[type] || type;
+}
+
+export function normalizeEncounterGroupId(groupId) {
+  return LEGACY_ENCOUNTER_GROUP_MAP[groupId] || groupId;
+}
+
+export function normalizeMonsterId(id) {
+  if (typeof id !== 'string') return id;
+
+  let normalized = id;
+  for (const [legacyType, modernType] of Object.entries(LEGACY_MONSTER_TYPE_MAP)) {
+    if (normalized.startsWith(`${legacyType}-`)) {
+      normalized = `${modernType}${normalized.slice(legacyType.length)}`;
+    }
+  }
+  for (const [legacyGroup, modernGroup] of Object.entries(LEGACY_ENCOUNTER_GROUP_MAP)) {
+    if (normalized.startsWith(`${legacyGroup}-`)) {
+      normalized = `${modernGroup}${normalized.slice(legacyGroup.length)}`;
+    }
+    normalized = normalized.replace(`-${legacyGroup}-`, `-${modernGroup}-`);
+  }
+
+  return normalized;
+}
+
 export const CARD_SOURCES = {
-  player: './assets/characters/aventureiro.png',
-  spider: './assets/characters/aranha.png',
-  skeleton: './assets/characters/esqueleto.png',
-  archer: './assets/characters/arqueiro.png',
+  player: './assets/characters/mage.png',
+  skeletonMinion: './assets/characters/skeleton-minion.png',
+  skeletonWarrior: './assets/characters/skeleton-warrior.png',
+  skeletonRogue: './assets/characters/skeleton-rogue.png',
   specter: './assets/characters/espectro.png',
-  golem: './assets/characters/golem.png',
+  skeletonMage: './assets/characters/skeleton-mage.png',
   boss: './assets/characters/guardiao.png',
 };
 
 export const LEVELS = [
-  { id: 1, start: { x: 0, y: 5 }, walls: [[2, 1], [2, 2], [4, 3]], monsters: [['spider', 4, 0], ['spider', 5, 2]] },
-  { id: 2, start: { x: 0, y: 5 }, walls: [[1, 2], [2, 2], [3, 3], [4, 1]], monsters: [['spider', 5, 0], ['skeleton', 4, 4]] },
-  { id: 3, start: { x: 1, y: 5 }, walls: [[2, 0], [2, 1], [2, 3], [4, 3]], monsters: [['spider', 0, 0], ['skeleton', 5, 1], ['skeleton', 5, 5]] },
-  { id: 4, start: { x: 0, y: 5 }, walls: [[1, 1], [3, 1], [1, 3], [3, 3], [4, 4]], monsters: [['archer', 5, 0], ['skeleton', 5, 3]] },
-  { id: 5, start: { x: 1, y: 5 }, walls: [[0, 2], [2, 2], [4, 2], [3, 4], [5, 4]], monsters: [['archer', 5, 0], ['archer', 3, 0], ['skeleton', 0, 0]] },
-  { id: 6, start: { x: 0, y: 5 }, walls: [[1, 1], [2, 1], [3, 1], [3, 3], [3, 4]], monsters: [['specter', 5, 0], ['skeleton', 5, 5]] },
-  { id: 7, start: { x: 0, y: 5 }, walls: [[2, 0], [2, 1], [2, 3], [2, 4], [4, 2]], monsters: [['archer', 5, 0], ['specter', 4, 4], ['skeleton', 0, 0]] },
-  { id: 8, start: { x: 1, y: 5 }, walls: [[0, 1], [1, 1], [4, 1], [4, 2], [2, 4]], monsters: [['golem', 5, 2], ['archer', 5, 0]] },
-  { id: 9, start: { x: 0, y: 5 }, walls: [[1, 2], [2, 2], [3, 2], [4, 2], [2, 4], [4, 4]], monsters: [['golem', 5, 5], ['specter', 5, 0], ['archer', 0, 0]] },
-  { id: 10, start: { x: 1, y: 5 }, walls: [[1, 1], [3, 1], [5, 1], [1, 3], [3, 3], [5, 3]], monsters: [['specter', 0, 0], ['golem', 4, 5], ['archer', 5, 0]] },
-  { id: 11, start: { x: 0, y: 5 }, walls: [[2, 1], [2, 2], [2, 3], [4, 1], [4, 2], [4, 3]], monsters: [['golem', 5, 4], ['specter', 5, 0], ['specter', 0, 0]] },
+  { id: 1, start: { x: 0, y: 5 }, walls: [[2, 1], [2, 2], [4, 3]], monsters: [['skeletonMinion', 4, 0], ['skeletonMinion', 5, 2]] },
+  { id: 2, start: { x: 0, y: 5 }, walls: [[1, 2], [2, 2], [3, 3], [4, 1]], monsters: [['skeletonMinion', 5, 0], ['skeletonWarrior', 4, 4]] },
+  { id: 3, start: { x: 1, y: 5 }, walls: [[2, 0], [2, 1], [2, 3], [4, 3]], monsters: [['skeletonMinion', 0, 0], ['skeletonWarrior', 5, 1], ['skeletonWarrior', 5, 5]] },
+  { id: 4, start: { x: 0, y: 5 }, walls: [[1, 1], [3, 1], [1, 3], [3, 3], [4, 4]], monsters: [['skeletonRogue', 5, 0], ['skeletonWarrior', 5, 3]] },
+  { id: 5, start: { x: 1, y: 5 }, walls: [[0, 2], [2, 2], [4, 2], [3, 4], [5, 4]], monsters: [['skeletonRogue', 5, 0], ['skeletonRogue', 3, 0], ['skeletonWarrior', 0, 0]] },
+  { id: 6, start: { x: 0, y: 5 }, walls: [[1, 1], [2, 1], [3, 1], [3, 3], [3, 4]], monsters: [['specter', 5, 0], ['skeletonWarrior', 5, 5]] },
+  { id: 7, start: { x: 0, y: 5 }, walls: [[2, 0], [2, 1], [2, 3], [2, 4], [4, 2]], monsters: [['skeletonRogue', 5, 0], ['specter', 4, 4], ['skeletonWarrior', 0, 0]] },
+  { id: 8, start: { x: 1, y: 5 }, walls: [[0, 1], [1, 1], [4, 1], [4, 2], [2, 4]], monsters: [['skeletonMage', 5, 2], ['skeletonRogue', 5, 0]] },
+  { id: 9, start: { x: 0, y: 5 }, walls: [[1, 2], [2, 2], [3, 2], [4, 2], [2, 4], [4, 4]], monsters: [['skeletonMage', 5, 5], ['specter', 5, 0], ['skeletonRogue', 0, 0]] },
+  { id: 10, start: { x: 1, y: 5 }, walls: [[1, 1], [3, 1], [5, 1], [1, 3], [3, 3], [5, 3]], monsters: [['specter', 0, 0], ['skeletonMage', 4, 5], ['skeletonRogue', 5, 0]] },
+  { id: 11, start: { x: 0, y: 5 }, walls: [[2, 1], [2, 2], [2, 3], [4, 1], [4, 2], [4, 3]], monsters: [['skeletonMage', 5, 4], ['specter', 5, 0], ['specter', 0, 0]] },
 ];
 
 export {
@@ -84,9 +125,11 @@ export const TIMING = {
   POST_BANNER_PAUSE: 1000, // Extra pause after banner disappears before action
   POST_ACTION_PAUSE: 1000, // Extra pause after action ends before next turn
   MONSTER_MOVE_SPEED: 250, // ms per tile for monsters
-  PLAYER_MOVE_SPEED: 120,  // ms per tile for player
+  PLAYER_MOVE_SPEED: 260,  // ms per tile for player in combat
   OVERWORLD_PLAYER_MOVE_SPEED: 300, // ms per tile in overworld
   ATTACK_BUMP_DURATION: 250,
+  PLAYER_ATTACK_ANIMATION: 670,
+  PLAYER_DAMAGE_ANIMATION: 870,
   DAMAGE_SHAKE_DURATION: 350,
   HERO_ATTACK_WAIT_TIME: 600, // Wait time after hero attack before busy=false
 };

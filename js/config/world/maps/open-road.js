@@ -26,9 +26,9 @@ export const openRoadMap = {
     }),
   ],
   encounters: [
-    { id: 'nest-a-0', type: 'spider', x: 4, y: 4, groupId: 'nest-a' },
-    { id: 'ruins-b-0', type: 'skeleton', x: 7, y: 3, groupId: 'ruins-b' },
-    { id: 'stone-c-0', type: 'golem', x: 8, y: 6, groupId: 'stone-c' },
+    { id: 'skeleton-minions-0', type: 'skeletonMinion', x: 4, y: 4, groupId: 'skeleton-minions' },
+    { id: 'skeleton-warriors-0', type: 'skeletonWarrior', x: 7, y: 3, groupId: 'skeleton-warriors' },
+    { id: 'skeleton-mages-0', type: 'skeletonMage', x: 8, y: 6, groupId: 'skeleton-mages' },
   ],
   connections: [
     {

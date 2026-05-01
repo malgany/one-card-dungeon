@@ -23,4 +23,14 @@ describe('renderer animation helpers', () => {
 
     expect(getAnimationEndTime(animation)).toBe(260);
   });
+
+  it('keeps model action animations alive for their explicit duration', () => {
+    const animation = {
+      type: 'modelAction',
+      startTime: 200,
+      duration: 670,
+    };
+
+    expect(getAnimationEndTime(animation)).toBe(870);
+  });
 });

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GAME_MODES, LEVELS, PHASES, SAVE_KEY, TIMING } from '../../js/config/game-data.js';
 import { createGameActions } from '../../js/game/game-actions.js';
 import { createDungeonLegacyGame, createGame, createMonster } from '../../js/game/game-factories.js';
@@ -14,6 +14,11 @@ describe('game actions', () => {
     vi.useFakeTimers();
     vi.spyOn(Math, 'random').mockReturnValue(0);
     localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it('starts a hero turn with fixed movement and AP', () => {
@@ -65,8 +70,8 @@ describe('game actions', () => {
     expect(state.game.busy).toBe(false);
   });
 
-  it('attacks a reachable monster and removes it when defeated', () => {
-    const monster = createMonster('spider', 1, 5, 0);
+  it('attacks a reachable monster without healing and removes it when defeated', () => {
+    const monster = createMonster('skeletonMinion', 1, 5, 0);
     monster.hp = 4;
     const game = createDungeonLegacyGame();
     game.phase = PHASES.HERO;
@@ -81,10 +86,17 @@ describe('game actions', () => {
     actions.attackMonster(monster.id);
 
     expect(state.game.apRemaining).toBe(0);
-    expect(state.game.player.health).toBe(60);
+    expect(state.game.player.health).toBe(59);
     expect(monster.hp).toBe(0);
     expect(state.game.busy).toBe(true);
     expect(state.game.selectedAttackId).toBe(null);
+    expect(state.game.animations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'modelAction',
+        entityId: monster.id,
+        animation: 'Hit_B',
+      }),
+    ]));
 
     vi.advanceTimersByTime(TIMING.HERO_ATTACK_WAIT_TIME);
     expect(state.game.monsters).toEqual([]);
@@ -92,7 +104,7 @@ describe('game actions', () => {
   });
 
   it('requires selecting the equipped attack before targeting monsters', () => {
-    const monster = createMonster('spider', 1, 5, 0);
+    const monster = createMonster('skeletonMinion', 1, 5, 0);
     const game = createDungeonLegacyGame();
     game.phase = PHASES.HERO;
     game.player = { ...game.player, x: 0, y: 5, rangeBase: 2 };
@@ -132,8 +144,64 @@ describe('game actions', () => {
     expect(state.game.selectedAttackId).toBe(null);
     expect(state.game.busy).toBe(true);
     expect(state.game.animations).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'bumpAttack', entityId: 'player', targetX: 0, targetY: 4 }),
+      expect.objectContaining({
+        type: 'modelAction',
+        entityId: 'player',
+        animation: 'Hit_A',
+        sourceX: 0,
+        sourceY: 5,
+        targetX: 0,
+        targetY: 4,
+      }),
     ]));
+    expect(state.game.animations.some((animation) => {
+      return animation.type === 'bumpAttack' && animation.entityId === 'player';
+    })).toBe(false);
+  });
+
+  it('plays the player damage reaction instead of shaking the player when hit by a monster', () => {
+    const monster = createMonster('skeletonMinion', 0, 4, 0);
+    monster.attack = 5;
+    monster.speed = 0;
+    const game = createDungeonLegacyGame();
+    game.phase = PHASES.HERO;
+    game.player = { ...game.player, x: 0, y: 5, defenseBase: 1 };
+    game.monsters = [monster];
+    game.turnQueue = ['player', monster.id];
+    const { state, actions } = createActionHarness(game);
+    const windowTimer = vi.spyOn(window, 'setTimeout').mockImplementation((callback) => {
+      if (typeof callback === 'function') callback();
+      return 0;
+    });
+
+    actions.endHeroPhase();
+    windowTimer.mockRestore();
+    vi.advanceTimersByTime(TIMING.TURN_BANNER + TIMING.POST_BANNER_PAUSE);
+
+    expect(state.game.player.health).toBe(56);
+    expect(state.game.animations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'modelAction',
+        entityId: monster.id,
+        animation: 'Hit_A',
+        sourceX: 0,
+        sourceY: 4,
+        targetX: 0,
+        targetY: 5,
+      }),
+      expect.objectContaining({
+        type: 'modelAction',
+        entityId: 'player',
+        animation: 'Hit_B',
+        sourceX: 0,
+        sourceY: 5,
+        targetX: 0,
+        targetY: 4,
+      }),
+    ]));
+    expect(state.game.animations.some((animation) => {
+      return animation.type === 'damageShake' && animation.entityId === 'player';
+    })).toBe(false);
   });
 
   it('wins the game when the final level monster is defeated', () => {
@@ -158,9 +226,9 @@ describe('game actions', () => {
   });
 
   it('reports monster movement and attack tiles without including occupied blockers', () => {
-    const monster = createMonster('spider', 3, 5, 0);
+    const monster = createMonster('skeletonMinion', 3, 5, 0);
     monster.speed = 2;
-    const blocker = createMonster('skeleton', 2, 5, 1);
+    const blocker = createMonster('skeletonWarrior', 2, 5, 1);
     const game = createDungeonLegacyGame();
     game.busy = false;
     game.levelIndex = 0;
@@ -222,7 +290,7 @@ describe('game actions', () => {
   it('starts an overworld encounter with the whole enemy group', () => {
     const game = createGame();
     const { state, actions } = createActionHarness(game);
-    const target = getCurrentWorldEnemies(state.game.overworld).find((enemy) => enemy.groupId === 'nest-a');
+    const target = getCurrentWorldEnemies(state.game.overworld).find((enemy) => enemy.groupId === 'skeleton-minions');
     const returnPosition = { x: state.game.player.x, y: state.game.player.y };
 
     actions.startOverworldEncounter(target.id);
@@ -231,17 +299,17 @@ describe('game actions', () => {
     expect(state.game.combatContext).toMatchObject({
       origin: GAME_MODES.OVERWORLD,
       mapId: 'open-road',
-      groupId: 'nest-a',
+      groupId: 'skeleton-minions',
       returnPosition,
     });
-    expect(state.game.monsters.map((monster) => monster.groupId)).toEqual(['nest-a']);
+    expect(state.game.monsters.map((monster) => monster.groupId)).toEqual(['skeleton-minions']);
     expect(state.game.turnQueue).toEqual(['player', ...state.game.monsters.map((monster) => monster.id)]);
   });
 
   it('returns to the overworld and removes the defeated group after map combat', () => {
     const game = createGame();
     const { state, actions } = createActionHarness(game);
-    const target = getCurrentWorldEnemies(state.game.overworld).find((enemy) => enemy.groupId === 'stone-c');
+    const target = getCurrentWorldEnemies(state.game.overworld).find((enemy) => enemy.groupId === 'skeleton-mages');
     const returnPosition = { x: state.game.player.x, y: state.game.player.y };
 
     actions.startOverworldEncounter(target.id);
@@ -261,7 +329,7 @@ describe('game actions', () => {
     expect(state.game.player).toMatchObject(returnPosition);
     expect(state.game.monsters).toEqual([]);
     expect(state.game.combatContext).toBe(null);
-    expect(getCurrentWorldEnemies(state.game.overworld).some((enemy) => enemy.groupId === 'stone-c')).toBe(false);
+    expect(getCurrentWorldEnemies(state.game.overworld).some((enemy) => enemy.groupId === 'skeleton-mages')).toBe(false);
     expect(state.game.phase).toBe(PHASES.HERO);
   });
 
@@ -279,6 +347,73 @@ describe('game actions', () => {
     expect(state.game.turnQueue).toEqual(['player', ...state.game.monsters.map((m) => m.id)]);
   });
 
+  it('migrates old enemy save data to skeleton enemy types', () => {
+    const { state, actions } = createActionHarness(createGame());
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      mode: GAME_MODES.COMBAT,
+      levelIndex: 0,
+      player: { ...state.game.player, x: 0, y: 5 },
+      monsters: [{
+        id: 'spider-0-1-5',
+        type: 'spider',
+        x: 1,
+        y: 5,
+        hp: 7,
+        maxHp: 20,
+        groupId: 'nest-a',
+        overworldEnemyId: 'overworld-open-road-nest-a-0',
+      }],
+      turnQueue: ['player', 'spider-0-1-5'],
+      combatContext: {
+        origin: GAME_MODES.OVERWORLD,
+        mapId: 'open-road',
+        groupId: 'stone-c',
+        enemyIds: ['overworld-open-road-stone-c-0'],
+      },
+      overworld: {
+        currentMapId: 'open-road',
+        mapStates: {
+          'open-road': {
+            mapId: 'open-road',
+            enemies: [{
+              id: 'overworld-open-road-nest-a-0',
+              encounterId: 'nest-a-0',
+              type: 'spider',
+              x: 4,
+              y: 4,
+              groupId: 'nest-a',
+              hp: 5,
+              maxHp: 20,
+            }],
+            removedObjectIds: [],
+          },
+        },
+      },
+    }));
+
+    actions.loadGame();
+
+    expect(state.game.monsters[0]).toMatchObject({
+      id: 'skeletonMinion-0-1-5',
+      type: 'skeletonMinion',
+      groupId: 'skeleton-minions',
+      overworldEnemyId: 'overworld-open-road-skeleton-minions-0',
+      name: 'Esqueleto Minion',
+      hp: 7,
+    });
+    expect(state.game.turnQueue).toEqual(['player', 'skeletonMinion-0-1-5']);
+    expect(state.game.combatContext).toMatchObject({
+      groupId: 'skeleton-mages',
+      enemyIds: ['overworld-open-road-skeleton-mages-0'],
+    });
+    expect(getCurrentWorldEnemies(state.game.overworld)[0]).toMatchObject({
+      id: 'overworld-open-road-skeleton-minions-0',
+      encounterId: 'skeleton-minions-0',
+      type: 'skeletonMinion',
+      groupId: 'skeleton-minions',
+    });
+  });
+
   it('saves and loads a normalized game without transient UI state', () => {
     const { state, actions } = createActionHarness();
     state.game.menuOpen = true;
@@ -291,7 +426,7 @@ describe('game actions', () => {
 
     const loaded = {
       levelIndex: 999,
-      player: { health: 3 },
+      player: { health: 3, attackSlot: { id: 'strike', lifeSteal: 10 } },
       monsters: 'invalid',
       roll: [1],
       turnQueue: [],
@@ -309,6 +444,7 @@ describe('game actions', () => {
     expect(state.game.mode).toBe(GAME_MODES.DUNGEON_LEGACY);
     expect(state.game.levelIndex).toBe(LEVELS.length - 1);
     expect(state.game.player.health).toBe(3);
+    expect(state.game.player.attackSlot.lifeSteal).toBe(0);
     expect(Array.isArray(state.game.monsters)).toBe(true);
     expect(state.game.buttons).toEqual([]);
     expect(state.game.draggingDie).toBe(null);

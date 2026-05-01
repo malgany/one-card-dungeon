@@ -1,4 +1,17 @@
-import { ACTION_RULES, BOARD_SIZE, GAME_MODES, LEVELS, PHASES, SAVE_KEY, TIMING, getWorldMap } from '../config/game-data.js';
+import {
+  ACTION_RULES,
+  BOARD_SIZE,
+  GAME_MODES,
+  LEVELS,
+  MONSTER_TEMPLATES,
+  PHASES,
+  SAVE_KEY,
+  TIMING,
+  getWorldMap,
+  normalizeEncounterGroupId,
+  normalizeMonsterId,
+  normalizeMonsterType,
+} from '../config/game-data.js';
 import {
   dijkstra,
   distanceBetween,
@@ -46,7 +59,11 @@ export function createGameActions(state) {
   }
 
   function setEvent(text) {
-    getGame().lastEvent = text;
+    const game = getGame();
+    game.lastEvent = text;
+    if (!game.eventLog) game.eventLog = [];
+    game.eventLog.push(text);
+    if (game.eventLog.length > 5) game.eventLog.shift();
   }
 
   function showBanner(title, subtitle = '', duration = 900, after = null, options = {}) {
@@ -72,10 +89,16 @@ export function createGameActions(state) {
   }
 
   function getEquippedAttack(game = getGame()) {
-    return {
+    const equipped = {
       ...ACTION_RULES.BASIC_ATTACK,
       ...(game.player.attackSlot || {}),
     };
+
+    if (equipped.id === ACTION_RULES.BASIC_ATTACK.id) {
+      equipped.lifeSteal = ACTION_RULES.BASIC_ATTACK.lifeSteal;
+    }
+
+    return equipped;
   }
 
   function getMitigatedDamage(rawDamage, defense) {
@@ -623,12 +646,15 @@ export function createGameActions(state) {
     });
 
     game.animations.push({
-      type: 'bumpAttack',
+      type: 'modelAction',
       entityId: 'player',
+      animation: 'Hit_A',
+      sourceX: game.player.x,
+      sourceY: game.player.y,
       targetX: targetCell.x,
       targetY: targetCell.y,
       startTime: performance.now(),
-      duration: TIMING.ATTACK_BUMP_DURATION
+      duration: TIMING.PLAYER_ATTACK_ANIMATION
     });
 
     let damage = 0;
@@ -637,8 +663,9 @@ export function createGameActions(state) {
       damage = getMitigatedDamage(attack.damage, target.defense);
       target.hp = Math.max(0, target.hp - damage);
 
+      const lifeSteal = Math.max(0, Number(attack.lifeSteal) || 0);
       healed = damage > 0
-        ? Math.min(attack.lifeSteal, game.player.maxHealth - game.player.health)
+        ? Math.min(lifeSteal, game.player.maxHealth - game.player.health)
         : 0;
       if (healed > 0) game.player.health += healed;
 
@@ -648,6 +675,20 @@ export function createGameActions(state) {
         startTime: performance.now() + TIMING.ATTACK_BUMP_DURATION,
         duration: TIMING.DAMAGE_SHAKE_DURATION
       });
+
+      if (damage > 0) {
+        game.animations.push({
+          type: 'modelAction',
+          entityId: target.id,
+          animation: 'Hit_B',
+          sourceX: target.x,
+          sourceY: target.y,
+          targetX: game.player.x,
+          targetY: game.player.y,
+          startTime: performance.now() + TIMING.ATTACK_BUMP_DURATION,
+          duration: TIMING.PLAYER_DAMAGE_ANIMATION
+        });
+      }
 
       game.animations.push({
         type: 'floatingText',
@@ -802,12 +843,29 @@ export function createGameActions(state) {
           duration: TIMING.ATTACK_BUMP_DURATION
         });
 
+        game.animations.push({
+          type: 'modelAction',
+          entityId: monster.id,
+          animation: 'Hit_A',
+          sourceX: monster.x,
+          sourceY: monster.y,
+          targetX: game.player.x,
+          targetY: game.player.y,
+          startTime: performance.now(),
+          duration: TIMING.PLAYER_ATTACK_ANIMATION
+        });
+
         if (damage > 0) {
           game.animations.push({
-            type: 'damageShake',
+            type: 'modelAction',
             entityId: 'player',
+            animation: 'Hit_B',
+            sourceX: game.player.x,
+            sourceY: game.player.y,
+            targetX: monster.x,
+            targetY: monster.y,
             startTime: performance.now() + TIMING.ATTACK_BUMP_DURATION,
-            duration: TIMING.DAMAGE_SHAKE_DURATION
+            duration: TIMING.PLAYER_DAMAGE_ANIMATION
           });
         }
 
@@ -917,6 +975,45 @@ export function createGameActions(state) {
     }
   }
 
+  function normalizeLoadedEnemyUnit(unit) {
+    if (!unit || typeof unit !== 'object') return unit;
+
+    const type = normalizeMonsterType(unit.type);
+    const template = MONSTER_TEMPLATES[type];
+    if (!template) return unit;
+
+    return {
+      ...unit,
+      id: normalizeMonsterId(unit.id),
+      encounterId: normalizeMonsterId(unit.encounterId),
+      mapId: unit.mapId || null,
+      type,
+      groupId: normalizeEncounterGroupId(unit.groupId),
+      overworldEnemyId: normalizeMonsterId(unit.overworldEnemyId),
+      hp: Number.isFinite(unit.hp) ? unit.hp : template.hp,
+      maxHp: Number.isFinite(unit.maxHp) ? unit.maxHp : template.hp,
+      attack: Number.isFinite(unit.attack) ? unit.attack : template.attack,
+      defense: Number.isFinite(unit.defense) ? unit.defense : template.defense,
+      range: Number.isFinite(unit.range) ? unit.range : template.range,
+      speed: Number.isFinite(unit.speed) ? unit.speed : template.speed,
+      name: template.name,
+      emoji: template.emoji,
+      tint: template.tint,
+    };
+  }
+
+  function normalizeLoadedCombatContext(context) {
+    if (!context || typeof context !== 'object') return null;
+
+    return {
+      ...context,
+      groupId: normalizeEncounterGroupId(context.groupId),
+      enemyIds: Array.isArray(context.enemyIds)
+        ? context.enemyIds.map(normalizeMonsterId)
+        : [],
+    };
+  }
+
   function normalizeLoadedOverworld(loadedOverworld, fallbackOverworld) {
     if (!fallbackOverworld) return null;
     if (!loadedOverworld || typeof loadedOverworld !== 'object') return fallbackOverworld;
@@ -938,7 +1035,7 @@ export function createGameActions(state) {
         normalized.mapStates[mapId] = {
           mapId,
           enemies: Array.isArray(loadedMapState?.enemies)
-            ? loadedMapState.enemies
+            ? loadedMapState.enemies.map(normalizeLoadedEnemyUnit)
             : fallbackMapState.enemies,
           removedObjectIds: Array.isArray(loadedMapState?.removedObjectIds)
             ? loadedMapState.removedObjectIds
@@ -947,7 +1044,7 @@ export function createGameActions(state) {
       }
     } else if (Array.isArray(loadedOverworld.enemies)) {
       ensureOverworldMapState(normalized, currentMapId);
-      normalized.mapStates[currentMapId].enemies = loadedOverworld.enemies;
+      normalized.mapStates[currentMapId].enemies = loadedOverworld.enemies.map(normalizeLoadedEnemyUnit);
       normalized.mapStates[currentMapId].removedObjectIds = Array.isArray(loadedOverworld.removedObjectIds)
         ? loadedOverworld.removedObjectIds
         : [];
@@ -988,9 +1085,11 @@ export function createGameActions(state) {
         ...fallback.player,
         ...(loaded.player || {}),
       },
-      monsters: Array.isArray(loaded.monsters) ? loaded.monsters : fallbackMonsters,
+      monsters: Array.isArray(loaded.monsters)
+        ? loaded.monsters.map(normalizeLoadedEnemyUnit)
+        : fallbackMonsters,
       overworld,
-      combatContext: loaded.combatContext && typeof loaded.combatContext === 'object' ? loaded.combatContext : null,
+      combatContext: normalizeLoadedCombatContext(loaded.combatContext),
       energyAssigned: {
         speed: null,
         attack: null,
@@ -1014,6 +1113,9 @@ export function createGameActions(state) {
     normalized.busy = false;
     normalized.animations = [];
     normalized.banner = null;
+    normalized.turnQueue = Array.isArray(normalized.turnQueue)
+      ? normalized.turnQueue.map((id) => id === 'player' ? id : normalizeMonsterId(id))
+      : [];
 
     if (normalized.mode === GAME_MODES.OVERWORLD) {
       normalized.turnQueue = ['player'];
@@ -1085,7 +1187,7 @@ export function createGameActions(state) {
       speed: game.player.speedBase + game.assignment.speed,
       attack: attack.damage,
       attackCost: attack.apCost,
-      attackLifeSteal: attack.lifeSteal,
+      attackLifeSteal: Math.max(0, Number(attack.lifeSteal) || 0),
       attackName: attack.name,
       defense: game.player.defenseBase,
       range: game.player.rangeBase,

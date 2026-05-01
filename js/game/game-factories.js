@@ -7,6 +7,9 @@ import {
   PHASES,
   START_WORLD_MAP_ID,
   getWorldMap,
+  normalizeEncounterGroupId,
+  normalizeMonsterId,
+  normalizeMonsterType,
 } from '../config/game-data.js';
 
 export function loadCardImages() {
@@ -30,11 +33,12 @@ export function makeEnergyRoll() {
 }
 
 export function createMonster(type, x, y, index) {
-  const template = MONSTER_TEMPLATES[type];
+  const normalizedType = normalizeMonsterType(type);
+  const template = MONSTER_TEMPLATES[normalizedType];
 
   return {
-    id: `${type}-${index}-${x}-${y}`,
-    type,
+    id: `${normalizedType}-${index}-${x}-${y}`,
+    type: normalizedType,
     x,
     y,
     hp: template.hp,
@@ -64,15 +68,16 @@ export function createOverworldEnemy(typeOrEncounter, x, y, groupId, index, mapI
     activeMapId = mapId;
   }
 
-  const template = MONSTER_TEMPLATES[encounter.type];
-  const group = encounter.groupId || encounter.id || `${encounter.type}-${encounterIndex}`;
+  const normalizedType = normalizeMonsterType(encounter.type);
+  const template = MONSTER_TEMPLATES[normalizedType];
+  const group = normalizeEncounterGroupId(encounter.groupId || encounter.id || `${normalizedType}-${encounterIndex}`);
   const idPrefix = activeMapId ? `overworld-${activeMapId}` : 'overworld';
 
   return {
     id: `${idPrefix}-${group}-${encounterIndex}`,
-    encounterId: encounter.id || `${group}-${encounterIndex}`,
+    encounterId: normalizeMonsterId(encounter.id || `${group}-${encounterIndex}`),
     mapId: activeMapId,
-    type: encounter.type,
+    type: normalizedType,
     x: encounter.x,
     y: encounter.y,
     groupId: group,
@@ -191,6 +196,7 @@ export function createOverworldGame(map = getWorldMap(START_WORLD_MAP_ID)) {
       accent: '#34d399',
     },
     lastEvent: 'Explore o mapa aberto.',
+    eventLog: ['Explore o mapa aberto.'],
   };
 }
 

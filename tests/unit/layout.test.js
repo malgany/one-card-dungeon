@@ -92,4 +92,17 @@ describe('layout tools', () => {
     expect(layout.tileAt(layout.getLayout(), 100, 100)).toEqual({ x: 7, y: 9 });
     expect(layout.hoveredOverworldEnemy()).toMatchObject({ id: 'e1' });
   });
+
+  it('gives the open map the full viewport', () => {
+    const { layout } = createLayoutHarness();
+    window.innerWidth = 1000;
+    window.innerHeight = 800;
+
+    expect(layout.overworldViewport(layout.getLayout())).toEqual({
+      x: 0,
+      y: 0,
+      w: 1000,
+      h: 800,
+    });
+  });
 });

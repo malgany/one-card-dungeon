@@ -16,7 +16,7 @@ Projeto de dungeon crawler tático com **tabuleiro 3D (Three.js)**, inspirado em
 - **Fase de Herói Simplificada**: O turno do aventureiro começa direto na ação, com **6 AP** fixos por turno.
 - **Ações Estratégicas**:
   - **Movimento**: 4 pontos de movimento por turno (passos ortogonais apenas).
-  - **Ataque**: Equipado com `Golpe` (5 AP, 10 Dano, 10 Roubo de Vida).
+  - **Ataque**: Equipado com `Golpe` (5 AP, 10 Dano, sem roubo de vida).
 - **Combate**: Defesa mitiga dano (Dano Final = Ataque - Defesa, min 0).
 - **Vida**: Aventureiro tem 60 HP; monstros têm vida proporcional à sua periculosidade.
 - **Interface**: HUD interativo, tooltips e animações de texto flutuante.
@@ -58,7 +58,7 @@ Use estas configuracoes:
 - `js/config/world`: mapas, biomas, terrenos, objetos e assets do mundo aberto.
 - `js/game`: regras, fabrica de estado e logica de tabuleiro.
 - `js/ui`: layout, input e renderizacao.
-- `assets`: imagens das cartas e texturas do mundo aberto.
+- `assets`: imagens das cartas, texturas do mundo aberto e modelos KayKit usados pelo jogador/inimigos.
 - `js/game/world-state.js`: helpers do chunk ativo, inimigos, objetos e conexoes.
 - `docs`: documentacao das regras atuais.
 - `context.md`: mapa rapido para localizar cada responsabilidade.
@@ -70,3 +70,4 @@ As regras atuais tambem estao descritas em `docs/game-rules.md`.
 ## Guia 3D
 
 Se for adicionar ou ajustar modelos GLTF no mundo aberto, consulte `docs/gltf-models.md` antes de mexer em `js/ui/three-board-view.js` ou em `js/config/world/objects.js`.
+O jogador usa o pacote KayKit Adventurers documentado em `docs/kaykit-adventurers.md`; os inimigos esqueletos usam o pacote KayKit Skeletons documentado em `docs/kaykit-skeletons.md`.

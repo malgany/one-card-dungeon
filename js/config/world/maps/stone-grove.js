@@ -27,7 +27,7 @@ export const stoneGroveMap = {
     { id: 'stone-grove-well-0', type: 'well', x: 7, y: 4 },
   ],
   encounters: [
-    { id: 'stone-grove-watch-0', type: 'skeleton', x: 8, y: 2, groupId: 'stone-grove-watch' },
+    { id: 'skeleton-warrior-watch-0', type: 'skeletonWarrior', x: 8, y: 2, groupId: 'skeleton-warrior-watch' },
   ],
   connections: [
     {

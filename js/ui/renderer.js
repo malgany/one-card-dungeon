@@ -22,7 +22,12 @@ export function getAnimationEndTime(anim) {
     return startTime + pathSteps * durationPerTile;
   }
 
-  if (anim.type === 'floatingText' || anim.type === 'bumpAttack' || anim.type === 'damageShake') {
+  if (
+    anim.type === 'floatingText' ||
+    anim.type === 'bumpAttack' ||
+    anim.type === 'damageShake' ||
+    anim.type === 'modelAction'
+  ) {
     return startTime + Math.max(0, anim.duration || 0);
   }
 
@@ -239,7 +244,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     cy += barH + 30;
 
-    if (game.lastEvent) {
+    if (game.lastEvent && !inOverworld) {
       draw.drawText(game.lastEvent, x + w / 2, cy, {
         align: 'center', font: 'italic 14px Inter, sans-serif', color: '#cbd5e1', maxWidth: w - 24,
       });
@@ -977,12 +982,15 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const image = playerSelected ? cardImages.player : cardImages[monster.type];
     const title = playerSelected ? 'Aventureiro' : monster.name;
     const titleIcon = playerSelected ? '🧙' : monster.emoji;
+    const attackLine = totals.attackLifeSteal > 0
+      ? `Ataque ${totals.attack} | suga ${totals.attackLifeSteal}`
+      : `Ataque ${totals.attack}`;
     const lines = playerSelected
       ? [
           `Vida ${game.player.health}/${game.player.maxHealth}`,
           `AP ${game.apRemaining}/${game.player.apMax} | ${totals.attackName} custa ${totals.attackCost} AP`,
           `Movimento ${game.speedRemaining}/${game.player.speedBase} | só em cruz`,
-          `Ataque ${totals.attack} | suga ${totals.attackLifeSteal}`,
+          attackLine,
           `Defesa ${totals.defense}`,
           `Alcance ${totals.range}`,
         ]
@@ -1231,6 +1239,57 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     ctx.restore();
   }
 
+  function drawOverworldChat(currentLayout) {
+    const game = state.game;
+    const log = (game.eventLog || []).slice(-4);
+    if (!log || log.length === 0) return;
+
+    const viewport = threeBoard.getViewport(currentLayout);
+    const chatW = Math.min(280, viewport.w - 16);
+    const lineH = 18;
+    const padV = 8;
+    const padH = 10;
+    const chatH = log.length * lineH + padV * 2;
+    const chatX = viewport.x + 8;
+    const chatY = viewport.y + viewport.h - chatH - 10;
+
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = 'rgba(5, 8, 14, 0.28)';
+    const r = 8;
+    ctx.beginPath();
+    ctx.moveTo(chatX + r, chatY);
+    ctx.lineTo(chatX + chatW - r, chatY);
+    ctx.quadraticCurveTo(chatX + chatW, chatY, chatX + chatW, chatY + r);
+    ctx.lineTo(chatX + chatW, chatY + chatH - r);
+    ctx.quadraticCurveTo(chatX + chatW, chatY + chatH, chatX + chatW - r, chatY + chatH);
+    ctx.lineTo(chatX + r, chatY + chatH);
+    ctx.quadraticCurveTo(chatX, chatY + chatH, chatX, chatY + chatH - r);
+    ctx.lineTo(chatX, chatY + r);
+    ctx.quadraticCurveTo(chatX, chatY, chatX + r, chatY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    log.forEach((entry, i) => {
+      const alpha = 0.45 + 0.55 * ((i + 1) / log.length);
+      ctx.globalAlpha = alpha;
+      ctx.font = `italic ${i === log.length - 1 ? 'bold ' : ''}12px Inter, sans-serif`;
+      ctx.fillStyle = i === log.length - 1 ? '#f8fafc' : '#cbd5e1';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      const ty = chatY + padV + i * lineH + lineH / 2;
+      const maxW = chatW - padH * 2;
+      const text = ctx.measureText(entry).width > maxW
+        ? entry.slice(0, Math.floor(entry.length * maxW / ctx.measureText(entry).width) - 1) + '…'
+        : entry;
+      ctx.fillText(text, chatX + padH, ty);
+    });
+
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
   function drawOverworld(currentLayout, now) {
     const game = state.game;
     const overworld = game.overworld;
@@ -1277,7 +1336,6 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     ctx.fillStyle = background;
     ctx.fillRect(0, 0, currentLayout.sw, currentLayout.sh);
 
-    drawSidebar(currentLayout);
     clearThreeBoardViewport(currentLayout);
 
     drawMenu(currentLayout);
@@ -1286,6 +1344,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     }, {
       fill: '#111827', hoverFill: '#1f2937', stroke: '#64748b', font: '16px Inter, sans-serif',
     });
+    drawOverworldChat(currentLayout);
     drawBanner(currentLayout);
  
     if (DEBUG_CONFIG.SHOW_STATS) {
@@ -1361,24 +1420,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       now,
     });
 
-    let screenShakeX = 0;
-    let screenShakeY = 0;
-    let screenFlashRed = false;
-
-    const playerShakeAnim = state.game.animations.find(a => a.type === 'damageShake' && a.entityId === 'player');
-    if (playerShakeAnim) {
-       const p = (now - playerShakeAnim.startTime) / playerShakeAnim.duration;
-       if (p >= 0 && p <= 1) {
-           screenShakeX += Math.sin(p * Math.PI * 10) * 16;
-           screenShakeY += Math.sin(p * Math.PI * 13) * 12;
-           if (Math.floor(p * 12) % 2 === 0) screenFlashRed = true;
-       }
-    }
-
     ctx.save();
-    if (screenShakeX !== 0 || screenShakeY !== 0) {
-        ctx.translate(screenShakeX, screenShakeY);
-    }
 
     const background = ctx.createLinearGradient(0, 0, 0, currentLayout.sh);
     background.addColorStop(0, '#151922');
@@ -1602,11 +1644,6 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     }
     
     ctx.restore();
-
-    if (screenFlashRed) {
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.25)';
-        ctx.fillRect(0, 0, currentLayout.sw, currentLayout.sh);
-    }
 
     canvas.style.cursor = state.game.draggingDie
       ? 'grabbing'

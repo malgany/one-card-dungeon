@@ -37,6 +37,14 @@ export const WORLD_OBJECT_TYPES = {
     height: 0.32,
     color: '#64748b',
   },
+  tree: {
+    id: 'tree',
+    name: 'Arvore',
+    shape: 'model',
+    modelUrl: WORLD_ASSETS.objects.tree,
+    blocksMovement: true,
+    scale: 8,
+  },
   'test-model': {
     id: 'test-model',
     name: 'Objeto 3D Teste',
