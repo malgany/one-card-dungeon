@@ -96,9 +96,9 @@ export const CARD_SOURCES = {
   skeletonMinion: './assets/characters/skeleton-minion.png',
   skeletonWarrior: './assets/characters/skeleton-warrior.png',
   skeletonRogue: './assets/characters/skeleton-rogue.png',
-  specter: './assets/characters/espectro.png',
+  specter: './assets/characters/skeleton-mage.png',
   skeletonMage: './assets/characters/skeleton-mage.png',
-  boss: './assets/characters/guardiao.png',
+  boss: './assets/characters/skeleton-warrior.png',
 };
 
 export const LEVELS = [

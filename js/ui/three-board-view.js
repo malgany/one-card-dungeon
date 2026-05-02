@@ -48,7 +48,7 @@ const PLAYER_MODEL_BASE = {
   damageAnimation: 'Hit_B',
   walkTimeScale: 1.65,
   scale: 0.42,
-  groundOffset: -0.16,
+  groundOffset: -0.01,
   initialRotationY: CARD_ROTATION_Y,
   animations: [
     WORLD_ASSETS.animations.rigMedium.general,
@@ -85,7 +85,7 @@ const SKELETON_MODEL_BASE = {
   damageAnimation: 'Hit_B',
   walkTimeScale: 1.65,
   scale: 0.42,
-  groundOffset: -0.16,
+  groundOffset: -0.01,
   initialRotationY: CARD_ROTATION_Y,
   animations: [
     WORLD_ASSETS.animations.skeletons.rigMedium.general,
