@@ -971,7 +971,10 @@ export function createGameActions(state) {
     game.busy = true;
     game.selectedAttackId = null;
     setEvent('Fim da vez: Aventureiro');
-    advanceTurn();
+
+    showBanner('Fim da vez', 'Seu tempo de ação acabou.', 800, () => {
+      advanceTurn();
+    }, { cardKey: 'player', accent: '#b94735' });
   }
 
 
