@@ -1,4 +1,17 @@
 import { mountMenuCharacterPreview } from './menu-character-viewer.js';
+import {
+  CHARACTER_TYPES,
+  characterAccentColor,
+  createPaletteDraft,
+  getPaletteSlotGroups,
+  getPaletteSlotsForControl,
+  getCharacterType,
+  normalizeCharacterRecord,
+  normalizeHexColor,
+  serializePaletteDraft,
+} from '../config/character-palettes.js';
+
+export { CHARACTER_TYPES };
 
 const MENU_ASSETS = {
   home: '/assets/ui/menu/capa.png',
@@ -10,48 +23,6 @@ const MENU_ASSETS = {
 const CHARACTERS_KEY = 'one-rpg-characters-v1';
 const SELECTED_CHARACTER_KEY = 'one-rpg-selected-character-v1';
 const MAX_CHARACTERS = 3;
-
-export const CHARACTER_TYPES = [
-  {
-    id: 'mage',
-    label: 'Mago',
-    image: '/assets/characters/mage.png',
-    summary: 'Arcano equilibrado',
-  },
-  {
-    id: 'barbarian',
-    label: 'Barbaro',
-    image: '/assets/characters/barbarian.png',
-    summary: 'Forca bruta',
-  },
-  {
-    id: 'knight',
-    label: 'Cavaleiro',
-    image: '/assets/characters/knight.png',
-    summary: 'Defesa firme',
-  },
-  {
-    id: 'ranger',
-    label: 'Patrulheiro',
-    image: '/assets/characters/ranger.png',
-    summary: 'Ataque a distancia',
-  },
-  {
-    id: 'rogue',
-    label: 'Ladino',
-    image: '/assets/characters/rogue.png',
-    summary: 'Agil e preciso',
-  },
-];
-
-const COLOR_OPTIONS = [
-  '#d39b32',
-  '#5f8f54',
-  '#b94735',
-  '#9a7a32',
-  '#c9bea5',
-  '#6f6342',
-];
 
 function storageAvailable() {
   try {
@@ -101,31 +72,8 @@ function escapeHtml(value) {
     .replaceAll("'", '&#039;');
 }
 
-function getCharacterType(typeId) {
-  return CHARACTER_TYPES.find((type) => type.id === typeId) || CHARACTER_TYPES[0];
-}
-
-function normalizeColor(color) {
-  return COLOR_OPTIONS.includes(color) ? color : COLOR_OPTIONS[0];
-}
-
 function normalizeCharacter(character, index = 0) {
-  const type = getCharacterType(character?.type);
-  const name = typeof character?.name === 'string' && character.name.trim()
-    ? character.name.trim().slice(0, 24)
-    : `${type.label} ${index + 1}`;
-
-  return {
-    id: typeof character?.id === 'string' && character.id
-      ? character.id
-      : `character-${Date.now()}-${index}`,
-    name,
-    type: type.id,
-    typeLabel: type.label,
-    color: normalizeColor(character?.color),
-    image: type.image,
-    createdAt: Number.isFinite(character?.createdAt) ? character.createdAt : Date.now(),
-  };
+  return normalizeCharacterRecord(character, index);
 }
 
 function createCharacterId() {
@@ -175,26 +123,30 @@ function typeButton(type, activeTypeId) {
   `;
 }
 
-function colorButton(color, activeColor) {
-  const active = color === activeColor ? ' is-selected' : '';
+function paletteSlotControl(slotGroup, color, activeSlotId, index) {
+  const controlSlotId = slotGroup[0];
+  const active = controlSlotId === activeSlotId ? ' is-selected' : '';
   return `
-    <button class="menu-color-button${active}" type="button" data-menu-action="choose-color" data-color="${escapeHtml(color)}" style="--swatch:${escapeHtml(color)}">
-      <span></span>
-    </button>
+    <label class="menu-palette-slot${active}" data-palette-slot-id="${escapeHtml(controlSlotId)}" data-palette-slot-ids="${escapeHtml(slotGroup.join(','))}" style="--swatch:${escapeHtml(color)}" title="Bloco ${index + 1}">
+      <input class="menu-palette-color-input" type="color" value="${escapeHtml(color.toLowerCase())}" data-palette-color-input data-slot-id="${escapeHtml(controlSlotId)}" aria-label="Cor do bloco ${index + 1}">
+    </label>
   `;
 }
 
 function characterRow(character, selectedId) {
   const active = character.id === selectedId ? ' is-selected' : '';
   return `
-    <button class="menu-character-row${active}" type="button" data-menu-action="select-character" data-character-id="${escapeHtml(character.id)}">
+    <div class="menu-character-row${active}" data-menu-action="select-character" data-character-id="${escapeHtml(character.id)}">
       <img src="${escapeHtml(character.image)}" alt="" class="menu-character-thumb">
       <span class="menu-character-copy">
         <strong>${escapeHtml(character.name)}</strong>
         <small>${escapeHtml(character.typeLabel)}</small>
       </span>
       <span class="menu-character-color" style="--character-color:${escapeHtml(character.color)}"></span>
-    </button>
+      <button class="menu-delete-button" type="button" data-menu-action="delete-character" data-character-id="${escapeHtml(character.id)}" title="Excluir personagem">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+      </button>
+    </div>
   `;
 }
 
@@ -206,12 +158,98 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
   let characters = loadCharacters();
   let selectedCharacterId = getSelectedCharacterId() || characters[0]?.id || null;
   let activeTypeId = CHARACTER_TYPES[0].id;
-  let activeColor = COLOR_OPTIONS[0];
+  const paletteDraftByType = {};
+  const activePaletteSlotByType = {};
   let nameDraft = '';
   let activeCharacterPreview = null;
 
   function selectedCharacter() {
     return characters.find((character) => character.id === selectedCharacterId) || characters[0] || null;
+  }
+
+  function ensurePaletteDraft(typeId) {
+    if (!paletteDraftByType[typeId]) {
+      paletteDraftByType[typeId] = createPaletteDraft(typeId);
+    }
+
+    return paletteDraftByType[typeId];
+  }
+
+  function activePaletteSlotId(typeId) {
+    const controlSlots = getPaletteSlotGroups(typeId).map((group) => group[0]);
+    if (!activePaletteSlotByType[typeId] || !controlSlots.includes(activePaletteSlotByType[typeId])) {
+      activePaletteSlotByType[typeId] = controlSlots[0];
+    }
+
+    return activePaletteSlotByType[typeId];
+  }
+
+  function activePalette(typeId) {
+    return serializePaletteDraft(typeId, ensurePaletteDraft(typeId));
+  }
+
+  function activeAccentColor(typeId) {
+    return characterAccentColor(typeId, activePalette(typeId));
+  }
+
+  function syncActivePaletteSlotUi() {
+    const activeSlotId = activePaletteSlotId(activeTypeId);
+    const draft = ensurePaletteDraft(activeTypeId);
+
+    menuRoot.querySelectorAll('[data-palette-slot-id]').forEach((slotControl) => {
+      slotControl.classList.toggle('is-selected', slotControl.dataset.paletteSlotId === activeSlotId);
+    });
+
+    const hexInput = menuRoot.querySelector('[data-palette-hex-input]');
+    if (hexInput) {
+      hexInput.value = draft[activeSlotId] || '';
+      hexInput.dataset.slotId = activeSlotId;
+      hexInput.classList.remove('is-invalid');
+    }
+  }
+
+  function syncPalettePreview() {
+    const palette = activePalette(activeTypeId);
+    const accent = activeAccentColor(activeTypeId);
+
+    menuRoot.querySelector('.menu-create-stage')?.style.setProperty('--character-color', accent);
+    menuRoot.querySelector('.menu-character-nameplate')?.style.setProperty('--character-color', accent);
+    activeCharacterPreview?.updatePalette?.(palette);
+  }
+
+  function setPaletteSlotColor(slotId, value) {
+    const color = normalizeHexColor(value);
+    if (!color) return false;
+
+    const draft = ensurePaletteDraft(activeTypeId);
+    const slotIds = getPaletteSlotsForControl(activeTypeId, slotId);
+    const controlSlotId = slotIds[0] || slotId;
+    for (const groupedSlotId of slotIds) {
+      draft[groupedSlotId] = color;
+    }
+    activePaletteSlotByType[activeTypeId] = controlSlotId;
+
+    const slotControl = menuRoot.querySelector(`[data-palette-slot-id="${controlSlotId}"]`);
+    slotControl?.style.setProperty('--swatch', color);
+    slotControl?.querySelector('[data-palette-color-input]')?.setAttribute('value', color.toLowerCase());
+
+    const colorInput = menuRoot.querySelector(`[data-palette-color-input][data-slot-id="${controlSlotId}"]`);
+    if (colorInput) colorInput.value = color.toLowerCase();
+
+    const hexInput = menuRoot.querySelector('[data-palette-hex-input]');
+    if (hexInput) {
+      hexInput.value = color;
+      hexInput.classList.remove('is-invalid');
+      hexInput.dataset.slotId = controlSlotId;
+    }
+
+    syncActivePaletteSlotUi();
+    syncPalettePreview();
+    return true;
+  }
+
+  function flashPaletteSlot(slotId) {
+    activeCharacterPreview?.flashPaletteSlot?.(getPaletteSlotsForControl(activeTypeId, slotId));
   }
 
   function setBackground(image) {
@@ -230,6 +268,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     activeCharacterPreview = mountMenuCharacterPreview(target, {
       typeId: character.type,
       fallbackImage: character.image,
+      palette: character.palette,
     });
   }
 
@@ -304,6 +343,12 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
   function renderCreate() {
     disposeCharacterPreview();
     const activeType = getCharacterType(activeTypeId);
+    const paletteDraft = ensurePaletteDraft(activeType.id);
+    const paletteGroups = getPaletteSlotGroups(activeType.id);
+    const selectedSlotId = activePaletteSlotId(activeType.id);
+    const selectedColor = paletteDraft[selectedSlotId];
+    const palette = serializePaletteDraft(activeType.id, paletteDraft);
+    const accentColor = characterAccentColor(activeType.id, palette);
     showRoot('create', MENU_ASSETS.create);
     menuRoot.innerHTML = `
       <section class="menu-screen menu-screen--create">
@@ -316,7 +361,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
             ${CHARACTER_TYPES.map((type) => typeButton(type, activeType.id)).join('')}
           </div>
         </aside>
-        <main class="menu-create-stage" style="--character-color:${escapeHtml(activeColor)}">
+        <main class="menu-create-stage" style="--character-color:${escapeHtml(accentColor)}">
           <div class="menu-character-nameplate menu-glass">
             <strong>${escapeHtml(activeType.label)}</strong>
             <span>${escapeHtml(activeType.summary)}</span>
@@ -332,13 +377,17 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
             <span>Paleta</span>
             <strong>Cor</strong>
           </div>
-          <div class="menu-color-list">
-            ${COLOR_OPTIONS.map((color) => colorButton(color, activeColor)).join('')}
+          <div class="menu-palette-list">
+            ${paletteGroups.map((slotGroup, index) => paletteSlotControl(slotGroup, paletteDraft[slotGroup[0]], selectedSlotId, index)).join('')}
           </div>
+          <label class="menu-palette-code">
+            <span>HEX</span>
+            <input class="menu-hex-input" data-palette-hex-input data-slot-id="${escapeHtml(selectedSlotId)}" value="${escapeHtml(selectedColor)}" maxlength="7" spellcheck="false" autocomplete="off">
+          </label>
         </aside>
       </section>
     `;
-    mountCharacterPreview({ type: activeType.id, image: activeType.image });
+    mountCharacterPreview({ type: activeType.id, image: activeType.image, palette });
   }
 
   function applyCharacter(character) {
@@ -349,6 +398,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     state.game.player.characterId = normalized.id;
     state.game.player.characterType = normalized.type;
     state.game.player.characterColor = normalized.color;
+    state.game.player.characterPalette = normalized.palette;
     state.game.player.characterPortrait = normalized.image;
     state.game.player.characterLabel = normalized.typeLabel;
     state.game.selectedCharacter = {
@@ -356,6 +406,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
       name: normalized.name,
       type: normalized.type,
       color: normalized.color,
+      palette: normalized.palette,
     };
     state.game.banner = {
       title: normalized.name,
@@ -384,7 +435,8 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
       id: createCharacterId(),
       name: typedName || `${activeType.label} ${characters.length + 1}`,
       type: activeType.id,
-      color: activeColor,
+      color: activeAccentColor(activeType.id),
+      palette: activePalette(activeType.id),
       createdAt: Date.now(),
     }, characters.length);
 
@@ -395,6 +447,12 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
   }
 
   menuRoot.addEventListener('click', (event) => {
+    const paletteSlot = event.target.closest('[data-palette-slot-id]');
+    if (paletteSlot && menuRoot.contains(paletteSlot)) {
+      activePaletteSlotByType[activeTypeId] = paletteSlot.dataset.paletteSlotId;
+      syncActivePaletteSlotUi();
+    }
+
     const control = event.target.closest('[data-menu-action]');
     if (!control || !menuRoot.contains(control)) return;
 
@@ -431,14 +489,57 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
       return;
     }
 
-    if (action === 'choose-color') {
-      nameDraft = menuRoot.querySelector('[name="characterName"]')?.value || nameDraft;
-      activeColor = normalizeColor(control.dataset.color);
-      renderCreate();
+    if (action === 'delete-character') {
+      const charId = control.dataset.characterId;
+      const charToDelete = characters.find((c) => c.id === charId);
+      if (!charToDelete) return;
+
+      if (window.confirm(`Tem certeza que deseja excluir o personagem "${charToDelete.name}"?`)) {
+        characters = characters.filter((c) => c.id !== charId);
+        saveCharacters(characters);
+        if (selectedCharacterId === charId) {
+          selectedCharacterId = characters[0]?.id || null;
+          setSelectedCharacterId(selectedCharacterId);
+        }
+        renderSelect();
+      }
     }
   });
 
+  menuRoot.addEventListener('pointerover', (event) => {
+    const paletteSlot = event.target.closest('[data-palette-slot-id]');
+    if (!paletteSlot || !menuRoot.contains(paletteSlot)) return;
+    if (paletteSlot.contains(event.relatedTarget)) return;
+
+    flashPaletteSlot(paletteSlot.dataset.paletteSlotId);
+  });
+
+  menuRoot.addEventListener('focusin', (event) => {
+    const paletteSlot = event.target.closest?.('[data-palette-slot-id]');
+    if (!paletteSlot || !menuRoot.contains(paletteSlot)) return;
+
+    flashPaletteSlot(paletteSlot.dataset.paletteSlotId);
+  });
+
   menuRoot.addEventListener('input', (event) => {
+    if (event.target?.matches?.('[data-palette-color-input]')) {
+      setPaletteSlotColor(event.target.dataset.slotId, event.target.value);
+      return;
+    }
+
+    if (event.target?.matches?.('[data-palette-hex-input]')) {
+      const slotId = event.target.dataset.slotId || activePaletteSlotId(activeTypeId);
+      const normalized = normalizeHexColor(event.target.value);
+
+      if (!normalized) {
+        event.target.classList.add('is-invalid');
+        return;
+      }
+
+      setPaletteSlotColor(slotId, normalized);
+      return;
+    }
+
     if (event.target?.name === 'characterName') {
       nameDraft = event.target.value;
     }
@@ -454,5 +555,6 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     show: renderHome,
     showCharacterSelect: renderSelect,
     showCharacterCreate: renderCreate,
+    flashPaletteSlot,
   };
 }

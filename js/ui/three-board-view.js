@@ -3,6 +3,8 @@ import { BOARD_SIZE, CARD_SOURCES, DEBUG_CONFIG, GAME_MODES, WORLD_ASSETS, WORLD
 import { getCurrentWorldEnemies } from '../game/world-state.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
+import { paletteSignature } from '../config/character-palettes.js';
+import { configureCharacterTexture, loadCharacterPaletteTexture } from './character-palette-texture.js';
 
 const CARD_WIDTH = 0.56;
 const CARD_HEIGHT = 0.82;
@@ -175,7 +177,10 @@ function playerModelKey(unit) {
 }
 
 function unitTypeKey(unit, isPlayer) {
-  return isPlayer ? `player:${playerModelKey(unit)}` : unit?.type || 'unit';
+  if (!isPlayer) return unit?.type || 'unit';
+
+  const typeId = playerModelKey(unit);
+  return `player:${typeId}:${paletteSignature(typeId, unit?.characterPalette)}`;
 }
 
 function modelConfigForUnit(unit, isPlayer) {
@@ -479,14 +484,24 @@ export function createThreeBoardView({ state }) {
     model.position.z = -center.z;
   }
 
-  function prepareGltfModel(gltf, model, url = null) {
+  async function overrideTextureFor(url, typeId = null, palette = null) {
     let overrideTexture = null;
     if (url) {
       const overridePath = CHARACTER_TEXTURE_OVERRIDES[url] || CHARACTER_TEXTURE_OVERRIDES[url.replace(/^\.\//, '')];
       if (overridePath) {
-        overrideTexture = textureFor(overridePath);
+        overrideTexture = typeId
+          ? await loadCharacterPaletteTexture({ typeId, textureUrl: overridePath, palette })
+          : null;
+        if (!overrideTexture) overrideTexture = textureFor(overridePath);
+        configureCharacterTexture(overrideTexture);
       }
     }
+
+    return overrideTexture;
+  }
+
+  async function prepareGltfModel(gltf, model, { url = null, typeId = null, palette = null } = {}) {
+    const overrideTexture = await overrideTextureFor(url, typeId, palette);
 
     model.traverse((node) => {
       if (!node.isMesh) return;
@@ -881,12 +896,16 @@ export function createThreeBoardView({ state }) {
     Promise.all([
       loadGltfAsset(modelConfig.modelUrl),
       ...modelConfig.animations.map((url) => loadGltfAsset(url)),
-    ]).then(([modelGltf, ...animationGltfs]) => {
+    ]).then(async ([modelGltf, ...animationGltfs]) => {
       const model = cloneSkeleton(modelGltf.scene);
       model.scale.setScalar(modelConfig.scale);
       centerModelOnGround(model);
       model.position.y += modelConfig.groundOffset;
-      prepareGltfModel(modelGltf, model, modelConfig.modelUrl);
+      await prepareGltfModel(modelGltf, model, {
+        url: modelConfig.modelUrl,
+        typeId: isPlayer ? playerModelKey(unit) : null,
+        palette: isPlayer ? unit?.characterPalette : null,
+      });
       group.add(model);
 
       const mixer = new THREE.AnimationMixer(model);
@@ -982,10 +1001,10 @@ export function createThreeBoardView({ state }) {
       group.userData.hasOutline = !!state.visuals.showOutlines;
       boardGroup.add(group);
 
-      loadGltfAsset(type.modelUrl).then((gltf) => {
+      loadGltfAsset(type.modelUrl).then(async (gltf) => {
         const model = cloneSkeleton(gltf.scene);
         centerModelOnGround(model);
-        prepareGltfModel(gltf, model, type.modelUrl);
+        await prepareGltfModel(gltf, model, { url: type.modelUrl });
 
         // Setup Animations
         if (gltf.animations && gltf.animations.length > 0) {

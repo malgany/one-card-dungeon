@@ -46,13 +46,59 @@ test('opens character creation when no character exists', async ({ page }) => {
 
   await page.getByPlaceholder('Nome do personagem').fill('Aria');
   await page.locator('[data-menu-action="choose-type"][data-type-id="knight"]').click();
-  await page.locator('[data-menu-action="choose-color"][data-color="#5f8f54"]').click();
+  await page.locator('[data-palette-color-input][data-slot-id="r6c4"]').evaluate((input) => {
+    input.value = '#00ff88';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
   await page.locator('.menu-create-form .menu-primary-button').click();
 
   await expect(page.locator('#menu-root')).toBeHidden();
   await page.waitForFunction(() => {
     const player = window.__ONE_RPG_DEBUG__?.state?.game?.player;
-    return player?.name === 'Aria' && player?.characterType === 'knight';
+    return (
+      player?.name === 'Aria' &&
+      player?.characterType === 'knight' &&
+      player?.characterPalette?.slots?.r6c4 === '#00FF88'
+    );
+  });
+  const savedCharacters = await page.evaluate(() => {
+    return JSON.parse(window.localStorage.getItem('one-rpg-characters-v1'));
+  });
+  expect(savedCharacters[0].palette.slots.r6c4).toBe('#00FF88');
+});
+
+test('edits grouped mage palette slots together', async ({ page }) => {
+  await page.goto('/');
+
+  await page.locator('.menu-home-panel .menu-primary-button').click();
+  await expect(page.locator('.menu-screen--create')).toBeVisible();
+  await expect(page.locator('[data-palette-slot-id]')).toHaveCount(20);
+
+  await page.getByPlaceholder('Nome do personagem').fill('Mira');
+  await page.locator('[data-palette-color-input][data-slot-id="r4c0"]').evaluate((input) => {
+    input.value = '#aa33ff';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.locator('.menu-create-form .menu-primary-button').click();
+
+  await expect(page.locator('#menu-root')).toBeHidden();
+  await page.waitForFunction(() => {
+    const palette = window.__ONE_RPG_DEBUG__?.state?.game?.player?.characterPalette;
+    return (
+      palette?.slots?.r4c0 === '#AA33FF' &&
+      palette?.slots?.r4c1 === '#AA33FF' &&
+      palette?.slots?.r5c0 === '#AA33FF' &&
+      palette?.slots?.r5c1 === '#AA33FF'
+    );
+  });
+  const savedCharacters = await page.evaluate(() => {
+    return JSON.parse(window.localStorage.getItem('one-rpg-characters-v1'));
+  });
+  expect(savedCharacters[0].palette.slots).toMatchObject({
+    r4c0: '#AA33FF',
+    r4c1: '#AA33FF',
+    r5c0: '#AA33FF',
+    r5c1: '#AA33FF',
   });
 });
 
@@ -63,7 +109,13 @@ test('opens character selection when a character exists', async ({ page }) => {
       name: 'Doran',
       type: 'ranger',
       typeLabel: 'Patrulheiro',
-      color: '#d39b32',
+      color: '#112233',
+      palette: {
+        version: 1,
+        slots: {
+          r7c6: '#112233',
+        },
+      },
       image: '/assets/characters/ranger.png',
       createdAt: Date.now(),
     };
@@ -81,7 +133,11 @@ test('opens character selection when a character exists', async ({ page }) => {
   await expect(page.locator('#menu-root')).toBeHidden();
   await page.waitForFunction(() => {
     const player = window.__ONE_RPG_DEBUG__?.state?.game?.player;
-    return player?.name === 'Doran' && player?.characterType === 'ranger';
+    return (
+      player?.name === 'Doran' &&
+      player?.characterType === 'ranger' &&
+      player?.characterPalette?.slots?.r7c6 === '#112233'
+    );
   });
 });
 
