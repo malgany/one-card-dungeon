@@ -2,7 +2,7 @@
       margin: 0;
       padding: 0;
       overflow: hidden;
-      background: #08090d;
+      background: #070807;
       font-family: 'Inter', system-ui, -apple-system, sans-serif;
     }
 
@@ -32,7 +32,7 @@
       left: 0;
       width: 100vw;
       height: 100vh;
-      background: rgba(0, 0, 0, 0.8);
+      background: rgba(0, 0, 0, 0.86);
       z-index: 1000;
       display: flex;
       justify-content: center;
@@ -40,17 +40,17 @@
     }
 
     .modal-container {
-      background: #0f172a;
+      background: #171912;
       width: 90%;
       max-width: 900px;
       height: 85vh;
-      border-radius: 12px;
-      border: 2px solid #334155;
+      border-radius: 8px;
+      border: 2px solid #6f6342;
       display: flex;
       flex-direction: column;
       position: relative;
-      color: #cbd5e1;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      color: #c9bea5;
+      box-shadow: 0 28px 56px -14px rgba(0, 0, 0, 0.62);
     }
 
     .modal-close {
@@ -59,33 +59,33 @@
       right: 15px;
       background: none;
       border: none;
-      color: #94a3b8;
+      color: #8f8773;
       font-size: 32px;
       cursor: pointer;
       z-index: 10;
     }
 
     .modal-close:hover {
-      color: #f8fafc;
+      color: #f2ead7;
     }
 
     .modal-layout {
       display: flex;
       height: 100%;
       overflow: hidden;
-      border-radius: 12px;
+      border-radius: 8px;
     }
 
     .modal-sidebar {
       width: 250px;
-      background: #1e293b;
+      background: #202219;
       padding: 20px;
       overflow-y: auto;
-      border-right: 1px solid #334155;
+      border-right: 1px solid #4a4638;
     }
 
     .modal-sidebar h3 {
-      color: #f8fafc;
+      color: #f2ead7;
       margin-top: 0;
       font-size: 18px;
     }
@@ -101,14 +101,14 @@
     }
 
     .modal-sidebar a {
-      color: #94a3b8;
+      color: #c9bea5;
       text-decoration: none;
       font-size: 15px;
       transition: color 0.2s;
     }
 
     .modal-sidebar a:hover {
-      color: #38bdf8;
+      color: #d39b32;
     }
 
     .modal-content {
@@ -119,13 +119,13 @@
     }
 
     .modal-content h1 {
-      color: #f8fafc;
+      color: #f2ead7;
       margin-top: 0;
     }
 
     .modal-content h2 {
-      color: #e2e8f0;
-      border-bottom: 1px solid #334155;
+      color: #d9c894;
+      border-bottom: 1px solid #4a4638;
       padding-bottom: 8px;
       margin-top: 30px;
     }
@@ -136,5 +136,5 @@
     }
 
     .modal-content strong {
-      color: #f8fafc;
+      color: #f2ead7;
     }

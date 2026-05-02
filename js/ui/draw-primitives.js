@@ -1,6 +1,19 @@
 import { PHASES } from '../config/game-data.js';
 import { pointInRect } from './layout.js';
 
+const PRIMITIVE_THEME = {
+  surface: '#202219',
+  surfaceHover: '#29291f',
+  surfaceDisabled: '#171912',
+  border: '#6f6342',
+  borderMuted: '#4a4638',
+  text: '#f2ead7',
+  textMuted: '#8f8773',
+  accent: '#d39b32',
+  danger: '#b94735',
+  success: '#5f8f54',
+};
+
 export function createDrawPrimitives({ ctx, state, cardImages }) {
   function roundRect(x, y, w, h, radius, fill, stroke) {
     ctx.beginPath();
@@ -22,7 +35,7 @@ export function createDrawPrimitives({ ctx, state, cardImages }) {
   }
 
   function drawText(text, x, y, options = {}) {
-    ctx.fillStyle = options.color || '#fff';
+    ctx.fillStyle = options.color || PRIMITIVE_THEME.text;
     ctx.font = options.font || '16px Inter, sans-serif';
     ctx.textAlign = options.align || 'left';
     ctx.textBaseline = options.baseline || 'alphabetic';
@@ -37,17 +50,17 @@ export function createDrawPrimitives({ ctx, state, cardImages }) {
     const hovered = pointInRect(state.mouse.x, state.mouse.y, { x, y, w, h });
     const disabled = style.disabled;
     const fill = disabled
-      ? '#242833'
+      ? PRIMITIVE_THEME.surfaceDisabled
       : hovered
-        ? (style.hoverFill || '#374151')
-        : (style.fill || '#1f2937');
-    const stroke = disabled ? '#374151' : (style.stroke || '#64748b');
+        ? (style.hoverFill || PRIMITIVE_THEME.surfaceHover)
+        : (style.fill || PRIMITIVE_THEME.surface);
+    const stroke = disabled ? PRIMITIVE_THEME.borderMuted : (style.stroke || PRIMITIVE_THEME.border);
 
-    roundRect(x, y, w, h, 14, fill, stroke);
+    roundRect(x, y, w, h, style.radius ?? 6, fill, stroke);
     drawText(label, x + w / 2, y + h / 2 + 5, {
       align: 'center',
       font: style.font || 'bold 14px Inter, sans-serif',
-      color: disabled ? '#737b8c' : (style.color || '#fff'),
+      color: disabled ? PRIMITIVE_THEME.textMuted : (style.color || PRIMITIVE_THEME.text),
     });
 
     if (!disabled) state.game.buttons.push({ x, y, w, h, onClick });
@@ -55,8 +68,8 @@ export function createDrawPrimitives({ ctx, state, cardImages }) {
 
   function drawFloorTile(rect, x, y) {
     const gradient = ctx.createLinearGradient(rect.x, rect.y, rect.x + rect.w, rect.y + rect.h);
-    gradient.addColorStop(0, '#3d3025');
-    gradient.addColorStop(1, '#201913');
+    gradient.addColorStop(0, '#353124');
+    gradient.addColorStop(1, '#18160f');
     ctx.fillStyle = gradient;
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
     ctx.strokeStyle = 'rgba(255,255,255,0.055)';
@@ -72,9 +85,9 @@ export function createDrawPrimitives({ ctx, state, cardImages }) {
 
   function drawWallTile(rect) {
     const gradient = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.h);
-    gradient.addColorStop(0, '#6d7480');
-    gradient.addColorStop(0.48, '#444b55');
-    gradient.addColorStop(1, '#272c35');
+    gradient.addColorStop(0, '#746b55');
+    gradient.addColorStop(0.48, '#4a4638');
+    gradient.addColorStop(1, '#26251c');
     ctx.fillStyle = gradient;
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
     ctx.strokeStyle = 'rgba(0,0,0,0.4)';
@@ -151,12 +164,12 @@ export function createDrawPrimitives({ ctx, state, cardImages }) {
     const y = rect.y + margin;
     const w = cardW;
     const h = cardH;
-    let tint = isPlayer ? '#064e3b' : unit.tint;
-    if (flashRed) tint = '#ef4444';
+    let tint = isPlayer ? '#3f6f45' : unit.tint;
+    if (flashRed) tint = PRIMITIVE_THEME.danger;
 
-    roundRect(x, y, w, h, 12, `${tint}dd`, 'rgba(0,0,0,0.45)');
+    roundRect(x, y, w, h, 8, `${tint}dd`, 'rgba(0,0,0,0.45)');
     ctx.save();
-    roundRect(x + 3, y + 3, w - 6, h - 6, 10, null, null);
+    roundRect(x + 3, y + 3, w - 6, h - 6, 6, null, null);
     ctx.clip();
 
     const drew = drawImageCover(image, x + 3, y + 3, w - 6, h - 6);
@@ -168,18 +181,18 @@ export function createDrawPrimitives({ ctx, state, cardImages }) {
     }
 
     ctx.restore();
-    ctx.strokeStyle = isPlayer ? '#34d399aa' : 'rgba(0,0,0,0.55)';
+    ctx.strokeStyle = isPlayer ? '#9a7a32cc' : 'rgba(0,0,0,0.55)';
     ctx.lineWidth = 2;
-    roundRect(x, y, w, h, 12, null, ctx.strokeStyle);
+    roundRect(x, y, w, h, 8, null, ctx.strokeStyle);
   }
 
   function drawIconStat(icon, value, x, y) {
-    roundRect(x, y, 66, 34, 12, 'rgba(7,10,17,0.82)', '#2f3a4f');
+    roundRect(x, y, 66, 34, 6, 'rgba(23,25,18,0.86)', PRIMITIVE_THEME.borderMuted);
     drawText(icon, x + 14, y + 23, { align: 'center', font: '17px Inter, sans-serif' });
     drawText(String(value), x + 42, y + 23, {
       align: 'center',
       font: 'bold 16px Inter, sans-serif',
-      color: '#f8fafc',
+      color: PRIMITIVE_THEME.text,
     });
   }
 
@@ -191,12 +204,12 @@ export function createDrawPrimitives({ ctx, state, cardImages }) {
       y,
       size,
       size,
-      14,
-      isGhost ? 'rgba(255,255,255,0.1)' : hovered ? '#f1f5f9' : '#ffffff',
-      isGhost ? 'rgba(255,255,255,0.3)' : '#94a3b8'
+      6,
+      isGhost ? 'rgba(242,234,215,0.1)' : hovered ? '#f2ead7' : '#d8ceb6',
+      isGhost ? 'rgba(242,234,215,0.3)' : PRIMITIVE_THEME.border
     );
 
-    ctx.fillStyle = isGhost ? 'rgba(255,255,255,0.2)' : '#0f172a';
+    ctx.fillStyle = isGhost ? 'rgba(242,234,215,0.2)' : '#171912';
     const dotSize = size * 0.09;
     const padding = size * 0.25;
     const cx = x + size / 2;

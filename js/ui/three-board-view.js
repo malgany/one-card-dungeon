@@ -16,7 +16,7 @@ const COMBAT_ORTHO_VIEW_HEIGHT = 8.26;
 const COMPACT_COMBAT_ORTHO_VIEW_HEIGHT = 8.98;
 const OVERWORLD_ORTHO_VIEW_HEIGHT = 9.18;
 const COMPACT_OVERWORLD_ORTHO_VIEW_HEIGHT = 8.16;
-const FLOOR_COLORS = ['#3b3126', '#2f271f'];
+const FLOOR_COLORS = ['#353124', '#252217'];
 const SPECULAR_GLOSSINESS_EXTENSION = 'KHR_materials_pbrSpecularGlossiness';
 const HIGHLIGHT_ORDER = [
   'hover',
@@ -26,11 +26,11 @@ const HIGHLIGHT_ORDER = [
   'monsterMove',
 ];
 const HIGHLIGHT_COLORS = {
-  hover: { color: '#f8fafc', opacity: 0.2 },
-  move: { color: '#22d3ee', opacity: 0.28 },
-  playerAttack: { color: '#f472b6', opacity: 0.3 },
-  monsterMove: { color: '#22c55e', opacity: 0.22 },
-  monsterAttack: { color: '#ef4444', opacity: 0.28 },
+  hover: { color: '#f2ead7', opacity: 0.2 },
+  move: { color: '#5f8f54', opacity: 0.28 },
+  playerAttack: { color: '#b94735', opacity: 0.3 },
+  monsterMove: { color: '#5f8f54', opacity: 0.22 },
+  monsterAttack: { color: '#b94735', opacity: 0.28 },
 };
 const PLAYER_MODEL = {
   modelUrl: WORLD_ASSETS.characters.mage,
@@ -80,7 +80,7 @@ const UNIT_MODELS = {
   },
 };
 
-function colorFromHex(hex, fallback = '#64748b') {
+function colorFromHex(hex, fallback = '#6f6342') {
   return new THREE.Color(hex || fallback);
 }
 
@@ -308,9 +308,9 @@ export function createThreeBoardView({ state }) {
     height: BOARD_SIZE,
   };
   const scene = new THREE.Scene();
-  scene.background = colorFromHex('#07090f');
+  scene.background = colorFromHex('#070807');
   if (state.visuals?.fogDensity > 0) {
-    scene.fog = new THREE.FogExp2('#07090f', state.visuals.fogDensity);
+    scene.fog = new THREE.FogExp2('#070807', state.visuals.fogDensity);
   }
 
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 40);
@@ -322,7 +322,7 @@ export function createThreeBoardView({ state }) {
     powerPreference: 'high-performance',
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.setClearColor(colorFromHex('#07090f'), 1);
+  renderer.setClearColor(colorFromHex('#070807'), 1);
   
   // Visual settings from state
   const visuals = state.visuals || {
@@ -330,7 +330,7 @@ export function createThreeBoardView({ state }) {
     ambientIntensity: 1.0,
     keyIntensity: 1.5,
     fogDensity: 0.015,
-    shadowMapEnabled: false,
+    shadowMapEnabled: true,
   };
 
   renderer.shadowMap.enabled = visuals.shadowMapEnabled;
@@ -376,7 +376,7 @@ export function createThreeBoardView({ state }) {
   const materialCache = new Map();
   const geometryCache = new Map();
 
-  function standardMaterial({ color = '#64748b', texture = null, roughness = 0.86, metalness = 0.04 } = {}) {
+  function standardMaterial({ color = '#6f6342', texture = null, roughness = 0.86, metalness = 0.04 } = {}) {
     const textureMap = textureFor(texture);
 
     return new THREE.MeshStandardMaterial({
@@ -510,7 +510,7 @@ export function createThreeBoardView({ state }) {
   }
 
   const baseMaterial = new THREE.MeshStandardMaterial({
-    color: colorFromHex('#111827'),
+    color: colorFromHex('#171912'),
     roughness: 0.82,
     metalness: 0.08,
   });
@@ -531,7 +531,7 @@ export function createThreeBoardView({ state }) {
   ];
 
   const combatWallMaterial = new THREE.MeshStandardMaterial({
-    color: colorFromHex('#64748b'),
+    color: colorFromHex('#6f6342'),
     roughness: 0.78,
     metalness: 0.06,
   });
@@ -732,21 +732,7 @@ export function createThreeBoardView({ state }) {
     highlightInstance.instanceColor.needsUpdate = true;
   }
 
-  function createUnitShadow(radius = 0.38, opacity = 0.3) {
-    const shadow = new THREE.Mesh(
-      new THREE.CircleGeometry(radius, 32),
-      new THREE.MeshBasicMaterial({
-        color: colorFromHex('#000000'),
-        transparent: true,
-        opacity,
-        depthWrite: false,
-      }),
-    );
-    shadow.rotation.x = -Math.PI / 2;
-    shadow.position.y = 0.065;
-    shadow.scale.y = 0.62;
-    return shadow;
-  }
+
 
   function playModelUnitAnimation(group, clipName) {
     const actions = group.userData.actions;
@@ -792,8 +778,6 @@ export function createThreeBoardView({ state }) {
     const texture = textureFor(source);
     group.rotation.y = CARD_ROTATION_Y;
 
-    group.add(createUnitShadow());
-
     const frameMaterial = new THREE.MeshBasicMaterial({
       color: colorFromHex(tint),
       side: THREE.DoubleSide,
@@ -826,7 +810,6 @@ export function createThreeBoardView({ state }) {
   function createModelUnitMesh(unit, isPlayer, entityId, modelConfig) {
     const group = new THREE.Group();
     group.rotation.y = modelConfig.initialRotationY;
-    group.add(createUnitShadow(0.42, 0.32));
     group.userData = {
       isModelUnit: true,
       isPlayer,
@@ -1177,7 +1160,7 @@ export function createThreeBoardView({ state }) {
 
     if (group.userData.frameMaterial) {
       group.userData.frameMaterial.color.set(
-        isFlashing(entityId, animations, now) ? '#ef4444' : group.userData.tint,
+        isFlashing(entityId, animations, now) ? '#b94735' : group.userData.tint,
       );
     }
   }
@@ -1295,7 +1278,7 @@ export function createThreeBoardView({ state }) {
         renderer.toneMappingExposure = state.visuals.exposure;
         renderer.shadowMap.enabled = state.visuals.shadowMapEnabled;
         if (state.visuals.fogDensity > 0) {
-          if (!scene.fog) scene.fog = new THREE.FogExp2('#07090f', state.visuals.fogDensity);
+          if (!scene.fog) scene.fog = new THREE.FogExp2('#070807', state.visuals.fogDensity);
           scene.fog.density = state.visuals.fogDensity;
         } else {
           scene.fog = null;

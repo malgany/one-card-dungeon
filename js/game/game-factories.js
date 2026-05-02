@@ -169,6 +169,8 @@ function createBaseUiState() {
     menuOpen: false,
     animations: [],
     busy: false,
+    heroTurnStartedAt: null,
+    heroTurnEndsAt: null,
   };
 }
 
@@ -193,7 +195,7 @@ export function createOverworldGame(map = getWorldMap(START_WORLD_MAP_ID)) {
       subtitle: 'Clique para andar. Clique em inimigos para lutar.',
       until: performance.now() + 1400,
       cardKey: 'player',
-      accent: '#34d399',
+      accent: '#5f8f54',
     },
     lastEvent: 'Explore o mapa aberto.',
     eventLog: ['Explore o mapa aberto.'],
@@ -222,7 +224,7 @@ export function createDungeonLegacyGame() {
       subtitle: `${ACTION_RULES.BASE_AP} AP para agir`,
       until: performance.now() + 1200,
       cardKey: 'player',
-      accent: '#34d399',
+      accent: '#5f8f54',
     },
     lastEvent: `Sua vez. ${ACTION_RULES.BASE_AP} AP, ${3} movimento.`,
   };

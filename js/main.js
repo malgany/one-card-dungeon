@@ -24,7 +24,7 @@ const state = {
     ambientIntensity: 1.05,
     keyIntensity: 1.75,
     fogDensity: 0.0,
-    shadowMapEnabled: false,
+    shadowMapEnabled: true,
     showOutlines: false,
   },
 };

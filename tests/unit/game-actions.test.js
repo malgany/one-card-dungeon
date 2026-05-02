@@ -35,6 +35,33 @@ describe('game actions', () => {
     expect(state.game.speedRemaining).toBe(state.game.player.speedBase);
     expect(state.game.apRemaining).toBe(state.game.player.apMax);
     expect(state.game.selectedAttackId).toBe(null);
+    expect(state.game.heroTurnStartedAt).not.toBe(null);
+    expect(state.game.heroTurnEndsAt - state.game.heroTurnStartedAt).toBe(TIMING.HERO_TURN_DURATION);
+  });
+
+  it('automatically ends the hero turn after 50 seconds and advances to the next turn', () => {
+    const game = createDungeonLegacyGame();
+    game.monsters = [];
+    game.turnQueue = ['player'];
+    const { state, actions } = createActionHarness(game);
+
+    actions.startHeroTurn('prepare');
+
+    expect(state.game.heroTurnStartedAt).not.toBe(null);
+    expect(state.game.heroTurnEndsAt - state.game.heroTurnStartedAt).toBe(TIMING.HERO_TURN_DURATION);
+
+    vi.advanceTimersByTime(TIMING.HERO_TURN_DURATION);
+
+    expect(state.game.busy).toBe(true);
+    expect(state.game.banner.title).toBe('Fim da vez');
+
+    vi.advanceTimersByTime(800);
+
+    expect(state.game.phase).toBe(PHASES.HERO);
+    expect(state.game.turnCount).toBe(2);
+    expect(state.game.busy).toBe(false);
+    expect(state.game.heroTurnStartedAt).not.toBe(null);
+    expect(state.game.heroTurnEndsAt - state.game.heroTurnStartedAt).toBe(TIMING.HERO_TURN_DURATION);
   });
 
   it('returns reachable player tiles within remaining speed', () => {

@@ -39,6 +39,8 @@ import {
   getWorldObjectBlockedKeys,
 } from './world-state.js';
 
+let heroTurnTimeoutId = null;
+
 export function createGameActions(state) {
 
   function getGame() {
@@ -46,7 +48,19 @@ export function createGameActions(state) {
   }
 
   function setGame(nextGame) {
+    if (heroTurnTimeoutId !== null) {
+      window.clearTimeout(heroTurnTimeoutId);
+      heroTurnTimeoutId = null;
+    }
+
     state.game = nextGame;
+    if (nextGame && isCombatMode(nextGame) && nextGame.phase === PHASES.HERO) {
+      primeHeroTurnClock(nextGame);
+    } else if (nextGame) {
+      nextGame.heroTurnStartedAt = null;
+      nextGame.heroTurnEndsAt = null;
+    }
+
     return state.game;
   }
 
@@ -81,7 +95,7 @@ export function createGameActions(state) {
     }, duration);
   }
 
-  function showTurnBanner(title, subtitle, cardKey, accent = '#facc15') {
+  function showTurnBanner(title, subtitle, cardKey, accent = '#d39b32') {
     showBanner(title, subtitle, TIMING.TURN_BANNER, null, {
       cardKey,
       accent,
@@ -105,6 +119,41 @@ export function createGameActions(state) {
     return Math.max(0, rawDamage - Math.max(0, defense));
   }
 
+  function primeHeroTurnClock(game = getGame(), now = performance.now()) {
+    if (!game || !isCombatMode(game) || game.phase !== PHASES.HERO) return;
+
+    if (heroTurnTimeoutId !== null) {
+      window.clearTimeout(heroTurnTimeoutId);
+      heroTurnTimeoutId = null;
+    }
+
+    game.heroTurnStartedAt = now;
+    game.heroTurnEndsAt = now + TIMING.HERO_TURN_DURATION;
+
+    heroTurnTimeoutId = window.setTimeout(() => {
+      heroTurnTimeoutId = null;
+      const currentGame = getGame();
+      if (!isCombatMode(currentGame) || currentGame.phase !== PHASES.HERO) return;
+      if (!Number.isFinite(currentGame.heroTurnEndsAt) || performance.now() < currentGame.heroTurnEndsAt) return;
+      if (currentGame.busy) return;
+      endHeroPhase();
+    }, TIMING.HERO_TURN_DURATION);
+  }
+
+  function getHeroTurnTimer(now = performance.now()) {
+    const game = getGame();
+    if (!isCombatMode(game) || game.phase !== PHASES.HERO) return null;
+    if (!Number.isFinite(game.heroTurnEndsAt)) return null;
+
+    const remainingMs = Math.max(0, game.heroTurnEndsAt - now);
+
+    return {
+      remainingMs,
+      remainingSeconds: Math.ceil(remainingMs / 1000),
+      progress: Math.min(1, Math.max(0, remainingMs / TIMING.HERO_TURN_DURATION)),
+    };
+  }
+
   function startHeroTurn(message = null) {
     const game = getGame();
 
@@ -118,9 +167,9 @@ export function createGameActions(state) {
     game.selectedEntity = null;
     game.selectedAttackId = null;
     game.busy = false;
+    primeHeroTurnClock(game);
 
     setEvent(message || `Sua vez. ${game.apRemaining} AP, ${game.speedRemaining} movimento.`);
-    showTurnBanner('Sua vez', `${game.apRemaining} AP para agir`, 'player', '#34d399');
   }
 
   function startEnergyTurn() {
@@ -465,10 +514,6 @@ export function createGameActions(state) {
             game.player.y = connection.spawn.y;
             game.animations = [];
             setEvent(`Entrou em ${targetMap.name}.`);
-            showBanner(targetMap.name, 'Novo trecho do mapa aberto.', 900, null, {
-              cardKey: 'player',
-              accent: '#34d399',
-            });
           }
         }
       }
@@ -529,6 +574,13 @@ export function createGameActions(state) {
     const context = game.combatContext;
     if (!context || context.origin !== GAME_MODES.OVERWORLD) return false;
 
+    if (heroTurnTimeoutId !== null) {
+      window.clearTimeout(heroTurnTimeoutId);
+      heroTurnTimeoutId = null;
+    }
+    game.heroTurnStartedAt = null;
+    game.heroTurnEndsAt = null;
+
     const defeatedIds = new Set(context.enemyIds || []);
     if (game.overworld) {
       const mapId = context.mapId || game.overworld.currentMapId;
@@ -542,6 +594,8 @@ export function createGameActions(state) {
 
     game.mode = GAME_MODES.OVERWORLD;
     game.phase = PHASES.HERO;
+    game.heroTurnStartedAt = null;
+    game.heroTurnEndsAt = null;
     const map = getCurrentWorldMap(game.overworld);
     game.player.x = context.returnPosition?.x ?? map?.playerStart?.x ?? 0;
     game.player.y = context.returnPosition?.y ?? map?.playerStart?.y ?? 0;
@@ -557,7 +611,7 @@ export function createGameActions(state) {
     game.busy = false;
 
     setEvent('Grupo derrotado. Voce voltou ao mapa.');
-    showBanner('Vitoria', 'Grupo removido do mapa aberto.', 1200, null, {
+    showBanner('Vitoria', 'Grupo removido do mapa aberto.', 2000, null, {
       cardKey: 'player',
       accent: '#34d399',
     });
@@ -603,7 +657,7 @@ export function createGameActions(state) {
       x: target.x,
       y: target.y,
       text: `-${data.cost}`,
-      color: '#22c55e',
+      color: '#5f8f54',
       startTime: performance.now() + totalDur,
       duration: 1200
     });
@@ -640,7 +694,7 @@ export function createGameActions(state) {
       x: game.player.x,
       y: game.player.y,
       text: `-${cost}`,
-      color: '#eab308',
+      color: '#d39b32',
       startTime: performance.now(),
       duration: 1200
     });
@@ -695,7 +749,7 @@ export function createGameActions(state) {
         x: target.x,
         y: target.y,
         text: `-${damage}`,
-        color: '#ef4444',
+        color: '#b94735',
         startTime: performance.now() + 150,
         duration: 1200
       });
@@ -719,6 +773,13 @@ export function createGameActions(state) {
         game.monsters = game.monsters.filter((monster) => monster.hp > 0);
         
         if (game.monsters.length === 0) {
+          if (heroTurnTimeoutId !== null) {
+            window.clearTimeout(heroTurnTimeoutId);
+            heroTurnTimeoutId = null;
+          }
+          game.heroTurnStartedAt = null;
+          game.heroTurnEndsAt = null;
+
           if (game.mode === GAME_MODES.COMBAT && game.combatContext?.origin === GAME_MODES.OVERWORLD) {
             completeOverworldCombat();
             return;
@@ -731,7 +792,7 @@ export function createGameActions(state) {
           }
 
           game.phase = PHASES.LEVELUP;
-          showBanner('Nível concluído', 'Escolha curar ou melhorar um atributo.', 1200);
+          showBanner('Nível concluído', 'Escolha curar ou melhorar um atributo.', 2000);
         }
       }
     }, TIMING.HERO_ATTACK_WAIT_TIME);
@@ -776,8 +837,7 @@ export function createGameActions(state) {
       }
       
       setEvent(`Vez de ${monster.name}.`);
-      showTurnBanner(`Vez de ${monster.name}`, monster.name, monster.type, monster.tint);
-      setTimeout(() => executeMonsterTurn(monster), TIMING.TURN_BANNER + TIMING.POST_BANNER_PAUSE);
+      setTimeout(() => executeMonsterTurn(monster), 500);
     }
   }
 
@@ -829,7 +889,7 @@ export function createGameActions(state) {
           x: monster.x,
           y: monster.y,
           text: `-${monster.attack}`,
-          color: '#eab308',
+          color: '#d39b32',
           startTime: performance.now(),
           duration: 1200
         });
@@ -874,22 +934,25 @@ export function createGameActions(state) {
           x: game.player.x,
           y: game.player.y,
           text: `-${damage}`,
-          color: '#ef4444',
+          color: '#b94735',
           startTime: performance.now() + 150,
           duration: 1200
         });
 
         if (game.player.health <= 0) {
+          if (heroTurnTimeoutId !== null) {
+            window.clearTimeout(heroTurnTimeoutId);
+            heroTurnTimeoutId = null;
+          }
+          game.heroTurnStartedAt = null;
+          game.heroTurnEndsAt = null;
           game.phase = PHASES.LOST;
           game.busy = false;
           showBanner('Derrota', 'Seu aventureiro caiu na masmorra.', 2000);
           return;
         }
-      } else if (!samePos(destination, monster)) {
-        setEvent(`${monster.name} se moveu.`);
       }
 
-      setEvent(`Fim da vez: ${monster.name}`);
       setTimeout(() => advanceTurn(), TIMING.POST_ACTION_PAUSE);
     }, moveWaitTime);
   }
@@ -899,12 +962,16 @@ export function createGameActions(state) {
     if (!isCombatMode(game)) return;
     if (game.busy || game.phase !== PHASES.HERO) return;
 
+    if (heroTurnTimeoutId !== null) {
+      window.clearTimeout(heroTurnTimeoutId);
+      heroTurnTimeoutId = null;
+    }
+    game.heroTurnStartedAt = null;
+    game.heroTurnEndsAt = null;
     game.busy = true;
     game.selectedAttackId = null;
     setEvent('Fim da vez: Aventureiro');
-    showBanner('Fim da vez', 'Aventureiro', 800, () => {
-      advanceTurn();
-    });
+    advanceTurn();
   }
 
 
@@ -949,7 +1016,6 @@ export function createGameActions(state) {
     game.monsters = levelMonsters(nextLevel);
     game.turnQueue = ['player', ...game.monsters.map(m => m.id)];
 
-    setEvent(`Nível ${nextLevel.id}. Vez iniciada.`);
     startHeroTurn(`Nível ${nextLevel.id}. ${game.player.apMax} AP, ${game.player.speedBase} movimento.`);
   }
 
@@ -969,9 +1035,9 @@ export function createGameActions(state) {
 
       localStorage.setItem(SAVE_KEY, JSON.stringify(safeGame));
       game.menuOpen = false;
-      showBanner('Jogo salvo', 'Progresso salvo neste navegador.', 900);
+      showBanner('Jogo salvo', 'Progresso salvo neste navegador.', 2000);
     } catch {
-      showBanner('Erro', 'Não foi possível salvar.', 900);
+      showBanner('Erro', 'Não foi possível salvar.', 2000);
     }
   }
 
@@ -1113,6 +1179,8 @@ export function createGameActions(state) {
     normalized.busy = false;
     normalized.animations = [];
     normalized.banner = null;
+    normalized.heroTurnStartedAt = null;
+    normalized.heroTurnEndsAt = null;
     normalized.turnQueue = Array.isArray(normalized.turnQueue)
       ? normalized.turnQueue.map((id) => id === 'player' ? id : normalizeMonsterId(id))
       : [];
@@ -1151,29 +1219,26 @@ export function createGameActions(state) {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (!raw) {
-        showBanner('Sem save', 'Nenhum jogo salvo encontrado.', 900);
+        showBanner('Sem save', 'Nenhum jogo salvo encontrado.', 2000);
         return;
       }
 
       setGame(normalizeLoadedGame(JSON.parse(raw)));
-      showBanner('Jogo carregado', 'Continue sua aventura.', 900);
+      showBanner('Jogo carregado', 'Continue sua aventura.', 2000);
     } catch {
-      showBanner('Erro', 'Não foi possível carregar.', 900);
+      showBanner('Erro', 'Não foi possível carregar.', 2000);
     }
   }
 
   function newGame() {
     const game = setGame(createGame());
     const map = getCurrentWorldMap(game.overworld);
-    showBanner(map?.name || 'Mapa aberto', 'Clique para andar e encontrar inimigos.', 1000, null, {
-      cardKey: 'player',
-      accent: '#34d399',
-    });
+    setEvent(`Entrou em ${map?.name || 'Mapa aberto'}.`);
   }
 
   function newDungeonLegacyGame() {
     setGame(createDungeonLegacyGame());
-    showBanner('Dungeon legada', `${getGame().player.apMax} AP para agir`, 1000, null, {
+    showBanner('Dungeon legada', `${getGame().player.apMax} AP para agir`, 2000, null, {
       cardKey: 'player',
       accent: '#facc15',
     });
@@ -1209,6 +1274,7 @@ export function createGameActions(state) {
     getMonsterReachableTiles,
     getOverworldEnemyAt,
     getOverworldReachableTiles,
+    getHeroTurnTimer,
     getPlayerAttackTiles,
     getReachableTiles,
     getTotals,

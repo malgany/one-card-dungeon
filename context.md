@@ -3,7 +3,7 @@
 ## Visao Geral
 
 O antigo `script.js` monolitico foi transformado em um entrypoint minimo que apenas importa os modulos da pasta `js/`.
-O fluxo principal agora comeca em um mapa aberto 3D/isometrico; clicar em grupos inimigos entra em combate 6x6 e a dungeon antiga fica preservada como modo legado.
+O fluxo principal agora comeca em um mapa aberto 3D/isometrico; clicar em grupos inimigos entra em combate 6x6 (utilizando modelos 3D para o jogador e inimigos) e a dungeon antiga fica preservada como modo legado.
 
 ## Onde Esta Cada Responsabilidade
 
@@ -24,9 +24,12 @@ O fluxo principal agora comeca em um mapa aberto 3D/isometrico; clicar em grupos
 ## Arquivos de Apoio
 
 - `README.md`: resumo rapido do projeto e da estrutura.
+- `design.md`: direcao visual oficial para HUD, modal, botoes, highlights e novos ajustes de UI.
 - `docs/game-rules.md`: regras atuais do jogo.
 - `docs/gltf-models.md`: guia para organizar, importar e depurar modelos GLTF/3D no mundo aberto.
-- `assets/`: imagens das cartas (`characters/`) e texturas (`textures/`) usadas no mundo aberto.
+- `docs/kaykit-adventurers.md`: registro de assets 3D do personagem aventureiro (Mago).
+- `docs/kaykit-skeletons.md`: registro de assets 3D dos inimigos (Esqueletos).
+- `assets/`: texturas (`textures/`), modelos 3D (`models/`) e imagens legadas de cartas (`characters/`).
 
 ## Fluxo Rapido Para Se Orientar
 
@@ -34,7 +37,7 @@ O fluxo principal agora comeca em um mapa aberto 3D/isometrico; clicar em grupos
 2. Se a mudanca for em mapa/bioma/objeto do mundo aberto, abra `js/config/world/`.
 3. Se a mudanca for de regra, abra `js/game/game-actions.js` e `js/game/board-logic.js`.
 4. Se a mudanca envolver GLTF/3D, leia `docs/gltf-models.md` e depois abra `js/ui/three-board-view.js` e `js/config/world/objects.js`.
-5. Se a mudanca for visual em geral, abra `js/ui/renderer.js`, `js/ui/three-board-view.js` e `js/ui/draw-primitives.js`.
+5. Se a mudanca for visual em geral, leia `design.md` antes de abrir `js/ui/renderer.js`, `js/ui/three-board-view.js` e `js/ui/draw-primitives.js`.
 6. Se a mudanca for interacao do mouse, abra `js/ui/input.js`.
 
 ## Independência de Modos

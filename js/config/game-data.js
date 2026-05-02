@@ -124,6 +124,7 @@ export const TIMING = {
   TURN_BANNER: 1600,       // Duration of the "Turn of X" banner
   POST_BANNER_PAUSE: 1000, // Extra pause after banner disappears before action
   POST_ACTION_PAUSE: 1000, // Extra pause after action ends before next turn
+  HERO_TURN_DURATION: 50000, // Hero turn limit in combat
   MONSTER_MOVE_SPEED: 250, // ms per tile for monsters
   PLAYER_MOVE_SPEED: 260,  // ms per tile for player in combat
   OVERWORLD_PLAYER_MOVE_SPEED: 300, // ms per tile in overworld
@@ -135,5 +136,5 @@ export const TIMING = {
 };
 
 export const DEBUG_CONFIG = {
-  SHOW_STATS: false,
+  SHOW_STATS: true,
 };

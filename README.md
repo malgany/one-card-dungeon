@@ -11,7 +11,7 @@ Projeto de dungeon crawler tático com **tabuleiro 3D (Three.js)**, inspirado em
 - **Dungeon Legada**: O fluxo antigo de andares/salas continua preservado como modo legado acessivel pelo menu.
 - **Independência de Modos**: Alterações em um modo (Overworld, Luta ou Legado) são isoladas e não afetam os outros, a menos que especificado.
 
-- **Tabuleiro 3D**: Visão isométrica com renderização via Three.js, incluindo animações de movimento e combate.
+- **Personagens 3D**: O aventureiro (Mago) e os inimigos (Esqueletos) agora são representados por modelos 3D animados (`.glb`), substituindo o visual de cartas antigo.
 - **Sistema de Turnos Individual**: Cada entidade (jogador e monstros) possui sua própria vez na fila de iniciativa.
 - **Fase de Herói Simplificada**: O turno do aventureiro começa direto na ação, com **6 AP** fixos por turno.
 - **Ações Estratégicas**:
@@ -58,7 +58,7 @@ Use estas configuracoes:
 - `js/config/world`: mapas, biomas, terrenos, objetos e assets do mundo aberto.
 - `js/game`: regras, fabrica de estado e logica de tabuleiro.
 - `js/ui`: layout, input e renderizacao.
-- `assets`: imagens das cartas, texturas do mundo aberto e modelos KayKit usados pelo jogador/inimigos.
+- `assets`: texturas do mundo aberto, modelos 3D (`models/`) e imagens legadas.
 - `js/game/world-state.js`: helpers do chunk ativo, inimigos, objetos e conexoes.
 - `docs`: documentacao das regras atuais.
 - `context.md`: mapa rapido para localizar cada responsabilidade.
@@ -66,6 +66,11 @@ Use estas configuracoes:
 ## Documento de Regras
 
 As regras atuais tambem estao descritas em `docs/game-rules.md`.
+
+## Guia Visual
+
+Antes de alterar HUD, modal, botoes, highlights, tabuleiro ou qualquer elemento de interface, consulte `design.md`.
+A direcao atual e um RPG tatico de ferro, pedra e musgo: menos azul/slate, menos arredondamento e mais materialidade sombria.
 
 ## Guia 3D
 
