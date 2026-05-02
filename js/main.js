@@ -2,6 +2,7 @@ import { createGameActions } from './game/game-actions.js';
 import { createGame, loadCardImages } from './game/game-factories.js';
 import { registerCanvasInput } from './ui/input.js';
 import { createLayoutTools } from './ui/layout.js';
+import { createMenuFlow } from './ui/menu-flow.js';
 import { createRenderer } from './ui/renderer.js';
 
 const canvas = document.getElementById('game');
@@ -40,12 +41,14 @@ const renderer = createRenderer({
   actions,
   layout,
 });
+const menuFlow = createMenuFlow({ state, actions });
 
 if (['localhost', '127.0.0.1'].includes(window.location.hostname)) {
-  window.__ONE_RPG_DEBUG__ = { state, actions, layout };
+  window.__ONE_RPG_DEBUG__ = { state, actions, layout, menuFlow };
 }
 
 window.addEventListener('resize', layout.resize);
 layout.resize();
 registerCanvasInput({ canvas, state, actions, layout });
+menuFlow.show();
 renderer.start();

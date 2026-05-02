@@ -10,6 +10,8 @@ test('loads and renders the canvas game without console errors', async ({ page }
   });
 
   await page.goto('/');
+  await expect(page.locator('#menu-root')).toBeVisible();
+  await expect(page.locator('.menu-logo')).toBeVisible();
   const webglCanvas = page.locator('.board-webgl');
   const canvas = page.locator('#game');
   await expect(webglCanvas).toBeVisible();
@@ -34,6 +36,53 @@ test('loads and renders the canvas game without console errors', async ({ page }
   });
 
   expect(consoleErrors).toEqual([]);
+});
+
+test('opens character creation when no character exists', async ({ page }) => {
+  await page.goto('/');
+
+  await page.locator('.menu-home-panel .menu-primary-button').click();
+  await expect(page.locator('.menu-screen--create')).toBeVisible();
+
+  await page.getByPlaceholder('Nome do personagem').fill('Aria');
+  await page.locator('[data-menu-action="choose-type"][data-type-id="knight"]').click();
+  await page.locator('[data-menu-action="choose-color"][data-color="#5f8f54"]').click();
+  await page.locator('.menu-create-form .menu-primary-button').click();
+
+  await expect(page.locator('#menu-root')).toBeHidden();
+  await page.waitForFunction(() => {
+    const player = window.__ONE_RPG_DEBUG__?.state?.game?.player;
+    return player?.name === 'Aria' && player?.characterType === 'knight';
+  });
+});
+
+test('opens character selection when a character exists', async ({ page }) => {
+  await page.addInitScript(() => {
+    const character = {
+      id: 'saved-character',
+      name: 'Doran',
+      type: 'ranger',
+      typeLabel: 'Patrulheiro',
+      color: '#d39b32',
+      image: '/assets/characters/ranger.png',
+      createdAt: Date.now(),
+    };
+    window.localStorage.setItem('one-rpg-characters-v1', JSON.stringify([character]));
+    window.localStorage.setItem('one-rpg-selected-character-v1', character.id);
+  });
+
+  await page.goto('/');
+  await page.locator('.menu-home-panel .menu-primary-button').click();
+
+  await expect(page.locator('.menu-screen--select')).toBeVisible();
+  await expect(page.locator('.menu-character-row', { hasText: 'Doran' })).toBeVisible();
+  await page.locator('.menu-actions .menu-primary-button').click();
+
+  await expect(page.locator('#menu-root')).toBeHidden();
+  await page.waitForFunction(() => {
+    const player = window.__ONE_RPG_DEBUG__?.state?.game?.player;
+    return player?.name === 'Doran' && player?.characterType === 'ranger';
+  });
 });
 
 test('moves from overworld into combat and returns after victory', async ({ page }) => {

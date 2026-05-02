@@ -77,6 +77,14 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     return Math.min(max, Math.max(min, value));
   }
 
+  function getPlayerName(game) {
+    return game?.player?.name || 'Aventureiro';
+  }
+
+  function getPlayerCardImage(game) {
+    return cardImages[game?.player?.characterType] || cardImages.player;
+  }
+
   function beginHeartPath(cx, cy, size) {
     ctx.beginPath();
     ctx.moveTo(cx, cy + size * 0.36);
@@ -995,7 +1003,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       if (entityId === 'player') {
         return {
           id: 'player',
-          name: 'Aventureiro',
+          name: getPlayerName(game),
           hp: game.player.health,
           maxHp: game.player.maxHealth,
           emoji: '\uD83E\uDDD9',
@@ -1155,8 +1163,8 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     const rect = layout.tileRect(currentLayout, tile.x, tile.y);
     const totals = actions.getTotals();
-    const image = playerSelected ? cardImages.player : cardImages[monster.type];
-    const title = playerSelected ? 'Aventureiro' : monster.name;
+    const image = playerSelected ? getPlayerCardImage(game) : cardImages[monster.type];
+    const title = playerSelected ? getPlayerName(game) : monster.name;
     const titleIcon = playerSelected ? '🧙' : monster.emoji;
     const attackLine = totals.attackLifeSteal > 0
       ? `Ataque ${totals.attack} | suga ${totals.attackLifeSteal}`
@@ -1243,7 +1251,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     if (!playerHovered && !monster) return;
 
     const entity = playerHovered ? game.player : monster;
-    const name = playerHovered ? 'Aventureiro' : monster.name;
+    const name = playerHovered ? getPlayerName(game) : monster.name;
     const hp = playerHovered ? game.player.health : monster.hp;
     const point = screenPointForTile(currentLayout, entity.x, entity.y, 1.28);
     const label = `${name} | ${hp} \u2665`;

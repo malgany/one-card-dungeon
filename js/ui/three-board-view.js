@@ -32,8 +32,16 @@ const HIGHLIGHT_COLORS = {
   monsterMove: { color: '#5f8f54', opacity: 0.22 },
   monsterAttack: { color: '#b94735', opacity: 0.28 },
 };
-const PLAYER_MODEL = {
-  modelUrl: WORLD_ASSETS.characters.mage,
+const CHARACTER_TEXTURE_OVERRIDES = {
+  // Apenas aventureiros (player) usam textura externa por enquanto
+  './assets/models/adventurers/characters/mage.glb': './assets/models/adventurers/textures/mage_texture.png',
+  './assets/models/adventurers/characters/barbarian.glb': './assets/models/adventurers/textures/barbarian_texture.png',
+  './assets/models/adventurers/characters/knight.glb': './assets/models/adventurers/textures/knight_texture.png',
+  './assets/models/adventurers/characters/ranger.glb': './assets/models/adventurers/textures/ranger_texture.png',
+  './assets/models/adventurers/characters/rogue.glb': './assets/models/adventurers/textures/rogue_texture.png',
+  './assets/models/adventurers/characters/rogue-hooded.glb': './assets/models/adventurers/textures/rogue_texture.png',
+};
+const PLAYER_MODEL_BASE = {
   idleAnimation: 'Idle_A',
   walkAnimation: 'Walking_A',
   attackAnimation: 'Hit_A',
@@ -47,6 +55,29 @@ const PLAYER_MODEL = {
     WORLD_ASSETS.animations.rigMedium.movementBasic,
   ],
 };
+const PLAYER_MODELS = {
+  mage: {
+    ...PLAYER_MODEL_BASE,
+    modelUrl: WORLD_ASSETS.characters.mage,
+  },
+  barbarian: {
+    ...PLAYER_MODEL_BASE,
+    modelUrl: WORLD_ASSETS.characters.barbarian,
+  },
+  knight: {
+    ...PLAYER_MODEL_BASE,
+    modelUrl: WORLD_ASSETS.characters.knight,
+  },
+  ranger: {
+    ...PLAYER_MODEL_BASE,
+    modelUrl: WORLD_ASSETS.characters.ranger,
+  },
+  rogue: {
+    ...PLAYER_MODEL_BASE,
+    modelUrl: WORLD_ASSETS.characters.rogue,
+  },
+};
+const DEFAULT_PLAYER_MODEL = PLAYER_MODELS.mage;
 const SKELETON_MODEL_BASE = {
   idleAnimation: 'Idle_A',
   walkAnimation: 'Walking_A',
@@ -135,11 +166,21 @@ function boardViewport(layout, mode = GAME_MODES.DUNGEON_LEGACY) {
 }
 
 function imageSourceForUnit(unit, isPlayer) {
-  return CARD_SOURCES[isPlayer ? 'player' : unit.type] || null;
+  if (!isPlayer) return CARD_SOURCES[unit.type] || null;
+  return unit?.characterPortrait || CARD_SOURCES.player || null;
+}
+
+function playerModelKey(unit) {
+  return unit?.characterType || 'mage';
+}
+
+function unitTypeKey(unit, isPlayer) {
+  return isPlayer ? `player:${playerModelKey(unit)}` : unit?.type || 'unit';
 }
 
 function modelConfigForUnit(unit, isPlayer) {
-  return isPlayer ? PLAYER_MODEL : UNIT_MODELS[unit?.type] || null;
+  if (isPlayer) return PLAYER_MODELS[playerModelKey(unit)] || DEFAULT_PLAYER_MODEL;
+  return UNIT_MODELS[unit?.type] || null;
 }
 
 function movementAnimationFor(entityId, animations) {
@@ -438,7 +479,15 @@ export function createThreeBoardView({ state }) {
     model.position.z = -center.z;
   }
 
-  function prepareGltfModel(gltf, model) {
+  function prepareGltfModel(gltf, model, url = null) {
+    let overrideTexture = null;
+    if (url) {
+      const overridePath = CHARACTER_TEXTURE_OVERRIDES[url] || CHARACTER_TEXTURE_OVERRIDES[url.replace(/^\.\//, '')];
+      if (overridePath) {
+        overrideTexture = textureFor(overridePath);
+      }
+    }
+
     model.traverse((node) => {
       if (!node.isMesh) return;
 
@@ -453,7 +502,15 @@ export function createThreeBoardView({ state }) {
       const materials = Array.isArray(node.material) ? node.material : [node.material];
       for (const material of materials) {
         if (!material) continue;
-        applyLegacyDiffuseTexture(gltf, material);
+
+        if (overrideTexture) {
+          material.map = overrideTexture;
+          if ('metalness' in material) material.metalness = 0;
+          if ('roughness' in material) material.roughness = 0.88;
+        } else {
+          applyLegacyDiffuseTexture(gltf, material);
+        }
+
         material.side = THREE.DoubleSide;
         if (material.map) {
           material.map.colorSpace = THREE.SRGBColorSpace;
@@ -748,7 +805,7 @@ export function createThreeBoardView({ state }) {
   }
 
   function updateModelUnitState(group, movement, action, now) {
-    const modelConfig = group.userData.modelConfig || PLAYER_MODEL;
+    const modelConfig = group.userData.modelConfig || DEFAULT_PLAYER_MODEL;
 
     if (action) {
       faceDirection(group, {
@@ -800,7 +857,7 @@ export function createThreeBoardView({ state }) {
       frameMaterial,
       isPlayer,
       tint,
-      unitType: unit?.type || 'player',
+      unitType: unitTypeKey(unit, isPlayer),
     };
 
     scene.add(group);
@@ -814,7 +871,7 @@ export function createThreeBoardView({ state }) {
       isModelUnit: true,
       isPlayer,
       tint: isPlayer ? '#047857' : unit.tint,
-      unitType: unit?.type || 'player',
+      unitType: unitTypeKey(unit, isPlayer),
       modelConfig,
       activeAnimation: null,
       actions: {},
@@ -829,7 +886,7 @@ export function createThreeBoardView({ state }) {
       model.scale.setScalar(modelConfig.scale);
       centerModelOnGround(model);
       model.position.y += modelConfig.groundOffset;
-      prepareGltfModel(modelGltf, model);
+      prepareGltfModel(modelGltf, model, modelConfig.modelUrl);
       group.add(model);
 
       const mixer = new THREE.AnimationMixer(model);
@@ -924,11 +981,11 @@ export function createThreeBoardView({ state }) {
       group.userData.typeId = type.id;
       group.userData.hasOutline = !!state.visuals.showOutlines;
       boardGroup.add(group);
-      
-      gltfLoader.load(type.modelUrl, (gltf) => {
-        const model = gltf.scene;
+
+      loadGltfAsset(type.modelUrl).then((gltf) => {
+        const model = cloneSkeleton(gltf.scene);
         centerModelOnGround(model);
-        prepareGltfModel(gltf, model);
+        prepareGltfModel(gltf, model, type.modelUrl);
 
         // Setup Animations
         if (gltf.animations && gltf.animations.length > 0) {
@@ -942,10 +999,11 @@ export function createThreeBoardView({ state }) {
         group.add(model);
         
         // Apply custom scale/rotation from config
-        const finalScale = type.scale || 1.0;
+        const finalScale = object.scale || type.scale || 1.0;
         group.scale.set(finalScale, finalScale, finalScale);
-        if (type.rotation) group.rotation.set(type.rotation.x || 0, type.rotation.y || 0, type.rotation.z || 0);
-      }, undefined, (error) => {
+        const rotation = object.rotation || type.rotation;
+        if (rotation) group.rotation.set(rotation.x || 0, rotation.y || 0, rotation.z || 0);
+      }).catch((error) => {
         console.error('Erro ao carregar modelo:', type.modelUrl, error);
       });
       
@@ -1129,7 +1187,7 @@ export function createThreeBoardView({ state }) {
     const modelConfig = modelConfigForUnit(unit, isPlayer);
     let group = unitMeshes.get(entityId);
     const needsRecreate = group && (
-      group.userData.unitType !== (unit?.type || 'player') ||
+      group.userData.unitType !== unitTypeKey(unit, isPlayer) ||
       !!group.userData.isModelUnit !== !!modelConfig?.modelUrl
     );
 

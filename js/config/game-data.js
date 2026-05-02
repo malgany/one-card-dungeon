@@ -88,6 +88,11 @@ export function normalizeMonsterId(id) {
 
 export const CARD_SOURCES = {
   player: './assets/characters/mage.png',
+  mage: './assets/characters/mage.png',
+  barbarian: './assets/characters/barbarian.png',
+  knight: './assets/characters/knight.png',
+  ranger: './assets/characters/ranger.png',
+  rogue: './assets/characters/rogue.png',
   skeletonMinion: './assets/characters/skeleton-minion.png',
   skeletonWarrior: './assets/characters/skeleton-warrior.png',
   skeletonRogue: './assets/characters/skeleton-rogue.png',
@@ -136,5 +141,5 @@ export const TIMING = {
 };
 
 export const DEBUG_CONFIG = {
-  SHOW_STATS: true,
+  SHOW_STATS: false,
 };

@@ -21,10 +21,11 @@ export const stoneGroveMap = {
   ],
   objects: [
     ...stoneCells.map(([x, y], index) => {
-      return { id: `stone-grove-rock-${index}`, type: 'stone', x, y };
+      return { id: `stone-grove-rock-${index}`, type: 'forest-rock', x, y };
     }),
-    { id: 'stone-grove-stump-0', type: 'stump', x: 3, y: 7 },
-    { id: 'stone-grove-well-0', type: 'well', x: 7, y: 4 },
+    { id: 'stone-grove-dead-tree-0', type: 'dead-tree', x: 3, y: 7 },
+    { id: 'stone-grove-bush-0', type: 'forest-bush', x: 7, y: 4 },
+    { id: 'stone-grove-tree-0', type: 'forest-tree', x: 1, y: 8 },
   ],
   encounters: [
     { id: 'skeleton-warrior-watch-0', type: 'skeletonWarrior', x: 8, y: 2, groupId: 'skeleton-warrior-watch' },

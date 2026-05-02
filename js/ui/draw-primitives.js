@@ -129,7 +129,7 @@ export function createDrawPrimitives({ ctx, state, cardImages }) {
   }
 
   function cardImageForUnit(unit, isPlayer = false) {
-    if (isPlayer) return cardImages.player;
+    if (isPlayer) return cardImages[unit?.characterType] || cardImages.player;
     return cardImages[unit.type] || null;
   }
 

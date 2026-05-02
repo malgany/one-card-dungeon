@@ -9,6 +9,11 @@ export const WORLD_ASSETS = {
     grassDecorative: './assets/textures/grama-decorativa.png',
     portal: './assets/textures/portal.png',
     tree: './assets/models/scenery/arvore.glb',
+    kaykitGrass: './assets/models/kaykit-forest-nature/Grass_2_D_Color1.gltf',
+    kaykitRock: './assets/models/kaykit-forest-nature/Rock_3_M_Color1.gltf',
+    kaykitBush: './assets/models/kaykit-forest-nature/Bush_1_G_Color1.gltf',
+    kaykitTree: './assets/models/kaykit-forest-nature/Tree_2_B_Color1.gltf',
+    kaykitDeadTree: './assets/models/kaykit-forest-nature/Tree_Bare_1_B_Color1.gltf',
   },
   characters: {
     mage: './assets/models/adventurers/characters/mage.glb',
