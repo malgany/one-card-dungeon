@@ -1,4 +1,5 @@
 import { mountMenuCharacterPreview } from './menu-character-viewer.js';
+import { playOverworldMusic, stopOverworldMusic } from '../game/audio.js';
 import {
   CHARACTER_TYPES,
   characterAccentColor,
@@ -9,6 +10,7 @@ import {
   getCharacterType,
   normalizeCharacterRecord,
   normalizeHexColor,
+  sanitizeCharacterName,
   serializePaletteDraft,
 } from '../config/character-palettes.js';
 
@@ -24,6 +26,8 @@ const MENU_ASSETS = {
 const CHARACTERS_KEY = 'one-rpg-characters-v1';
 const SELECTED_CHARACTER_KEY = 'one-rpg-selected-character-v1';
 const MAX_CHARACTERS = 3;
+const CHARACTER_NAME_MAX_LENGTH = 30;
+const CHARACTER_NAME_PATTERN = '[A-Za-z0-9À-ÖØ-öø-ÿ]{1,30}';
 
 function storageAvailable() {
   try {
@@ -277,6 +281,23 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     return true;
   }
 
+  function resetActivePalette() {
+    paletteDraftByType[activeTypeId] = createPaletteDraft(activeTypeId);
+    activePaletteSlotByType[activeTypeId] = getPaletteSlotGroups(activeTypeId)[0]?.[0];
+    renderCreate();
+  }
+
+  function syncNameInput(input) {
+    if (!input) return '';
+
+    const sanitized = sanitizeCharacterName(input.value, CHARACTER_NAME_MAX_LENGTH);
+    if (input.value !== sanitized) input.value = sanitized;
+    nameDraft = sanitized;
+    input.classList.toggle('is-invalid', sanitized.length === 0);
+    input.setCustomValidity(sanitized ? '' : 'Informe um nome com letras e números, sem espaços.');
+    return sanitized;
+  }
+
   function flashPaletteSlot(slotId) {
     activeCharacterPreview?.flashPaletteSlot?.(getPaletteSlotsForControl(activeTypeId, slotId));
   }
@@ -317,6 +338,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
 
   function renderHome() {
     disposeCharacterPreview();
+    stopOverworldMusic();
     showRoot('home', MENU_ASSETS.home);
     menuRoot.innerHTML = `
       <section class="menu-home-panel menu-glass" aria-label="Menu principal">
@@ -372,6 +394,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
   function renderCreate() {
     disposeCharacterPreview();
     const activeType = getCharacterType(activeTypeId);
+    nameDraft = sanitizeCharacterName(nameDraft, CHARACTER_NAME_MAX_LENGTH);
     const paletteDraft = ensurePaletteDraft(activeType.id);
     const paletteControls = getPaletteSlotControls(activeType.id);
     const hasNamedPaletteControls = paletteControls.some((control) => control.label);
@@ -398,14 +421,19 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
           </div>
           <div class="menu-character-preview" data-menu-character-preview aria-label="${escapeHtml(activeType.label)}"></div>
           <form class="menu-create-form" data-character-form>
-            <input class="menu-name-input" name="characterName" value="${escapeHtml(nameDraft)}" maxlength="24" autocomplete="off" placeholder="Nome do personagem">
+            <input class="menu-name-input" name="characterName" value="${escapeHtml(nameDraft)}" maxlength="${CHARACTER_NAME_MAX_LENGTH}" pattern="${CHARACTER_NAME_PATTERN}" required autocomplete="off" spellcheck="false" placeholder="Nome do personagem" title="Use apenas letras e números, sem espaços.">
             <button class="menu-primary-button" type="submit" data-menu-action="create-and-play">Jogar</button>
           </form>
         </main>
         <aside class="menu-panel menu-glass">
           <div class="menu-panel-heading">
             <span>Paleta</span>
-            <strong>Cor</strong>
+            <span class="menu-panel-heading-tools">
+              <strong>Cor</strong>
+              <button class="menu-icon-button" type="button" data-menu-action="reset-palette" title="Restaurar cores padrão" aria-label="Restaurar cores padrão">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 3v6h6"></path></svg>
+              </button>
+            </span>
           </div>
           <div class="menu-palette-list${hasNamedPaletteControls ? ' menu-palette-list--named' : ''}">
             ${paletteControls.map((control, index) => paletteSlotControl(control, paletteDraft[control.slots[0]], selectedSlotId, index)).join('')}
@@ -418,6 +446,10 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
       </section>
     `;
     mountCharacterPreview({ type: activeType.id, image: activeType.image, palette });
+    const nameInput = menuRoot.querySelector('[name="characterName"]');
+    if (nameInput && !nameDraft) {
+      nameInput.setCustomValidity('Informe um nome com letras e números, sem espaços.');
+    }
   }
 
   function applyCharacter(character) {
@@ -446,6 +478,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
       accent: normalized.color,
     };
     actions?.setEvent?.(`Entrou no mundo com ${normalized.name}.`);
+    playOverworldMusic();
   }
 
   function playCharacter(character) {
@@ -460,10 +493,16 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
 
     const activeType = getCharacterType(activeTypeId);
     const input = menuRoot.querySelector('[name="characterName"]');
-    const typedName = input?.value?.trim() || nameDraft.trim();
+    const typedName = syncNameInput(input);
+    if (!typedName) {
+      input?.focus();
+      input?.reportValidity?.();
+      return;
+    }
+
     const character = normalizeCharacter({
       id: createCharacterId(),
-      name: typedName || `${activeType.label} ${characters.length + 1}`,
+      name: typedName,
       type: activeType.id,
       color: activeAccentColor(activeType.id),
       palette: activePalette(activeType.id),
@@ -506,6 +545,12 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
       return;
     }
 
+    if (action === 'reset-palette') {
+      syncNameInput(menuRoot.querySelector('[name="characterName"]'));
+      resetActivePalette();
+      return;
+    }
+
     if (action === 'play-selected') {
       const current = selectedCharacter();
       if (current) playCharacter(current);
@@ -513,7 +558,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     }
 
     if (action === 'choose-type') {
-      nameDraft = menuRoot.querySelector('[name="characterName"]')?.value || nameDraft;
+      syncNameInput(menuRoot.querySelector('[name="characterName"]'));
       activeTypeId = control.dataset.typeId || activeTypeId;
       renderCreate();
       return;
@@ -571,7 +616,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     }
 
     if (event.target?.name === 'characterName') {
-      nameDraft = event.target.value;
+      syncNameInput(event.target);
     }
   });
 

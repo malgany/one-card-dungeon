@@ -33,6 +33,7 @@ const state = {
 const cardImages = loadCardImages();
 const actions = createGameActions(state);
 const layout = createLayoutTools({ canvas, ctx, state });
+const menuFlow = createMenuFlow({ state, actions });
 const renderer = createRenderer({
   canvas,
   ctx,
@@ -40,8 +41,8 @@ const renderer = createRenderer({
   state,
   actions,
   layout,
+  onExitToMainMenu: menuFlow.show,
 });
-const menuFlow = createMenuFlow({ state, actions });
 
 if (['localhost', '127.0.0.1'].includes(window.location.hostname)) {
   window.__ONE_RPG_DEBUG__ = { state, actions, layout, menuFlow };

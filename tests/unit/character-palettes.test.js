@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CHARACTER_PALETTE_VERSION,
   createPaletteDraft,
+  getCharacterDefinition,
   getPaletteSlotControls,
   getPaletteSlotGroups,
   getPaletteSlotsForControl,
@@ -9,6 +10,7 @@ import {
   normalizeCharacterRecord,
   normalizeHexColor,
   paletteSignature,
+  sanitizeCharacterName,
   serializePaletteDraft,
 } from '../../js/config/character-palettes.js';
 
@@ -18,6 +20,24 @@ describe('character palettes', () => {
     expect(normalizeHexColor('abc')).toBe('#AABBCC');
     expect(normalizeHexColor('#12')).toBeNull();
     expect(normalizeHexColor('not-a-color')).toBeNull();
+  });
+
+  it('uses pt-BR labels and summaries for character classes', () => {
+    expect(getCharacterDefinition('barbarian')).toMatchObject({
+      label: 'Bárbaro',
+      summary: 'Força bruta',
+    });
+    expect(getCharacterDefinition('ranger').summary).toBe('Ataque à distância');
+    expect(getCharacterDefinition('rogue').summary).toBe('Ágil e preciso');
+  });
+
+  it('sanitizes character names for storage and creation', () => {
+    expect(sanitizeCharacterName(' Ana Maria!_42 ')).toBe('AnaMaria42');
+    expect(sanitizeCharacterName('Átila-01')).toBe('Átila01');
+    expect(sanitizeCharacterName('A'.repeat(31))).toHaveLength(30);
+
+    expect(normalizeCharacterRecord({ type: 'mage', name: ' Nome inválido! ' }).name).toBe('Nomeinválido');
+    expect(normalizeCharacterRecord({ type: 'barbarian', name: '' }).name).toBe('Bárbaro1');
   });
 
   it('serializes only valid changed slots for the selected class', () => {
@@ -209,6 +229,105 @@ describe('character palettes', () => {
         r5c7: '#565654',
         r6c2: '#1F1E1E',
         r7c2: '#1F1E1E',
+      },
+    });
+  });
+
+  it('groups ranger slots that should be edited together', () => {
+    expect(getPaletteSlotGroups('ranger')).toHaveLength(5);
+    expect(getPaletteSlotsForControl('ranger', 'r2c3')).toEqual(['r2c3', 'r2c7', 'r3c3', 'r3c7', 'r4c6', 'r5c5', 'r5c6', 'r6c7', 'r7c7']);
+    expect(getPaletteSlotsForControl('ranger', 'r2c7')).toEqual(['r2c3', 'r2c7', 'r3c3', 'r3c7', 'r4c6', 'r5c5', 'r5c6', 'r6c7', 'r7c7']);
+    expect(getPaletteSlotsForControl('ranger', 'r7c7')).toEqual(['r2c3', 'r2c7', 'r3c3', 'r3c7', 'r4c6', 'r5c5', 'r5c6', 'r6c7', 'r7c7']);
+    expect(getPaletteSlotsForControl('ranger', 'r4c0')).toEqual(['r4c0', 'r5c0']);
+    expect(getPaletteSlotsForControl('ranger', 'r5c0')).toEqual(['r4c0', 'r5c0']);
+    expect(getPaletteSlotsForControl('ranger', 'r4c1')).toEqual([]);
+    expect(getPaletteSlotsForControl('ranger', 'r4c7')).toEqual([]);
+    expect(getPaletteSlotsForControl('ranger', 'r5c1')).toEqual([]);
+    expect(getPaletteSlotsForControl('ranger', 'r5c7')).toEqual([]);
+    expect(getPaletteSlotsForControl('ranger', 'r6c3')).toEqual([]);
+    expect(getPaletteSlotsForControl('ranger', 'r6c0')).toEqual(['r6c0', 'r7c0']);
+    expect(getPaletteSlotsForControl('ranger', 'r7c0')).toEqual(['r6c0', 'r7c0']);
+    expect(getPaletteSlotsForControl('ranger', 'r6c1')).toEqual(['r6c1', 'r7c1']);
+    expect(getPaletteSlotsForControl('ranger', 'r7c1')).toEqual(['r6c1', 'r7c1']);
+    expect(getPaletteSlotsForControl('ranger', 'r6c2')).toEqual([]);
+    expect(getPaletteSlotsForControl('ranger', 'r7c2')).toEqual([]);
+    expect(getPaletteSlotsForControl('ranger', 'r6c5')).toEqual(['r6c5', 'r6c6', 'r7c5', 'r7c6']);
+    expect(getPaletteSlotsForControl('ranger', 'r7c6')).toEqual(['r6c5', 'r6c6', 'r7c5', 'r7c6']);
+    expect(getPaletteSlotsForControl('ranger', 'r7c3')).toEqual([]);
+  });
+
+  it('uses the current named ranger palette defaults', () => {
+    const draft = createPaletteDraft('ranger');
+    const controlDefaults = Object.fromEntries(
+      getPaletteSlotControls('ranger').map((control) => [control.label, draft[control.slots[0]]]),
+    );
+
+    expect(controlDefaults).toEqual({
+      Pele: '#EBB087',
+      Cabelo: '#BB735B',
+      'Roupas 1': '#FADEC2',
+      'Roupas 2': '#7A3B00',
+      'Roupas 3': '#289ED7',
+    });
+    expect(serializePaletteDraft('ranger', draft)).toEqual({
+      version: CHARACTER_PALETTE_VERSION,
+      slots: {
+        r4c1: '#1F1E1E',
+        r4c7: '#1F1E1E',
+        r5c1: '#1F1E1E',
+        r5c7: '#1F1E1E',
+        r6c2: '#1F1E1E',
+        r6c3: '#1F1E1E',
+        r7c2: '#1F1E1E',
+        r7c3: '#999494',
+      },
+    });
+  });
+
+  it('uses the hooded rogue model with named palette controls', () => {
+    const definition = getCharacterDefinition('rogue');
+    const draft = createPaletteDraft('rogue');
+    const controlDefaults = Object.fromEntries(
+      getPaletteSlotControls('rogue').map((control) => [control.label, draft[control.slots[0]]]),
+    );
+
+    expect(definition.modelUrl).toBe('/assets/models/adventurers/characters/rogue-hooded.glb');
+    expect(getPaletteSlotGroups('rogue')).toHaveLength(5);
+    expect(getPaletteSlotControls('rogue').map((control) => control.label)).toEqual([
+      'Pele',
+      'Cabelo',
+      'Roupas 1',
+      'Roupas 2',
+      'Roupas 3',
+    ]);
+    expect(getPaletteSlotsForControl('rogue', 'r2c3')).toEqual(['r2c3', 'r2c7', 'r3c3', 'r3c7', 'r6c5', 'r6c6', 'r7c5', 'r7c6']);
+    expect(getPaletteSlotsForControl('rogue', 'r2c7')).toEqual(['r2c3', 'r2c7', 'r3c3', 'r3c7', 'r6c5', 'r6c6', 'r7c5', 'r7c6']);
+    expect(getPaletteSlotsForControl('rogue', 'r7c6')).toEqual(['r2c3', 'r2c7', 'r3c3', 'r3c7', 'r6c5', 'r6c6', 'r7c5', 'r7c6']);
+    expect(getPaletteSlotsForControl('rogue', 'r4c0')).toEqual(['r4c0', 'r4c7', 'r5c0']);
+    expect(getPaletteSlotsForControl('rogue', 'r4c7')).toEqual(['r4c0', 'r4c7', 'r5c0']);
+    expect(getPaletteSlotsForControl('rogue', 'r4c1')).toEqual(['r4c1', 'r5c1']);
+    expect(getPaletteSlotsForControl('rogue', 'r5c1')).toEqual(['r4c1', 'r5c1']);
+    expect(getPaletteSlotsForControl('rogue', 'r6c0')).toEqual(['r6c0', 'r7c0']);
+    expect(getPaletteSlotsForControl('rogue', 'r7c0')).toEqual(['r6c0', 'r7c0']);
+    expect(getPaletteSlotsForControl('rogue', 'r6c1')).toEqual(['r6c1', 'r7c1']);
+    expect(getPaletteSlotsForControl('rogue', 'r7c1')).toEqual(['r6c1', 'r7c1']);
+    expect(getPaletteSlotsForControl('rogue', 'r5c7')).toEqual([]);
+    expect(getPaletteSlotsForControl('rogue', 'r6c3')).toEqual([]);
+    expect(getPaletteSlotsForControl('rogue', 'r7c2')).toEqual([]);
+    expect(getPaletteSlotsForControl('rogue', 'r7c3')).toEqual([]);
+    expect(controlDefaults).toEqual({
+      Pele: '#EBB087',
+      Cabelo: '#94533D',
+      'Roupas 1': '#1B7E4E',
+      'Roupas 2': '#004725',
+      'Roupas 3': '#7A3B00',
+    });
+    expect(serializePaletteDraft('rogue', draft)).toEqual({
+      version: CHARACTER_PALETTE_VERSION,
+      slots: {
+        r6c3: '#999494',
+        r7c2: '#1F1E1E',
+        r7c3: '#999494',
       },
     });
   });
