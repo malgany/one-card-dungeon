@@ -46,7 +46,7 @@ test('opens character creation when no character exists', async ({ page }) => {
 
   await page.getByPlaceholder('Nome do personagem').fill('Aria');
   await page.locator('[data-menu-action="choose-type"][data-type-id="knight"]').click();
-  await page.locator('[data-palette-color-input][data-slot-id="r6c4"]').evaluate((input) => {
+  await page.locator('[data-palette-color-input][data-slot-id="r4c2"]').evaluate((input) => {
     input.value = '#00ff88';
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
@@ -58,13 +58,13 @@ test('opens character creation when no character exists', async ({ page }) => {
     return (
       player?.name === 'Aria' &&
       player?.characterType === 'knight' &&
-      player?.characterPalette?.slots?.r6c4 === '#00FF88'
+      player?.characterPalette?.slots?.r4c2 === '#00FF88'
     );
   });
   const savedCharacters = await page.evaluate(() => {
     return JSON.parse(window.localStorage.getItem('one-rpg-characters-v1'));
   });
-  expect(savedCharacters[0].palette.slots.r6c4).toBe('#00FF88');
+  expect(savedCharacters[0].palette.slots.r4c2).toBe('#00FF88');
 });
 
 test('edits grouped mage palette slots together', async ({ page }) => {
