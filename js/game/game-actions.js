@@ -38,6 +38,12 @@ import {
   getWorldConnectionAt,
   getWorldObjectBlockedKeys,
 } from './world-state.js';
+import {
+  getOverworldMusicVolume,
+  playOverworldMusic,
+  setOverworldMusicVolume,
+  stopOverworldMusic,
+} from './audio.js';
 
 let heroTurnTimeoutId = null;
 
@@ -60,6 +66,7 @@ export function createGameActions(state) {
       nextGame.heroTurnStartedAt = null;
       nextGame.heroTurnEndsAt = null;
     }
+    syncOverworldMusic(nextGame);
 
     return state.game;
   }
@@ -70,6 +77,14 @@ export function createGameActions(state) {
 
   function isOverworldMode(game = getGame()) {
     return game.mode === GAME_MODES.OVERWORLD;
+  }
+
+  function syncOverworldMusic(game = getGame()) {
+    if (isOverworldMode(game)) {
+      playOverworldMusic();
+    } else {
+      stopOverworldMusic();
+    }
   }
 
   function setEvent(text) {
@@ -544,6 +559,7 @@ export function createGameActions(state) {
     const returnPosition = { x: game.player.x, y: game.player.y };
 
     game.mode = GAME_MODES.COMBAT;
+    syncOverworldMusic(game);
     game.levelIndex = 0;
     game.combatContext = {
       origin: GAME_MODES.OVERWORLD,
@@ -610,8 +626,9 @@ export function createGameActions(state) {
     game.animations = [];
     game.busy = false;
 
-    setEvent('Grupo derrotado. Voce voltou ao mapa.');
-    showBanner('Vitoria', 'Grupo removido do mapa aberto.', 2000, null, {
+    setEvent('Grupo derrotado. Você voltou ao mapa.');
+    syncOverworldMusic(game);
+    showBanner('Vitória', 'Grupo removido do mapa aberto.', 2000, null, {
       cardKey: 'player',
       accent: '#34d399',
     });
@@ -972,9 +989,7 @@ export function createGameActions(state) {
     game.selectedAttackId = null;
     setEvent('Fim da vez: Aventureiro');
 
-    showBanner('Fim da vez', 'Seu tempo de ação acabou.', 800, () => {
-      advanceTurn();
-    }, { cardKey: 'player', accent: '#b94735' });
+    advanceTurn();
   }
 
 
@@ -1032,8 +1047,10 @@ export function createGameActions(state) {
         diceRects: [],
         dropZones: [],
         draggingDie: null,
+        draggingControl: null,
         selectedAttackId: null,
         menuOpen: false,
+        menuView: 'main',
       };
 
       localStorage.setItem(SAVE_KEY, JSON.stringify(safeGame));
@@ -1275,6 +1292,7 @@ export function createGameActions(state) {
     getGame,
     getMonsterAttackTiles,
     getMonsterReachableTiles,
+    getOverworldMusicVolume,
     getOverworldEnemyAt,
     getOverworldReachableTiles,
     getHeroTurnTimer,
@@ -1288,6 +1306,7 @@ export function createGameActions(state) {
     newGame,
     newDungeonLegacyGame,
     saveGame,
+    setOverworldMusicVolume,
     setEvent,
     showBanner,
     startHeroTurn,

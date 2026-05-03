@@ -52,14 +52,10 @@ describe('game actions', () => {
 
     vi.advanceTimersByTime(TIMING.HERO_TURN_DURATION);
 
-    expect(state.game.busy).toBe(true);
-    expect(state.game.banner.title).toBe('Fim da vez');
-
-    vi.advanceTimersByTime(800);
-
     expect(state.game.phase).toBe(PHASES.HERO);
     expect(state.game.turnCount).toBe(2);
     expect(state.game.busy).toBe(false);
+    expect(state.game.banner?.title).not.toBe('Fim da vez');
     expect(state.game.heroTurnStartedAt).not.toBe(null);
     expect(state.game.heroTurnEndsAt - state.game.heroTurnStartedAt).toBe(TIMING.HERO_TURN_DURATION);
   });

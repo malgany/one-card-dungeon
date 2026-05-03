@@ -5,6 +5,10 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     const rect = canvas.getBoundingClientRect();
     state.mouse.x = event.clientX - rect.left;
     state.mouse.y = event.clientY - rect.top;
+
+    if (state.game.draggingControl) {
+      state.game.draggingControl.onDrag?.(state.mouse.x, state.mouse.y);
+    }
   });
  
   canvas.addEventListener('wheel', (event) => {
@@ -15,6 +19,18 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
   }, { passive: false });
 
   canvas.addEventListener('mousedown', () => {
+    if (state.game.menuOpen) {
+      for (let index = state.game.buttons.length - 1; index >= 0; index -= 1) {
+        const button = state.game.buttons[index];
+        if (!layout.pointInRect(state.mouse.x, state.mouse.y, button)) continue;
+        if (button.onDrag || button.onDragStart) {
+          state.game.draggingControl = button;
+          button.onDragStart?.(state.mouse.x, state.mouse.y);
+        }
+        return;
+      }
+    }
+
     if (state.game.phase !== PHASES.ENERGY || state.game.busy) return;
 
     for (let index = state.game.diceRects.length - 1; index >= 0; index -= 1) {
@@ -32,6 +48,12 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
   });
 
   canvas.addEventListener('mouseup', () => {
+    if (state.game.draggingControl) {
+      state.game.draggingControl = null;
+      state.suppressClick = true;
+      return;
+    }
+
     if (!state.game.draggingDie) return;
 
     const dieIndex = state.game.draggingDie.dieIndex;

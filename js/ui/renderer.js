@@ -59,7 +59,7 @@ function isAnimationActive(anim, now) {
   return now < getAnimationEndTime(anim);
 }
 
-export function createRenderer({ canvas, ctx, cardImages, state, actions, layout }) {
+export function createRenderer({ canvas, ctx, cardImages, state, actions, layout, onExitToMainMenu = null }) {
   const draw = createDrawPrimitives({ ctx, state, cardImages });
   const threeBoard = createThreeBoardView({ state });
 
@@ -83,6 +83,11 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
   function getPlayerCardImage(game) {
     return cardImages[game?.player?.characterType] || cardImages.player;
+  }
+
+  function getBannerCardImage(banner, game) {
+    if (banner.cardKey === 'player') return getPlayerCardImage(game);
+    return cardImages[banner.cardKey] || null;
   }
 
   function beginHeartPath(cx, cy, size) {
@@ -605,43 +610,159 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   function drawMenu(currentLayout) {
     if (!state.game.menuOpen) return;
 
-    const w = 220;
-    const h = 184;
+    const menuView = state.game.menuView || 'main';
+    const optionsTab = state.game.optionsTab || 'how-to';
+    const w = menuView === 'options' ? 420 : 220;
+    const h = menuView === 'options' ? 300 : 142;
     const x = (currentLayout.sw - w) / 2;
     const y = (currentLayout.sh - h) / 2;
 
     draw.roundRect(x, y, w, h, 8, UI_THEME.overlay, UI_THEME.border1);
-    draw.drawText('Menu', x + w / 2, y + 30, {
+    draw.drawText(menuView === 'options' ? 'Opções' : 'Menu', x + w / 2, y + 30, {
       align: 'center',
       font: 'bold 17px Inter, sans-serif',
       color: UI_THEME.text,
     });
-    draw.drawButton(x + 18, y + 48, w - 36, 34, 'Como jogar', () => {
+
+    if (menuView === 'main') {
+      draw.drawButton(x + 18, y + 48, w - 36, 34, 'Opções', () => {
+        state.game.menuView = 'options';
+        state.game.optionsTab = state.game.optionsTab || 'how-to';
+      }, {
+        fill: UI_THEME.surface1,
+        hoverFill: UI_THEME.surface2,
+        stroke: UI_THEME.border1,
+      });
+      draw.drawButton(x + 18, y + 92, w - 36, 34, 'Sair', () => {
+        state.game.menuOpen = false;
+        state.game.menuView = 'main';
+        onExitToMainMenu?.();
+      }, {
+        fill: UI_THEME.dangerDark,
+        hoverFill: UI_THEME.danger,
+        stroke: '#fca5a5',
+      });
+      return;
+    }
+
+    draw.drawButton(x + w - 38, y + 9, 28, 26, '×', () => {
       state.game.menuOpen = false;
-      document.getElementById('tutorial-modal').style.display = 'flex';
+      state.game.menuView = 'main';
     }, {
       fill: UI_THEME.surface1,
       hoverFill: UI_THEME.surface2,
       stroke: UI_THEME.border1,
     });
-    draw.drawButton(x + 18, y + 90, w - 36, 34, 'Mapa aberto', () => {
-      state.game.menuOpen = false;
-      actions.newGame();
-    }, {
-      fill: UI_THEME.successDark,
-      hoverFill: UI_THEME.success,
-      stroke: '#b6c79a',
+
+    const tabs = [
+      ['how-to', 'Como jogar'],
+      ['sound', 'Sons'],
+      ['game', 'Jogo'],
+    ];
+    const tabY = y + 48;
+    const tabGap = 8;
+    const tabW = (w - 36 - tabGap * (tabs.length - 1)) / tabs.length;
+    tabs.forEach(([id, label], index) => {
+      const active = optionsTab === id;
+      draw.drawButton(x + 18 + index * (tabW + tabGap), tabY, tabW, 32, label, () => {
+        state.game.optionsTab = id;
+      }, {
+        fill: active ? UI_THEME.accentDark : UI_THEME.surface1,
+        hoverFill: active ? UI_THEME.accent : UI_THEME.surface2,
+        stroke: active ? '#e6c06f' : UI_THEME.border1,
+        font: 'bold 12px Inter, sans-serif',
+      });
     });
-    draw.drawButton(x + 18, y + 132, w - 36, 34, 'Dungeon legada', () => {
-      state.game.menuOpen = false;
-      actions.newDungeonLegacyGame();
-    }, {
-      fill: UI_THEME.surface1,
-      hoverFill: UI_THEME.surface2,
-      stroke: UI_THEME.border1,
-    });
-    draw.drawButton(x + 132, y + 8, 70, 28, 'Sair', () => {
-      state.game.menuOpen = false;
+
+    const contentX = x + 24;
+    const contentY = y + 104;
+    const contentW = w - 48;
+
+    if (optionsTab === 'how-to') {
+      draw.drawText('Guia de regras e controles', contentX, contentY + 6, {
+        align: 'left',
+        font: 'bold 16px Inter, sans-serif',
+        color: UI_THEME.text,
+      });
+      draw.drawButton(contentX, contentY + 34, contentW, 38, 'Como jogar', () => {
+        state.game.menuOpen = false;
+        state.game.menuView = 'main';
+        const modal = document.getElementById('tutorial-modal');
+        if (modal) modal.style.display = 'flex';
+      }, {
+        fill: UI_THEME.surface1,
+        hoverFill: UI_THEME.surface2,
+        stroke: UI_THEME.border1,
+      });
+    } else if (optionsTab === 'sound') {
+      const volume = actions.getOverworldMusicVolume?.() ?? 0.5;
+      const percent = Math.round(volume * 100);
+      const sliderX = contentX;
+      const sliderY = contentY + 80;
+      const sliderW = contentW;
+      const sliderH = 24;
+      const trackY = sliderY + sliderH / 2;
+      const knobX = sliderX + sliderW * volume;
+
+      function setVolumeFromMouse(mouseX) {
+        const nextVolume = clamp((mouseX - sliderX) / sliderW, 0, 1);
+        actions.setOverworldMusicVolume?.(nextVolume);
+      }
+
+      draw.drawText('Volume da música', contentX, contentY + 6, {
+        align: 'left',
+        font: 'bold 16px Inter, sans-serif',
+        color: UI_THEME.text,
+      });
+      draw.drawText(`${percent}%`, x + w - 24, contentY + 6, {
+        align: 'right',
+        font: 'bold 16px Inter, sans-serif',
+        color: UI_THEME.accent,
+      });
+      draw.drawText('Volume da música do jogo como um todo.', contentX, contentY + 34, {
+        align: 'left',
+        font: '13px Inter, sans-serif',
+        color: UI_THEME.textMuted,
+        maxWidth: contentW,
+      });
+
+      ctx.save();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = UI_THEME.border1;
+      ctx.fillStyle = 'rgba(32,34,25,0.92)';
+      draw.roundRect(sliderX, trackY - 4, sliderW, 8, 4, 'rgba(32,34,25,0.92)', UI_THEME.border1);
+      draw.roundRect(sliderX, trackY - 4, Math.max(8, knobX - sliderX), 8, 4, UI_THEME.accentDark, null);
+      draw.roundRect(knobX - 9, trackY - 11, 18, 22, 6, '#d6b36e', '#f3d79a');
+      ctx.restore();
+
+      state.game.buttons.push({
+        x: sliderX,
+        y: sliderY,
+        w: sliderW,
+        h: sliderH,
+        onClick: () => setVolumeFromMouse(state.mouse.x),
+        onDragStart: () => setVolumeFromMouse(state.mouse.x),
+        onDrag: (mouseX) => setVolumeFromMouse(mouseX),
+      });
+    } else {
+      draw.drawText('Modos de jogo', contentX, contentY + 6, {
+        align: 'left',
+        font: 'bold 16px Inter, sans-serif',
+        color: UI_THEME.text,
+      });
+      draw.drawButton(contentX, contentY + 34, contentW, 38, 'Dungeon legada', () => {
+        state.game.menuOpen = false;
+        state.game.menuView = 'main';
+        actions.newDungeonLegacyGame();
+      }, {
+        fill: UI_THEME.surface1,
+        hoverFill: UI_THEME.surface2,
+        stroke: UI_THEME.border1,
+      });
+    }
+
+    draw.drawButton(x + 18, y + h - 46, w - 36, 34, 'Voltar', () => {
+      state.game.menuView = 'main';
     }, {
       fill: UI_THEME.surface1,
       hoverFill: UI_THEME.surface2,
@@ -1325,7 +1446,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     ctx.save();
     ctx.globalAlpha = alpha;
     if (hasCard) {
-      const cardImage = cardImages[banner.cardKey] || null;
+      const cardImage = getBannerCardImage(banner, state.game);
       const cardW = 118;
       const cardH = 150;
       const cardX = panelX + 20;
