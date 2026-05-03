@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GAME_MODES, LEVELS, PHASES, SAVE_KEY, TIMING } from '../../js/config/game-data.js';
+import { GAME_MODES, LEVELS, PHASES, SAVE_KEY, TIMING, getWorldMap } from '../../js/config/game-data.js';
 import { createGameActions } from '../../js/game/game-actions.js';
-import { createDungeonLegacyGame, createGame, createMonster } from '../../js/game/game-factories.js';
+import { createDungeonLegacyGame, createGame, createMonster, createOverworldGame } from '../../js/game/game-factories.js';
 import { getCurrentWorldEnemies, getCurrentWorldMapState } from '../../js/game/world-state.js';
 
 function createActionHarness(game = createDungeonLegacyGame()) {
@@ -270,7 +270,7 @@ describe('game actions', () => {
   });
 
   it('moves on the overworld without spending combat resources', () => {
-    const game = createGame();
+    const game = createOverworldGame(getWorldMap('open-road'));
     const { state, actions } = createActionHarness(game);
     const startingAp = state.game.apRemaining;
     const startingSpeed = state.game.speedRemaining;
@@ -292,8 +292,23 @@ describe('game actions', () => {
     expect(state.game.busy).toBe(false);
   });
 
+  it('moves diagonally on the overworld when the direct path is clear', () => {
+    const game = createOverworldGame(getWorldMap('open-road'));
+    const { state, actions } = createActionHarness(game);
+
+    actions.moveOverworldPlayer({ x: 3, y: 9 });
+
+    const movement = state.game.animations.find((anim) => anim.type === 'movement' && anim.entityId === 'player');
+    expect(state.game.player).toMatchObject({ x: 3, y: 9 });
+    expect(movement.path).toEqual([
+      { x: 2, y: 8 },
+      { x: 3, y: 9 },
+    ]);
+    expect(movement.totalDuration).toBeCloseTo(Math.SQRT2 * TIMING.OVERWORLD_PLAYER_MOVE_SPEED);
+  });
+
   it('transitions between world chunks and blocks round objects by grid cell', () => {
-    const game = createGame();
+    const game = createOverworldGame(getWorldMap('open-road'));
     const { state, actions } = createActionHarness(game);
 
     actions.moveOverworldPlayer({ x: 9, y: 5 });
@@ -311,7 +326,7 @@ describe('game actions', () => {
   });
 
   it('starts an overworld encounter with the whole enemy group', () => {
-    const game = createGame();
+    const game = createOverworldGame(getWorldMap('open-road'));
     const { state, actions } = createActionHarness(game);
     const target = getCurrentWorldEnemies(state.game.overworld).find((enemy) => enemy.groupId === 'skeleton-minions');
     const returnPosition = { x: state.game.player.x, y: state.game.player.y };
@@ -330,7 +345,7 @@ describe('game actions', () => {
   });
 
   it('returns to the overworld and removes the defeated group after map combat', () => {
-    const game = createGame();
+    const game = createOverworldGame(getWorldMap('open-road'));
     const { state, actions } = createActionHarness(game);
     const target = getCurrentWorldEnemies(state.game.overworld).find((enemy) => enemy.groupId === 'skeleton-mages');
     const returnPosition = { x: state.game.player.x, y: state.game.player.y };

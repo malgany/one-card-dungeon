@@ -25,6 +25,13 @@ export function stepCost(a, b) {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
+function pathStepCost(a, b, allowDiagonal = false) {
+  const dx = Math.abs(a.x - b.x);
+  const dy = Math.abs(a.y - b.y);
+  if (allowDiagonal && dx === 1 && dy === 1) return Math.SQRT2;
+  return dx + dy;
+}
+
 export function levelWallsSet(levelIndex) {
   const walls = new Set();
   LEVELS[levelIndex].walls.forEach(([x, y]) => walls.add(`${x},${y}`));
@@ -49,8 +56,9 @@ export function monsterOccupiedKeys(monsters, exceptId = null) {
   return occupied;
 }
 
-export function neighbors(pos, bounds = boundsFor()) {
+export function neighbors(pos, bounds = boundsFor(), options = {}) {
   const result = [];
+  const { allowDiagonal = false, blockedKeys = new Set(), preventCornerCutting = true } = options;
 
   const offsets = [
     [0, -1],
@@ -59,15 +67,36 @@ export function neighbors(pos, bounds = boundsFor()) {
     [0, 1],
   ];
 
+  if (allowDiagonal) {
+    offsets.push(
+      [-1, -1],
+      [1, -1],
+      [-1, 1],
+      [1, 1],
+    );
+  }
+
   for (const [dx, dy] of offsets) {
     const next = { x: pos.x + dx, y: pos.y + dy };
+    if (
+      allowDiagonal &&
+      preventCornerCutting &&
+      dx !== 0 &&
+      dy !== 0 &&
+      (blockedKeys.has(posKey({ x: pos.x + dx, y: pos.y })) ||
+        blockedKeys.has(posKey({ x: pos.x, y: pos.y + dy })))
+    ) {
+      continue;
+    }
+
     if (inBounds(next, bounds)) result.push(next);
   }
 
   return result;
 }
 
-export function dijkstra(start, blockedKeys = new Set(), bounds = boundsFor()) {
+export function dijkstra(start, blockedKeys = new Set(), bounds = boundsFor(), options = {}) {
+  const { allowDiagonal = false } = options;
   const dist = new Map([[posKey(start), 0]]);
   const prev = new Map();
   const open = [{ x: start.x, y: start.y, cost: 0 }];
@@ -79,11 +108,11 @@ export function dijkstra(start, blockedKeys = new Set(), bounds = boundsFor()) {
 
     if (current.cost > dist.get(currentKey)) continue;
 
-    for (const next of neighbors(current, bounds)) {
+    for (const next of neighbors(current, bounds, { ...options, blockedKeys })) {
       const key = posKey(next);
       if (blockedKeys.has(key)) continue;
 
-      const newCost = current.cost + stepCost(current, next);
+      const newCost = current.cost + pathStepCost(current, next, allowDiagonal);
       if (newCost < (dist.get(key) ?? Number.POSITIVE_INFINITY)) {
         dist.set(key, newCost);
         prev.set(key, { x: current.x, y: current.y });

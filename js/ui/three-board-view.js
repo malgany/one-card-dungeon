@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { BOARD_SIZE, CARD_SOURCES, DEBUG_CONFIG, GAME_MODES, WORLD_ASSETS, WORLD_OBJECT_TYPES } from '../config/game-data.js';
-import { getCurrentWorldEnemies } from '../game/world-state.js';
+import { BOARD_SIZE, CARD_SOURCES, DEBUG_CONFIG, GAME_MODES, TERRAIN_TYPES, WORLD_ASSETS, WORLD_OBJECT_TYPES } from '../config/game-data.js';
+import { getCurrentWorldEnemies, getCurrentWorldMap } from '../game/world-state.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { paletteSignature } from '../config/character-palettes.js';
@@ -611,13 +611,7 @@ export function createThreeBoardView({ state }) {
   const groundMaterial = new THREE.MeshStandardMaterial({
     roughness: 0.9,
     metalness: 0.05,
-    map: textureFor(WORLD_ASSETS.terrain.grass),
   });
-  if (groundMaterial.map) {
-    groundMaterial.map.wrapS = THREE.RepeatWrapping;
-    groundMaterial.map.wrapT = THREE.RepeatWrapping;
-    groundMaterial.map.repeat.set(1, 1);
-  }
 
   const wallMeshes = new Map();
   const objectMeshes = new Map();
@@ -705,6 +699,27 @@ export function createThreeBoardView({ state }) {
     }
   }
 
+  function syncGroundMaterial() {
+    if (state.game.mode !== GAME_MODES.OVERWORLD) return false;
+
+    const map = getCurrentWorldMap(state.game.overworld);
+    const terrain = TERRAIN_TYPES[map?.defaultTerrain] || TERRAIN_TYPES.grass;
+    if (groundMaterial.userData.terrainId === terrain.id) return !!groundMaterial.map;
+
+    const groundTexture = textureFor(terrain.texture);
+    if (groundTexture) {
+      groundTexture.wrapS = THREE.RepeatWrapping;
+      groundTexture.wrapT = THREE.RepeatWrapping;
+      groundTexture.repeat.set(1, 1);
+    }
+
+    groundMaterial.map = groundTexture;
+    groundMaterial.color.set(groundTexture ? '#ffffff' : terrain.color);
+    groundMaterial.userData.terrainId = terrain.id;
+    groundMaterial.needsUpdate = true;
+    return !!groundMaterial.map;
+  }
+
   function syncCamera(layout, now) {
     const mode = state.game.mode || GAME_MODES.DUNGEON_LEGACY;
     const viewport = boardViewport(layout, mode);
@@ -740,7 +755,7 @@ export function createThreeBoardView({ state }) {
 
   function syncBoardGeometry(width = BOARD_SIZE, height = BOARD_SIZE) {
     const isOverworld = state.game.mode === GAME_MODES.OVERWORLD;
-    const hasGround = !!groundMaterial.map && isOverworld;
+    const hasGround = isOverworld && syncGroundMaterial();
 
     if (
       currentBoard.width === width &&

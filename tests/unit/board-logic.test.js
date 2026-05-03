@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  boundsFor,
   dijkstra,
   distanceBetween,
   hasLineOfSight,
@@ -38,6 +39,7 @@ describe('board logic', () => {
       { x: 0, y: 1 },
     ]);
     expect(neighbors({ x: 3, y: 3 })).toHaveLength(4);
+    expect(neighbors({ x: 3, y: 3 }, boundsFor(), { allowDiagonal: true })).toHaveLength(8);
   });
 
   it('builds wall and monster occupancy sets', () => {
@@ -64,6 +66,22 @@ describe('board logic', () => {
       { x: 2, y: 2 },
       { x: 2, y: 1 },
       { x: 2, y: 0 },
+    ]);
+  });
+
+  it('supports diagonal paths without cutting through blocked corners', () => {
+    const open = dijkstra({ x: 0, y: 0 }, new Set(), boundsFor(), { allowDiagonal: true });
+    expect(open.dist.get('1,1')).toBeCloseTo(Math.SQRT2);
+    expect(reconstructPath(open.prev, { x: 1, y: 1 })).toEqual([
+      { x: 0, y: 0 },
+      { x: 1, y: 1 },
+    ]);
+
+    const blockedCorner = dijkstra({ x: 0, y: 0 }, new Set(['1,0']), boundsFor(), { allowDiagonal: true });
+    expect(reconstructPath(blockedCorner.prev, { x: 1, y: 1 })).toEqual([
+      { x: 0, y: 0 },
+      { x: 0, y: 1 },
+      { x: 1, y: 1 },
     ]);
   });
 

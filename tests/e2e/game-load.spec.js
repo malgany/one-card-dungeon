@@ -1,5 +1,26 @@
 import { expect, test } from '@playwright/test';
 
+async function switchDebugGameToMap(page, mapId) {
+  await page.evaluate(async (targetMapId) => {
+    const [{ GAME_MODES, getWorldMap }, { createOverworldMapState }] = await Promise.all([
+      import('/js/config/game-data.js'),
+      import('/js/game/game-factories.js'),
+    ]);
+    const debug = window.__ONE_RPG_DEBUG__;
+    const map = getWorldMap(targetMapId);
+
+    debug.state.game.mode = GAME_MODES.OVERWORLD;
+    debug.state.game.player.x = map.playerStart.x;
+    debug.state.game.player.y = map.playerStart.y;
+    debug.state.game.monsters = [];
+    debug.state.game.combatContext = null;
+    debug.state.game.busy = false;
+    debug.state.game.animations = [];
+    debug.state.game.overworld.currentMapId = map.id;
+    debug.state.game.overworld.mapStates[map.id] = createOverworldMapState(map);
+  }, mapId);
+}
+
 test('loads and renders the canvas game without console errors', async ({ page }) => {
   const consoleErrors = [];
   page.on('console', (message) => {
@@ -18,6 +39,14 @@ test('loads and renders the canvas game without console errors', async ({ page }
   await expect(canvas).toBeVisible();
 
   await expect(page.locator('canvas')).toHaveCount(2);
+  await page.waitForFunction(() => window.__ONE_RPG_DEBUG__?.state?.game?.overworld?.currentMapId === 'chao3-start');
+  await page.waitForFunction(() => {
+    return performance.getEntriesByType('resource').some((entry) => entry.name.includes('/assets/textures/chao3.png'));
+  });
+  expect(await page.evaluate(() => {
+    const game = window.__ONE_RPG_DEBUG__.state.game;
+    return game.overworld.mapStates[game.overworld.currentMapId].enemies.length;
+  })).toBe(2);
 
   const box = await canvas.boundingBox();
   expect(box?.width).toBeGreaterThan(100);
@@ -36,6 +65,15 @@ test('loads and renders the canvas game without console errors', async ({ page }
   });
 
   expect(consoleErrors).toEqual([]);
+});
+
+test('positions the home panel proportionally on very wide screens', async ({ page }) => {
+  await page.setViewportSize({ width: 2048, height: 768 });
+  await page.goto('/');
+
+  const box = await page.locator('.menu-home-panel').boundingBox();
+  expect(box?.x).toBeGreaterThan(250);
+  expect(box?.x).toBeLessThan(380);
 });
 
 test('opens character creation when no character exists', async ({ page }) => {
@@ -164,6 +202,7 @@ test('opens character selection when a character exists', async ({ page }) => {
 test('moves from overworld into combat and returns after victory', async ({ page }) => {
   await page.goto('/');
   await page.waitForFunction(() => window.__ONE_RPG_DEBUG__?.state?.game?.mode === 'overworld');
+  await switchDebugGameToMap(page, 'open-road');
 
   await page.evaluate(() => {
     window.__ONE_RPG_DEBUG__.actions.moveOverworldPlayer({ x: 2, y: 9 });
@@ -199,6 +238,7 @@ test('moves from overworld into combat and returns after victory', async ({ page
 test('moves between connected overworld chunks', async ({ page }) => {
   await page.goto('/');
   await page.waitForFunction(() => window.__ONE_RPG_DEBUG__?.state?.game?.mode === 'overworld');
+  await switchDebugGameToMap(page, 'open-road');
 
   await page.evaluate(() => {
     const { state, actions } = window.__ONE_RPG_DEBUG__;

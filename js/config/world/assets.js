@@ -2,6 +2,7 @@ export const WORLD_ASSETS = {
   terrain: {
     grass: './assets/textures/chao1.png',
     stone: './assets/textures/chao2.png',
+    chao3: './assets/textures/chao3.png',
   },
   objects: {
     grassTop: './assets/textures/grama-topo.webp',

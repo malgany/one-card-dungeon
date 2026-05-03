@@ -247,7 +247,7 @@ export function createGameActions(state) {
     ]);
     blocked.delete(posKey(game.player));
 
-    return dijkstra(game.player, blocked, getOverworldBounds(game.overworld));
+    return dijkstra(game.player, blocked, getOverworldBounds(game.overworld), { allowDiagonal: true });
   }
 
   function getOverworldReachableTiles() {

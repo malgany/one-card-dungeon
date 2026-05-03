@@ -54,7 +54,7 @@ describe('game factories', () => {
 
   it('creates overworld enemies with group ids', () => {
     const enemy = createOverworldEnemy('skeletonMinion', 4, 5, 'skeleton-minions', 0);
-    const startMap = getWorldMap(START_WORLD_MAP_ID);
+    const startMap = getWorldMap('open-road');
 
     expect(enemy).toMatchObject({
       id: 'overworld-skeleton-minions-0',
@@ -81,7 +81,7 @@ describe('game factories', () => {
     });
   });
 
-  it('creates the initial game state in the open map', () => {
+  it('creates the initial game state in the start map', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0);
 
     const game = createGame();
@@ -107,7 +107,8 @@ describe('game factories', () => {
     expect(game.phase).toBe(PHASES.HERO);
     expect(game.overworld.currentMapId).toBe(startMap.id);
     expect(game.overworld.mapStates[startMap.id]).toBeDefined();
-    expect(startMapState.enemies.length).toBeGreaterThan(0);
+    expect(startMap.id).toBe(START_WORLD_MAP_ID);
+    expect(startMapState.enemies.map((enemy) => enemy.type)).toEqual(['skeletonMinion', 'skeletonMinion']);
     expect(game.monsters).toEqual([]);
     expect(game.turnQueue).toEqual(['player']);
     expect(game.banner.title).toBe(startMap.name);

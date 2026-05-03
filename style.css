@@ -54,7 +54,7 @@
     .menu-root--home {
       align-items: center;
       justify-content: flex-start;
-      padding: 48px 48px 48px min(9vw, 144px);
+      padding: 48px 48px 48px clamp(72px, 15vw, 360px);
     }
 
     .menu-home-panel {

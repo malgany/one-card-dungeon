@@ -13,6 +13,12 @@ export const TERRAIN_TYPES = {
     texture: WORLD_ASSETS.terrain.stone,
     color: '#6b7280',
   },
+  chao3: {
+    id: 'chao3',
+    name: 'Chao 3',
+    texture: WORLD_ASSETS.terrain.chao3,
+    color: '#6f7f62',
+  },
   dirt: {
     id: 'dirt',
     name: 'Terra',
