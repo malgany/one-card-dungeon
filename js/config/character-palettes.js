@@ -17,38 +17,56 @@ const CHARACTER_DEFINITION_MAP = {
     textureUrl: '/assets/models/adventurers/textures/mage_texture.png',
     usedSlots: ['r2c0', 'r2c2', 'r2c3', 'r2c7', 'r3c0', 'r3c2', 'r3c3', 'r4c0', 'r4c1', 'r4c2', 'r4c7', 'r5c0', 'r5c1', 'r5c2', 'r5c7', 'r6c0', 'r6c1', 'r6c3', 'r6c4', 'r6c5', 'r7c0', 'r7c1', 'r7c2', 'r7c3', 'r7c4', 'r7c5'],
     paletteGroups: [
-      ['r4c0', 'r4c1', 'r5c0', 'r5c1'],
-      ['r6c1', 'r7c1'],
+      ['r2c0', 'r3c0'],
+      ['r2c2', 'r3c2', 'r4c0', 'r4c1', 'r5c0', 'r5c1'],
+      ['r2c3', 'r3c3', 'r6c5', 'r7c5'],
+      ['r2c7', 'r6c0', 'r7c0'],
       ['r4c2', 'r5c2'],
-      ['r6c5', 'r7c5'],
+      ['r4c7', 'r5c7'],
+      ['r6c1', 'r7c1', 'r7c2'],
+      ['r6c3', 'r6c4', 'r7c3', 'r7c4'],
+    ],
+    fixedSlots: {
+      r2c0: '#BDC185',
+      r3c0: '#BDC185',
+      r4c7: '#1F1F1F',
+      r5c7: '#1F1F1F',
+    },
+    paletteControls: [
+      { label: 'Pele', slots: ['r2c7', 'r6c0', 'r7c0'] },
+      { label: 'Cabelo', slots: ['r6c1', 'r7c1', 'r7c2'] },
+      { label: 'Roupas 1', slots: ['r2c2', 'r3c2', 'r4c0', 'r4c1', 'r5c0', 'r5c1'] },
+      { label: 'Roupas 2', slots: ['r2c3', 'r3c3', 'r6c5', 'r7c5'] },
+      { label: 'Roupas 3', slots: ['r4c2', 'r5c2'] },
+      { label: 'Roupas 4', slots: ['r6c3', 'r6c4', 'r7c3', 'r7c4'] },
     ],
     defaultSlots: {
-      r2c0: '#605B8C',
-      r2c2: '#BF1963',
-      r2c3: '#9BA7AD',
-      r2c7: '#38355C',
-      r3c0: '#2E2B4E',
-      r3c2: '#891B51',
-      r3c3: '#687075',
-      r4c0: '#EAEDEF',
-      r4c1: '#BF1963',
-      r4c2: '#2B7C80',
-      r4c7: '#F7C7A5',
-      r5c0: '#BFCACE',
-      r5c1: '#891B51',
-      r5c2: '#325D67',
-      r5c7: '#F3B189',
-      r6c0: '#FBC05B',
-      r6c1: '#D46E31',
-      r6c3: '#597B97',
-      r6c4: '#F04824',
-      r6c5: '#E2BC8D',
-      r7c0: '#F79442',
-      r7c1: '#944221',
-      r7c2: '#BA7835',
-      r7c3: '#415D6E',
-      r7c4: '#C4112E',
-      r7c5: '#D2A06D',
+      r2c0: '#BDC185',
+      r2c2: '#653681',
+      r2c3: '#7A3B00',
+      r2c7: '#EBB087',
+      r3c0: '#BDC185',
+      r3c2: '#653681',
+      r3c3: '#7A3B00',
+      r4c0: '#653681',
+      r4c1: '#653681',
+      r4c2: '#DB0000',
+      r4c7: '#1F1F1F',
+      r5c0: '#653681',
+      r5c1: '#653681',
+      r5c2: '#DB0000',
+      r5c7: '#1F1F1F',
+      r6c0: '#EBB087',
+      r6c1: '#1F1E1E',
+      r6c3: '#999494',
+      r6c4: '#999494',
+      r6c5: '#7A3B00',
+      r7c0: '#EBB087',
+      r7c1: '#1F1E1E',
+      r7c2: '#1F1E1E',
+      r7c3: '#999494',
+      r7c4: '#999494',
+      r7c5: '#7A3B00',
     },
   },
   barbarian: {
@@ -59,36 +77,67 @@ const CHARACTER_DEFINITION_MAP = {
     modelUrl: '/assets/models/adventurers/characters/barbarian.glb',
     textureUrl: '/assets/models/adventurers/textures/barbarian_texture.png',
     usedSlots: ['r0c1', 'r1c1', 'r2c3', 'r2c7', 'r3c3', 'r3c7', 'r4c0', 'r4c2', 'r4c5', 'r4c6', 'r4c7', 'r5c0', 'r5c2', 'r5c3', 'r5c5', 'r5c6', 'r5c7', 'r6c0', 'r6c1', 'r6c2', 'r6c3', 'r6c6', 'r6c7', 'r7c0', 'r7c1', 'r7c2', 'r7c3', 'r7c6', 'r7c7'],
-    defaultSlots: {
-      r0c1: '#A29B94',
-      r1c1: '#7D726C',
-      r2c3: '#9BA7AD',
-      r2c7: '#A29B94',
-      r3c3: '#687075',
-      r3c7: '#7D726C',
-      r4c0: '#EAEDEF',
-      r4c2: '#597B97',
-      r4c5: '#A29B94',
-      r4c6: '#C6C6C6',
-      r4c7: '#A29B94',
-      r5c0: '#BFCACE',
-      r5c2: '#415D6E',
-      r5c3: '#5C4F48',
-      r5c5: '#7D726C',
-      r5c6: '#565654',
+    paletteGroups: [
+      ['r0c1', 'r1c1'],
+      ['r2c3', 'r3c3', 'r4c5', 'r4c6', 'r5c5', 'r5c6'],
+      ['r2c7', 'r3c7', 'r4c7', 'r6c0', 'r7c0'],
+      ['r4c2', 'r5c2'],
+      ['r6c1', 'r7c1'],
+      ['r6c2', 'r7c2'],
+      ['r5c3', 'r6c3', 'r7c3'],
+      ['r6c6', 'r7c6'],
+      ['r6c7', 'r7c7'],
+    ],
+    fixedSlots: {
+      r0c1: '#F2F2F2',
+      r1c1: '#F2F2F2',
+      r4c0: '#B03D26',
+      r5c0: '#F2F2F2',
+      r5c3: '#A1958A',
       r5c7: '#7D726C',
-      r6c0: '#C6C6C6',
-      r6c1: '#F3E6D9',
-      r6c2: '#C6C6C6',
-      r6c3: '#C6C6C6',
-      r6c6: '#C6C6C6',
-      r6c7: '#C6C6C6',
-      r7c0: '#565654',
-      r7c1: '#DCB58F',
-      r7c2: '#565654',
-      r7c3: '#565654',
-      r7c6: '#565654',
-      r7c7: '#565654',
+      r6c2: '#1F1E1E',
+      r6c3: '#A1958A',
+      r7c2: '#1F1E1E',
+      r7c3: '#A1958A',
+    },
+    paletteControls: [
+      { label: 'Pele', slots: ['r2c7', 'r3c7', 'r4c7', 'r6c0', 'r7c0'] },
+      { label: 'Cabelo', slots: ['r6c1', 'r7c1'] },
+      { label: 'Roupas 1', slots: ['r6c7', 'r7c7'] },
+      { label: 'Roupas 2', slots: ['r6c6', 'r7c6'] },
+      { label: 'Roupas 3', slots: ['r2c3', 'r3c3', 'r4c5', 'r4c6', 'r5c5', 'r5c6'] },
+      { label: 'Roupas 4', slots: ['r4c2', 'r5c2'] },
+    ],
+    defaultSlots: {
+      r0c1: '#F2F2F2',
+      r1c1: '#F2F2F2',
+      r2c3: '#7A3B00',
+      r2c7: '#EBB087',
+      r3c3: '#7A3B00',
+      r3c7: '#EBB087',
+      r4c0: '#B03D26',
+      r4c2: '#597B97',
+      r4c5: '#7A3B00',
+      r4c6: '#7A3B00',
+      r4c7: '#EBB087',
+      r5c0: '#F2F2F2',
+      r5c2: '#415D6E',
+      r5c3: '#A1958A',
+      r5c5: '#7A3B00',
+      r5c6: '#7A3B00',
+      r5c7: '#7D726C',
+      r6c0: '#EBB087',
+      r6c1: '#B1B0AF',
+      r6c2: '#1F1E1E',
+      r6c3: '#A1958A',
+      r6c6: '#B94141',
+      r6c7: '#633B24',
+      r7c0: '#EBB087',
+      r7c1: '#B1B0AF',
+      r7c2: '#1F1E1E',
+      r7c3: '#A1958A',
+      r7c6: '#B94141',
+      r7c7: '#633B24',
     },
   },
   knight: {
@@ -99,28 +148,49 @@ const CHARACTER_DEFINITION_MAP = {
     modelUrl: '/assets/models/adventurers/characters/knight.glb',
     textureUrl: '/assets/models/adventurers/textures/knight_texture.png',
     usedSlots: ['r4c0', 'r4c1', 'r4c2', 'r4c7', 'r5c0', 'r5c1', 'r5c2', 'r5c7', 'r6c0', 'r6c1', 'r6c2', 'r6c3', 'r6c4', 'r6c6', 'r6c7', 'r7c0', 'r7c1', 'r7c2', 'r7c3', 'r7c4', 'r7c6', 'r7c7'],
-    defaultSlots: {
-      r4c0: '#EAEDEF',
-      r4c1: '#A29B94',
-      r4c2: '#E95659',
-      r4c7: '#C6C6C6',
-      r5c0: '#BFCACE',
-      r5c1: '#7D726C',
-      r5c2: '#A61F33',
+    paletteGroups: [
+      ['r4c0', 'r4c1', 'r5c0', 'r5c1'],
+      ['r4c2', 'r4c7', 'r6c4', 'r6c7', 'r7c4', 'r7c7'],
+      ['r6c3', 'r7c0', 'r7c3'],
+      ['r6c1', 'r7c1'],
+      ['r6c6', 'r7c6'],
+    ],
+    fixedSlots: {
+      r5c2: '#999494',
       r5c7: '#565654',
-      r6c0: '#C6C6C6',
-      r6c1: '#C6C6C6',
-      r6c2: '#C6C6C6',
-      r6c3: '#C6C6C6',
-      r6c4: '#C6C6C6',
-      r6c6: '#C6C6C6',
-      r6c7: '#C6C6C6',
-      r7c0: '#565654',
-      r7c1: '#565654',
-      r7c2: '#565654',
-      r7c3: '#565654',
+      r6c2: '#1F1E1E',
+      r7c2: '#1F1E1E',
+    },
+    paletteControls: [
+      { label: 'Pele', slots: ['r6c0'] },
+      { label: 'Cabelo', slots: ['r6c1', 'r7c1'] },
+      { label: 'Roupas 1', slots: ['r6c3', 'r7c0', 'r7c3'] },
+      { label: 'Roupas 2', slots: ['r4c2', 'r4c7', 'r6c4', 'r6c7', 'r7c4', 'r7c7'] },
+      { label: 'Roupas 3', slots: ['r6c6', 'r7c6'] },
+      { label: 'Roupas 4', slots: ['r4c0', 'r4c1', 'r5c0', 'r5c1'] },
+    ],
+    defaultSlots: {
+      r4c0: '#A61F33',
+      r4c1: '#A61F33',
+      r4c2: '#565654',
+      r4c7: '#565654',
+      r5c0: '#A61F33',
+      r5c1: '#A61F33',
+      r5c2: '#999494',
+      r5c7: '#565654',
+      r6c0: '#EBB087',
+      r6c1: '#C48D56',
+      r6c2: '#1F1E1E',
+      r6c3: '#969EB6',
+      r6c4: '#565654',
+      r6c6: '#7A3B00',
+      r6c7: '#565654',
+      r7c0: '#969EB6',
+      r7c1: '#C48D56',
+      r7c2: '#1F1E1E',
+      r7c3: '#969EB6',
       r7c4: '#565654',
-      r7c6: '#565654',
+      r7c6: '#7A3B00',
       r7c7: '#565654',
     },
   },
@@ -249,7 +319,11 @@ export function parsePaletteSlotId(slotId) {
 }
 
 export function getDefaultPaletteSlots(typeId) {
-  return { ...getCharacterDefinition(typeId).defaultSlots };
+  const definition = getCharacterDefinition(typeId);
+  return {
+    ...definition.defaultSlots,
+    ...definition.fixedSlots,
+  };
 }
 
 export function getUsedPaletteSlots(typeId) {
@@ -258,18 +332,27 @@ export function getUsedPaletteSlots(typeId) {
 
 export function getPaletteSlotGroups(typeId) {
   const definition = getCharacterDefinition(typeId);
+  const fixedSlots = new Set(Object.keys(definition.fixedSlots || {}));
+  if (Array.isArray(definition.paletteControls)) {
+    return definition.paletteControls
+      .map((control) => control.slots.filter((slotId) => definition.usedSlots.includes(slotId) && !fixedSlots.has(slotId)))
+      .filter((slots) => slots.length > 0);
+  }
+
+  const editableSlots = definition.usedSlots.filter((slotId) => !fixedSlots.has(slotId));
+  const editableSlotSet = new Set(editableSlots);
   const groupBySlot = new Map();
   const emittedSlots = new Set();
   const groups = [];
 
   for (const group of definition.paletteGroups || []) {
-    const validGroup = group.filter((slotId) => definition.usedSlots.includes(slotId));
+    const validGroup = group.filter((slotId) => editableSlotSet.has(slotId));
     if (validGroup.length === 0) continue;
 
     for (const slotId of validGroup) groupBySlot.set(slotId, validGroup);
   }
 
-  for (const slotId of definition.usedSlots) {
+  for (const slotId of editableSlots) {
     if (emittedSlots.has(slotId)) continue;
 
     const group = groupBySlot.get(slotId) || [slotId];
@@ -278,6 +361,20 @@ export function getPaletteSlotGroups(typeId) {
   }
 
   return groups.map((group) => [...group]);
+}
+
+export function getPaletteSlotControls(typeId) {
+  const definition = getCharacterDefinition(typeId);
+  if (Array.isArray(definition.paletteControls)) {
+    return definition.paletteControls
+      .map((control) => ({
+        label: control.label,
+        slots: control.slots.filter((slotId) => definition.usedSlots.includes(slotId)),
+      }))
+      .filter((control) => control.slots.length > 0);
+  }
+
+  return getPaletteSlotGroups(typeId).map((slots) => ({ label: null, slots }));
 }
 
 export function getPaletteSlotsForControl(typeId, controlSlotId) {
@@ -306,7 +403,10 @@ export function normalizePaletteSlots(typeId, slots, { pruneDefaults = true } = 
     normalized[slotId] = hex;
   }
 
-  return normalized;
+  return {
+    ...normalized,
+    ...definition.fixedSlots,
+  };
 }
 
 export function normalizeCharacterPalette(typeId, palette) {
@@ -343,7 +443,10 @@ export function characterAccentColor(typeId, palette = null, fallbackColor = nul
 
   const definition = getCharacterDefinition(typeId);
   const normalized = normalizeCharacterPalette(definition.id, palette);
-  const firstEditedSlot = definition.usedSlots.find((slotId) => normalized.slots[slotId]);
+  const fixedSlots = new Set(Object.keys(definition.fixedSlots || {}));
+  const firstEditedSlot = definition.usedSlots.find((slotId) => {
+    return !fixedSlots.has(slotId) && normalized.slots[slotId];
+  });
 
   return firstEditedSlot
     ? normalized.slots[firstEditedSlot]

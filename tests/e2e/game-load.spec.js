@@ -72,10 +72,18 @@ test('edits grouped mage palette slots together', async ({ page }) => {
 
   await page.locator('.menu-home-panel .menu-primary-button').click();
   await expect(page.locator('.menu-screen--create')).toBeVisible();
-  await expect(page.locator('[data-palette-slot-id]')).toHaveCount(20);
+  await expect(page.locator('[data-palette-slot-id]')).toHaveCount(6);
+  await expect(page.locator('.menu-palette-row-label')).toHaveText([
+    'PELE',
+    'CABELO',
+    'ROUPAS 1',
+    'ROUPAS 2',
+    'ROUPAS 3',
+    'ROUPAS 4',
+  ]);
 
   await page.getByPlaceholder('Nome do personagem').fill('Mira');
-  await page.locator('[data-palette-color-input][data-slot-id="r4c0"]').evaluate((input) => {
+  await page.locator('[data-palette-color-input][data-slot-id="r2c2"]').evaluate((input) => {
     input.value = '#aa33ff';
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
@@ -85,20 +93,32 @@ test('edits grouped mage palette slots together', async ({ page }) => {
   await page.waitForFunction(() => {
     const palette = window.__ONE_RPG_DEBUG__?.state?.game?.player?.characterPalette;
     return (
+      palette?.slots?.r2c2 === '#AA33FF' &&
+      palette?.slots?.r3c2 === '#AA33FF' &&
       palette?.slots?.r4c0 === '#AA33FF' &&
       palette?.slots?.r4c1 === '#AA33FF' &&
       palette?.slots?.r5c0 === '#AA33FF' &&
-      palette?.slots?.r5c1 === '#AA33FF'
+      palette?.slots?.r5c1 === '#AA33FF' &&
+      palette?.slots?.r2c0 === '#BDC185' &&
+      palette?.slots?.r3c0 === '#BDC185' &&
+      palette?.slots?.r4c7 === '#1F1F1F' &&
+      palette?.slots?.r5c7 === '#1F1F1F'
     );
   });
   const savedCharacters = await page.evaluate(() => {
     return JSON.parse(window.localStorage.getItem('one-rpg-characters-v1'));
   });
   expect(savedCharacters[0].palette.slots).toMatchObject({
+    r2c2: '#AA33FF',
+    r3c2: '#AA33FF',
     r4c0: '#AA33FF',
     r4c1: '#AA33FF',
     r5c0: '#AA33FF',
     r5c1: '#AA33FF',
+    r2c0: '#BDC185',
+    r3c0: '#BDC185',
+    r4c7: '#1F1F1F',
+    r5c7: '#1F1F1F',
   });
 });
 

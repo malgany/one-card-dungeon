@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {
   CHARACTER_TEXTURE_ATLAS,
+  getDefaultPaletteSlots,
   normalizeCharacterPalette,
   normalizePaletteSlots,
   paletteSignature,
@@ -83,13 +84,22 @@ function slotOverrideSignature(typeId, slotOverrides) {
 }
 
 export async function loadCharacterPaletteTexture({ typeId, textureUrl, palette, slotOverrides = null }) {
+  const defaultSlots = normalizePaletteSlots(typeId, getDefaultPaletteSlots(typeId), { pruneDefaults: false });
   const normalized = normalizeCharacterPalette(typeId, palette);
   const overrides = slotOverrideSignature(typeId, slotOverrides);
-  if (Object.keys(normalized.slots).length === 0 && Object.keys(overrides.normalized).length === 0) {
+  if (
+    Object.keys(defaultSlots).length === 0 &&
+    Object.keys(normalized.slots).length === 0 &&
+    Object.keys(overrides.normalized).length === 0
+  ) {
     return null;
   }
 
-  const cacheKey = `${textureUrl}|${paletteSignature(typeId, normalized)}|overrides:${overrides.signature}`;
+  const defaultSignature = Object.entries(defaultSlots)
+    .sort(([slotA], [slotB]) => slotA.localeCompare(slotB))
+    .map(([slotId, color]) => `${slotId}:${color}`)
+    .join('|');
+  const cacheKey = `${textureUrl}|defaults:${defaultSignature}|${paletteSignature(typeId, normalized)}|overrides:${overrides.signature}`;
   if (textureCache.has(cacheKey)) return textureCache.get(cacheKey);
 
   const image = await loadImage(textureUrl);
@@ -102,6 +112,7 @@ export async function loadCharacterPaletteTexture({ typeId, textureUrl, palette,
 
   ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
   for (const [slotId, color] of Object.entries({
+    ...defaultSlots,
     ...normalized.slots,
     ...overrides.normalized,
   })) {

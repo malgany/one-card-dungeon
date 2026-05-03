@@ -3,6 +3,7 @@ import {
   CHARACTER_TYPES,
   characterAccentColor,
   createPaletteDraft,
+  getPaletteSlotControls,
   getPaletteSlotGroups,
   getPaletteSlotsForControl,
   getCharacterType,
@@ -123,9 +124,25 @@ function typeButton(type, activeTypeId) {
   `;
 }
 
-function paletteSlotControl(slotGroup, color, activeSlotId, index) {
+function paletteSlotControl(slotControl, color, activeSlotId, index) {
+  const slotGroup = slotControl.slots || slotControl;
+  const label = slotControl.label || null;
   const controlSlotId = slotGroup[0];
   const active = controlSlotId === activeSlotId ? ' is-selected' : '';
+  const safeLabel = label ? escapeHtml(label.toUpperCase()) : '';
+
+  if (label) {
+    return `
+      <div class="menu-palette-row${active}" data-palette-slot-id="${escapeHtml(controlSlotId)}" data-palette-slot-ids="${escapeHtml(slotGroup.join(','))}" style="--swatch:${escapeHtml(color)}">
+        <span class="menu-palette-row-label">${safeLabel}</span>
+        <label class="menu-palette-row-swatch" title="${safeLabel}">
+          <input class="menu-palette-color-input" type="color" value="${escapeHtml(color.toLowerCase())}" data-palette-color-input data-slot-id="${escapeHtml(controlSlotId)}" aria-label="${safeLabel}">
+        </label>
+        <input class="menu-palette-row-hex" data-palette-inline-hex-input data-slot-id="${escapeHtml(controlSlotId)}" value="${escapeHtml(color)}" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Hex ${safeLabel}">
+      </div>
+    `;
+  }
+
   return `
     <label class="menu-palette-slot${active}" data-palette-slot-id="${escapeHtml(controlSlotId)}" data-palette-slot-ids="${escapeHtml(slotGroup.join(','))}" style="--swatch:${escapeHtml(color)}" title="Bloco ${index + 1}">
       <input class="menu-palette-color-input" type="color" value="${escapeHtml(color.toLowerCase())}" data-palette-color-input data-slot-id="${escapeHtml(controlSlotId)}" aria-label="Cor do bloco ${index + 1}">
@@ -206,6 +223,12 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
       hexInput.dataset.slotId = activeSlotId;
       hexInput.classList.remove('is-invalid');
     }
+
+    const inlineHexInput = menuRoot.querySelector(`[data-palette-inline-hex-input][data-slot-id="${activeSlotId}"]`);
+    if (inlineHexInput) {
+      inlineHexInput.value = draft[activeSlotId] || '';
+      inlineHexInput.classList.remove('is-invalid');
+    }
   }
 
   function syncPalettePreview() {
@@ -241,6 +264,12 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
       hexInput.value = color;
       hexInput.classList.remove('is-invalid');
       hexInput.dataset.slotId = controlSlotId;
+    }
+
+    const inlineHexInput = menuRoot.querySelector(`[data-palette-inline-hex-input][data-slot-id="${controlSlotId}"]`);
+    if (inlineHexInput) {
+      inlineHexInput.value = color;
+      inlineHexInput.classList.remove('is-invalid');
     }
 
     syncActivePaletteSlotUi();
@@ -344,7 +373,8 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     disposeCharacterPreview();
     const activeType = getCharacterType(activeTypeId);
     const paletteDraft = ensurePaletteDraft(activeType.id);
-    const paletteGroups = getPaletteSlotGroups(activeType.id);
+    const paletteControls = getPaletteSlotControls(activeType.id);
+    const hasNamedPaletteControls = paletteControls.some((control) => control.label);
     const selectedSlotId = activePaletteSlotId(activeType.id);
     const selectedColor = paletteDraft[selectedSlotId];
     const palette = serializePaletteDraft(activeType.id, paletteDraft);
@@ -377,13 +407,13 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
             <span>Paleta</span>
             <strong>Cor</strong>
           </div>
-          <div class="menu-palette-list">
-            ${paletteGroups.map((slotGroup, index) => paletteSlotControl(slotGroup, paletteDraft[slotGroup[0]], selectedSlotId, index)).join('')}
+          <div class="menu-palette-list${hasNamedPaletteControls ? ' menu-palette-list--named' : ''}">
+            ${paletteControls.map((control, index) => paletteSlotControl(control, paletteDraft[control.slots[0]], selectedSlotId, index)).join('')}
           </div>
-          <label class="menu-palette-code">
+          ${hasNamedPaletteControls ? '' : `<label class="menu-palette-code">
             <span>HEX</span>
             <input class="menu-hex-input" data-palette-hex-input data-slot-id="${escapeHtml(selectedSlotId)}" value="${escapeHtml(selectedColor)}" maxlength="7" spellcheck="false" autocomplete="off">
-          </label>
+          </label>`}
         </aside>
       </section>
     `;
@@ -527,7 +557,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
       return;
     }
 
-    if (event.target?.matches?.('[data-palette-hex-input]')) {
+    if (event.target?.matches?.('[data-palette-hex-input], [data-palette-inline-hex-input]')) {
       const slotId = event.target.dataset.slotId || activePaletteSlotId(activeTypeId);
       const normalized = normalizeHexColor(event.target.value);
 
