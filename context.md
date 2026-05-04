@@ -24,6 +24,7 @@ O fluxo principal agora comeca em um mapa aberto 3D/isometrico; clicar em grupos
 ## Arquivos de Apoio
 
 - `README.md`: resumo rapido do projeto e da estrutura.
+- `.env.example`: lista variaveis de ambiente esperadas; `VITE_ONE_RPG_DEBUG=true` liga o painel, o objeto `window.__ONE_RPG_DEBUG__` e os endpoints de debug no Vite local.
 - `design.md`: direcao visual oficial para HUD, modal, botoes, highlights e novos ajustes de UI.
 - `docs/game-rules.md`: regras atuais do jogo.
 - `docs/gltf-models.md`: guia para organizar, importar e depurar modelos GLTF/3D no mundo aberto.
@@ -39,6 +40,11 @@ O fluxo principal agora comeca em um mapa aberto 3D/isometrico; clicar em grupos
 4. Se a mudanca envolver GLTF/3D, leia `docs/gltf-models.md` e depois abra `js/ui/three-board-view.js` e `js/config/world/objects.js`.
 5. Se a mudanca for visual em geral, leia `design.md` antes de abrir `js/ui/renderer.js`, `js/ui/three-board-view.js` e `js/ui/draw-primitives.js`.
 6. Se a mudanca for interacao do mouse, abra `js/ui/input.js`.
+
+## Texto e Localizacao
+
+- O texto visivel do jogo e da documentacao deve seguir portugues do Brasil com acentuacao correta.
+- Quando `design.md` falar de "acentos" competindo na tela, leia como acentos visuais/destaques de cor, nao como remocao de acentos ortograficos.
 
 ## Independência de Modos
 

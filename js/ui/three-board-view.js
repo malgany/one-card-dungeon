@@ -4,7 +4,10 @@ import { getCurrentWorldEnemies, getCurrentWorldMap, getCurrentWorldMapState } f
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { paletteSignature } from '../config/character-palettes.js';
-import { DEFAULT_MAP_COLOR_VALUES } from '../config/map-colors.js';
+import {
+  getMapColorValuesForMap,
+  normalizeMapColorValues,
+} from '../config/map-colors.js';
 import { configureCharacterTexture, loadCharacterPaletteTexture } from './character-palette-texture.js';
 
 const CARD_WIDTH = 0.56;
@@ -477,10 +480,9 @@ export function createThreeBoardView({ state }) {
 
   function debugColorValues() {
     const mapState = getCurrentWorldMapState(state.game.overworld);
-    const values = state.debugColors?.values || mapState?.debugColors?.values || {};
-    return Object.fromEntries(Object.entries(DEFAULT_MAP_COLOR_VALUES).map(([key, fallback]) => {
-      return [key, normalizeHexColor(values[key], fallback)];
-    }));
+    const mapId = state.game.overworld?.currentMapId || null;
+    const draftValues = state.debugColors?.activeMapId === mapId ? state.debugColors?.values : null;
+    return normalizeMapColorValues(draftValues || mapState?.debugColors?.values || getMapColorValuesForMap(mapId));
   }
 
   function hexToRgba(hex, alpha) {
@@ -850,6 +852,9 @@ export function createThreeBoardView({ state }) {
     if (signature === debugColorSignature) return;
 
     debugColorSignature = signature;
+    scene.background = colorFromHex(colors.water1);
+    renderer.setClearColor(colorFromHex(colors.water1), 1);
+    if (scene.fog) scene.fog.color.set(colors.water1);
     waterMaterial.color.set(colors.water1);
     waterDarkBandMaterial.color.set(colors.water2);
     waterLightBandMaterial.color.set(colors.water3);

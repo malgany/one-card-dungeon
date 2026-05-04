@@ -78,7 +78,7 @@ const renderer = createRenderer({
   onExitToMainMenu: menuFlow.show,
 });
 
-if (['localhost', '127.0.0.1'].includes(window.location.hostname)) {
+if (DEBUG_CONFIG.SHOW_STATS && ['localhost', '127.0.0.1'].includes(window.location.hostname)) {
   window.__ONE_RPG_DEBUG__ = { state, actions, layout, menuFlow };
 }
 

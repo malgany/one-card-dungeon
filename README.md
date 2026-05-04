@@ -32,6 +32,16 @@ npm run dev
 
 Depois abra a URL indicada pelo Vite.
 
+## Debug Local
+
+O painel e as ferramentas de debug ficam desligados por padrão. Para usar localmente, crie um `.env` na raiz com:
+
+```bash
+VITE_ONE_RPG_DEBUG=true
+```
+
+O arquivo `.env.example` documenta a variável esperada. Não habilite `VITE_ONE_RPG_DEBUG` no ambiente de produção.
+
 Para gerar a versao de producao:
 
 ```bash

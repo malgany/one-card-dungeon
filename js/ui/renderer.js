@@ -9,7 +9,11 @@ import {
 } from '../game/world-state.js';
 import { MODEL_LIBRARY } from '../config/world/model-library.js';
 import { TEXTURE_LIBRARY } from '../config/world/texture-library.js';
-import { DEFAULT_MAP_COLOR_VALUES } from '../config/map-colors.js';
+import {
+  DEFAULT_MAP_COLOR_VALUES,
+  getMapColorValuesForMap,
+  normalizeMapColorValues,
+} from '../config/map-colors.js';
 import { createDrawPrimitives } from './draw-primitives.js';
 import { createThreeBoardView, HERO_DEBUG_ANIMATION_OPTIONS } from './three-board-view.js';
 
@@ -39,7 +43,7 @@ const DEBUG_PANEL_MINIMIZED_Y = 12;
 const DEBUG_PANEL_OPEN_TAB_OVERHANG = 28;
 const DEBUG_CUBE_HEIGHT = 0.62;
 const DEBUG_COLOR_FIELDS = [
-  { key: 'water1', group: 'Agua', label: 'Agua 1', description: 'cor principal', codeUse: 'waterMaterial.color, agua base solida em volta da ilha' },
+  { key: 'water1', group: 'Agua', label: 'Agua 1', description: 'cor principal', codeUse: 'waterMaterial.color e scene.background, agua base e fundo do mapa' },
   { key: 'water2', group: 'Agua', label: 'Agua 2', description: 'faixa grossa', codeUse: 'waterDarkBandMaterial.color, contorno azul mais escuro na superficie' },
   { key: 'water3', group: 'Agua', label: 'Agua 3', description: 'faixa perto da borda', codeUse: 'waterLightBandMaterial.color, contorno claro junto ao barranco' },
   { key: 'top1', group: 'Cor do topo', label: 'Cor 1', description: 'base', codeUse: 'paintProceduralGrassTexture, preenchimento principal do topo do chao/cubo' },
@@ -228,6 +232,16 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   function ensureDebugColors() {
     if (!state.debugColors) state.debugColors = {};
     const debugColors = state.debugColors;
+    const mapId = currentEditorMapId();
+    if (debugColors.activeMapId !== mapId) {
+      const mapState = state.game.mode === GAME_MODES.OVERWORLD && mapId
+        ? ensureOverworldMapState(state.game.overworld, mapId)
+        : null;
+      debugColors.values = normalizeMapColorValues(mapState?.debugColors?.values || getMapColorValuesForMap(mapId));
+      debugColors.activeMapId = mapId;
+      debugColors.applyStatus = null;
+      debugColors.applyError = '';
+    }
     if (!debugColors.values) debugColors.values = {};
     for (const field of DEBUG_COLOR_FIELDS) {
       debugColors.values[field.key] = normalizeDebugHexColor(debugColors.values[field.key], DEBUG_COLOR_DEFAULTS[field.key]);
@@ -2821,6 +2835,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     }));
 
     debugColors.values = { ...values };
+    debugColors.activeMapId = mapId;
     debugColors.applyStatus = 'pending';
     debugColors.applyError = '';
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
@@ -2836,7 +2851,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       const response = await fetch('/__debug/map-colors', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ values }),
+        body: JSON.stringify({ mapId, values }),
       });
       if (!response.ok) throw new Error(await response.text());
 

@@ -40,12 +40,13 @@ A UI do jogo deve parecer um RPG tatico de ferro, pedra e musgo: sombria, legive
 - Usar peso forte em valores, titulos curtos e chamadas importantes.
 - Evitar que todos os textos parecam HUD tecnico.
 - Usar caixa alta apenas em rotulos curtos ou comandos, nao em paragrafos.
+- Textos em portugues do Brasil devem usar acentuacao correta; nao remover acentos ortograficos por estilo.
 
 ## Nao Fazer
 
 - Nao criar UI azul/slate dominante.
 - Nao usar radius alto por padrao.
-- Nao adicionar muitos acentos competindo na mesma tela.
+- Nao adicionar muitos acentos visuais/destaques de cor competindo na mesma tela.
 - Nao colocar cards dentro de cards.
 - Nao criar botoes genericos sem hierarquia de estado.
 - Nao introduzir novas cores soltas sem encaixar na paleta oficial.

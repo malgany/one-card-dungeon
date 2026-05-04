@@ -141,5 +141,5 @@ export const TIMING = {
 };
 
 export const DEBUG_CONFIG = {
-  SHOW_STATS: true,
+  SHOW_STATS: import.meta.env.VITE_ONE_RPG_DEBUG === 'true',
 };
