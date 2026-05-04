@@ -23,10 +23,11 @@ export function createLayoutTools({ canvas, ctx, state }) {
     const sw = window.innerWidth;
     const sh = window.innerHeight;
     const compact = sw < 760;
+    const inOverworld = isOverworldMode();
 
     if (compact) {
       const margin = 16;
-      const topUIHeight = Math.min(300, Math.max(270, Math.floor(sh * 0.34)));
+      const topUIHeight = inOverworld ? Math.min(300, Math.max(270, Math.floor(sh * 0.34))) : 16;
       const bottomUIHeight = 132;
       const availableW = sw - margin * 2;
       const availableH = Math.max(180, sh - topUIHeight - bottomUIHeight - margin);
@@ -41,7 +42,7 @@ export function createLayoutTools({ canvas, ctx, state }) {
         compact,
         sw,
         sh,
-        sidebarW: sw,
+        sidebarW: inOverworld ? sw : 0,
         boardX,
         boardY,
         boardW,
@@ -51,12 +52,12 @@ export function createLayoutTools({ canvas, ctx, state }) {
         topUIHeight,
         leftX: 16,
         leftY: 16,
-        leftW: sw - 32,
-        leftH: topUIHeight - 36,
+        leftW: inOverworld ? sw - 32 : 0,
+        leftH: inOverworld ? topUIHeight - 36 : 0,
       };
     }
     
-    const sidebarW = Math.max(340, Math.floor(sw * 0.26));
+    const sidebarW = inOverworld ? Math.max(340, Math.floor(sw * 0.26)) : 0;
     const rightW = sw - sidebarW;
     const margin = 24;
     
@@ -84,8 +85,8 @@ export function createLayoutTools({ canvas, ctx, state }) {
       bottomUIHeight,
       leftX: 16,
       leftY: 16,
-      leftW: sidebarW - 32,
-      leftH: sh - 32,
+      leftW: inOverworld ? sidebarW - 32 : 0,
+      leftH: inOverworld ? sh - 32 : 0,
     };
   }
 

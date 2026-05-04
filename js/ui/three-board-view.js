@@ -5,6 +5,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { paletteSignature } from '../config/character-palettes.js';
 import {
+  DEFAULT_MAP_COLOR_VALUES,
   getMapColorValuesForMap,
   normalizeMapColorValues,
 } from '../config/map-colors.js';
@@ -24,12 +25,14 @@ const COMPACT_COMBAT_ORTHO_VIEW_HEIGHT = 8.98;
 const OVERWORLD_ORTHO_VIEW_HEIGHT = 9.18;
 const COMPACT_OVERWORLD_ORTHO_VIEW_HEIGHT = 8.16;
 const FLOOR_COLORS = ['#353124', '#252217'];
+const COMBAT_BACKDROP_COLOR = '#070807';
 const SPECULAR_GLOSSINESS_EXTENSION = 'KHR_materials_pbrSpecularGlossiness';
 const DEBUG_MODEL_DEFAULT_SCALE = 0.5;
 const TERRAIN_CUBE_HEIGHT = 0.62;
 const MAX_DEBUG_CUBES = 2000;
 const ISLAND_WATER_LEVEL = -TERRAIN_CUBE_HEIGHT / 2;
 const ISLAND_WATER_PADDING = 18;
+const ISLAND_DRY_GROUND_PADDING = Math.ceil(ISLAND_WATER_PADDING / 2);
 const ISLAND_WATER_BOB_AMOUNT = 0.04;
 const ISLAND_WATER_BOB_SPEED = 1.18;
 const ISLAND_WATER_LIGHT_BAND = 0.12;
@@ -51,6 +54,7 @@ const HIGHLIGHT_COLORS = {
   monsterMove: { color: '#5f8f54', opacity: 0.22 },
   monsterAttack: { color: '#b94735', opacity: 0.28 },
 };
+const ANIMATED_TEXTURE_EXTENSIONS = ['.gif'];
 const CHARACTER_TEXTURE_OVERRIDES = {
   // Apenas aventureiros (player) usam textura externa por enquanto
   './assets/models/adventurers/characters/mage.glb': './assets/models/adventurers/textures/mage_texture.png',
@@ -186,31 +190,12 @@ function setIsometricCameraPosition(camera, target = { x: 0, z: 0 }, distance = 
   camera.lookAt(target.x, 0, target.z);
 }
 
-function boardViewport(layout, mode = GAME_MODES.DUNGEON_LEGACY) {
-  if (mode === GAME_MODES.OVERWORLD) {
-    return {
-      x: 0,
-      y: 0,
-      w: Math.max(1, layout.sw),
-      h: Math.max(1, layout.sh),
-    };
-  }
-
-  const marginX = Math.min(118, layout.tileSize * 0.82);
-  const marginTop = Math.min(142, layout.tileSize * 1.05);
-  const marginBottom = Math.min(88, layout.tileSize * 0.7);
-  const minX = layout.compact ? 0 : layout.sidebarW;
-  const minY = layout.compact ? Math.max(0, layout.leftY + layout.leftH + 8) : 0;
-  const x = Math.max(minX, Math.floor(layout.boardX - marginX));
-  const y = Math.max(minY, Math.floor(layout.boardY - marginTop));
-  const right = Math.min(layout.sw, Math.ceil(layout.boardX + layout.boardW + marginX));
-  const bottom = Math.min(layout.sh, Math.ceil(layout.boardY + layout.boardH + marginBottom));
-
+function boardViewport(layout) {
   return {
-    x,
-    y,
-    w: Math.max(1, right - x),
-    h: Math.max(1, bottom - y),
+    x: 0,
+    y: 0,
+    w: Math.max(1, layout.sw),
+    h: Math.max(1, layout.sh),
   };
 }
 
@@ -465,11 +450,129 @@ export function createThreeBoardView({ state }) {
     if (!src) return null;
     if (textureCache.has(src)) return textureCache.get(src);
 
-    const texture = textureLoader.load(src);
+    const texture = isAnimatedTextureSource(src)
+      ? animatedTextureFor(src)
+      : textureLoader.load(src);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = 8;
     textureCache.set(src, texture);
     return texture;
+  }
+
+  function animatedTextureFor(src) {
+    const texture = textureLoader.load(src);
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = 1;
+    canvas.height = 1;
+    texture.generateMipmaps = false;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.userData.animated = {
+      canvas,
+      context,
+      currentFrameIndex: -1,
+      frames: [],
+      startedAt: performance.now(),
+      totalDurationMs: 0,
+    };
+
+    loadAnimatedTextureFrames(src, texture).catch((error) => {
+      console.error('Erro ao decodificar textura animada:', src, error);
+    });
+
+    return texture;
+  }
+
+  async function loadAnimatedTextureFrames(src, texture) {
+    if (typeof ImageDecoder === 'undefined') {
+      return;
+    }
+
+    const supported = await ImageDecoder.isTypeSupported('image/gif').catch(() => false);
+    if (!supported) {
+      return;
+    }
+
+    const response = await fetch(src);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const decoder = new ImageDecoder({
+      data: await response.arrayBuffer(),
+      type: 'image/gif',
+    });
+    await decoder.tracks.ready;
+
+    const frameCount = decoder.tracks.selectedTrack?.frameCount || 0;
+    const frames = [];
+    for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+      const decoded = await decoder.decode({ frameIndex });
+      const frame = decoded.image;
+      const width = frame.displayWidth || frame.codedWidth || 1;
+      const height = frame.displayHeight || frame.codedHeight || 1;
+      const frameCanvas = document.createElement('canvas');
+      const frameContext = frameCanvas.getContext('2d');
+      frameCanvas.width = width;
+      frameCanvas.height = height;
+      frameContext.drawImage(frame, 0, 0, width, height);
+      frames.push({
+        canvas: frameCanvas,
+        durationMs: Math.max(16, (frame.duration || 100000) / 1000),
+      });
+      frame.close?.();
+    }
+    decoder.close?.();
+
+    if (frames.length === 0) {
+      return;
+    }
+
+    const animated = texture.userData.animated;
+    animated.frames = frames;
+    animated.startedAt = performance.now();
+    animated.totalDurationMs = frames.reduce((total, frame) => total + frame.durationMs, 0);
+    syncAnimatedTextureFrame(texture, animated.startedAt, true);
+  }
+
+  function isAnimatedTextureSource(src) {
+    const cleanSrc = String(src || '').split(/[?#]/)[0].toLowerCase();
+    return ANIMATED_TEXTURE_EXTENSIONS.some((extension) => cleanSrc.endsWith(extension));
+  }
+
+  function syncAnimatedTextureFrame(texture, now = performance.now(), force = false) {
+    const animated = texture.userData?.animated;
+    if (!animated?.context) return false;
+
+    const { canvas, context } = animated;
+    if (animated.frames?.length > 0 && animated.totalDurationMs > 0) {
+      const elapsed = (now - animated.startedAt) % animated.totalDurationMs;
+      let frameTime = 0;
+      let frameIndex = 0;
+      for (; frameIndex < animated.frames.length - 1; frameIndex += 1) {
+        frameTime += animated.frames[frameIndex].durationMs;
+        if (elapsed < frameTime) break;
+      }
+      if (!force && frameIndex === animated.currentFrameIndex) return true;
+
+      const frame = animated.frames[frameIndex];
+      if (canvas.width !== frame.canvas.width || canvas.height !== frame.canvas.height) {
+        canvas.width = frame.canvas.width;
+        canvas.height = frame.canvas.height;
+      }
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(frame.canvas, 0, 0);
+      if (texture.image !== canvas) texture.image = canvas;
+      animated.currentFrameIndex = frameIndex;
+      texture.needsUpdate = true;
+      return true;
+    }
+    return false;
+  }
+
+  function updateAnimatedTextures() {
+    textureCache.forEach((texture) => {
+      syncAnimatedTextureFrame(texture);
+    });
   }
 
   function normalizeHexColor(value, fallback = '#ffffff') {
@@ -847,14 +950,24 @@ export function createThreeBoardView({ state }) {
   });
 
   function syncDebugColorMaterials() {
-    const colors = debugColorValues();
-    const signature = JSON.stringify(colors);
+    const isOverworld = state.game.mode === GAME_MODES.OVERWORLD;
+    const overworldWaterEnabled = state.visuals?.overworldWater !== false;
+    const colors = isOverworld
+      ? debugColorValues()
+      : {
+        ...DEFAULT_MAP_COLOR_VALUES,
+        water1: COMBAT_BACKDROP_COLOR,
+        water2: '#0d0f0b',
+        water3: '#14150f',
+      };
+    const backgroundColor = isOverworld && !overworldWaterEnabled ? colors.top1 : colors.water1;
+    const signature = `${isOverworld ? 'overworld' : 'combat'}:${overworldWaterEnabled ? 'water' : 'dry'}:${JSON.stringify(colors)}`;
     if (signature === debugColorSignature) return;
 
     debugColorSignature = signature;
-    scene.background = colorFromHex(colors.water1);
-    renderer.setClearColor(colorFromHex(colors.water1), 1);
-    if (scene.fog) scene.fog.color.set(colors.water1);
+    scene.background = colorFromHex(backgroundColor);
+    renderer.setClearColor(colorFromHex(backgroundColor), 1);
+    if (scene.fog) scene.fog.color.set(backgroundColor);
     waterMaterial.color.set(colors.water1);
     waterDarkBandMaterial.color.set(colors.water2);
     waterLightBandMaterial.color.set(colors.water3);
@@ -962,6 +1075,13 @@ export function createThreeBoardView({ state }) {
   terrainCubeInstance.receiveShadow = true;
   terrainCubeInstance.frustumCulled = true;
   boardGroup.add(terrainCubeInstance);
+
+  const dryGroundCubeInstance = new THREE.InstancedMesh(terrainCubeGeometry, terrainCubeMaterials, MAX_TILES);
+  dryGroundCubeInstance.castShadow = true;
+  dryGroundCubeInstance.receiveShadow = true;
+  dryGroundCubeInstance.frustumCulled = true;
+  dryGroundCubeInstance.count = 0;
+  boardGroup.add(dryGroundCubeInstance);
 
   const debugCubeInstance = new THREE.InstancedMesh(terrainCubeGeometry, terrainCubeMaterials, MAX_DEBUG_CUBES);
   debugCubeInstance.castShadow = true;
@@ -1183,6 +1303,8 @@ export function createThreeBoardView({ state }) {
     const isOverworld = state.game.mode === GAME_MODES.OVERWORLD;
     const hasGround = isOverworld && syncGroundMaterial();
     const useCubeTerrain = isOverworld;
+    const waterEnabled = useCubeTerrain && state.visuals?.overworldWater !== false;
+    const dryGroundEnabled = useCubeTerrain && !waterEnabled;
     const terrain = isOverworld ? currentOverworldTerrain() : null;
     const terrainId = terrain?.id || null;
     const showGrid = !!state.visuals?.showGrid;
@@ -1192,7 +1314,8 @@ export function createThreeBoardView({ state }) {
       currentBoard.height === height &&
       currentBoard.hasGround === hasGround &&
       currentBoard.terrainId === terrainId &&
-      currentBoard.showGrid === showGrid
+      currentBoard.showGrid === showGrid &&
+      currentBoard.waterEnabled === waterEnabled
     ) {
       return;
     }
@@ -1202,6 +1325,7 @@ export function createThreeBoardView({ state }) {
     currentBoard.hasGround = hasGround;
     currentBoard.terrainId = terrainId;
     currentBoard.showGrid = showGrid;
+    currentBoard.waterEnabled = waterEnabled;
 
     base.scale.set(width + 0.55, 1, height + 0.55);
     base.visible = !useCubeTerrain;
@@ -1215,7 +1339,7 @@ export function createThreeBoardView({ state }) {
     const waterHeight = height + ISLAND_WATER_PADDING;
     waterPlane.scale.set(waterWidth, waterHeight, 1);
     waterPlane.position.set(0, ISLAND_WATER_LEVEL, 0);
-    waterPlane.visible = useCubeTerrain;
+    waterPlane.visible = waterEnabled;
 
     const light = ISLAND_WATER_LIGHT_BAND;
     const dark = ISLAND_WATER_DARK_BAND;
@@ -1225,8 +1349,8 @@ export function createThreeBoardView({ state }) {
     const lightY = ISLAND_WATER_LEVEL + 0.008;
     const darkY = ISLAND_WATER_LEVEL + 0.006;
 
-    waterLightStrips.forEach((strip) => { strip.visible = useCubeTerrain; });
-    waterDarkStrips.forEach((strip) => { strip.visible = useCubeTerrain; });
+    waterLightStrips.forEach((strip) => { strip.visible = waterEnabled; });
+    waterDarkStrips.forEach((strip) => { strip.visible = waterEnabled; });
     waterLightStrips[0].position.set(0, lightY, -height / 2 - light / 2);
     waterLightStrips[0].scale.set(lightTopBottomW, light, 1);
     waterLightStrips[1].position.set(0, lightY, height / 2 + light / 2);
@@ -1247,6 +1371,7 @@ export function createThreeBoardView({ state }) {
 
     tileInstance.visible = !hasGround && !useCubeTerrain;
     terrainCubeInstance.visible = useCubeTerrain;
+    dryGroundCubeInstance.visible = dryGroundEnabled;
 
     if (useCubeTerrain) {
       let count = 0;
@@ -1269,6 +1394,31 @@ export function createThreeBoardView({ state }) {
       terrainCubeInstance.instanceColor.needsUpdate = true;
     } else {
       terrainCubeInstance.count = 0;
+    }
+
+    if (dryGroundEnabled) {
+      let count = 0;
+      for (let y = -ISLAND_DRY_GROUND_PADDING; y < height + ISLAND_DRY_GROUND_PADDING; y += 1) {
+        if (count >= MAX_TILES) break;
+        for (let x = -ISLAND_DRY_GROUND_PADDING; x < width + ISLAND_DRY_GROUND_PADDING; x += 1) {
+          if (count >= MAX_TILES) break;
+          if (x >= 0 && x < width && y >= 0 && y < height) continue;
+          const center = tileCenter(x, y, width, height);
+
+          dummy.position.set(center.x, -TERRAIN_CUBE_HEIGHT * 1.5, center.z);
+          dummy.scale.set(1, 1, 1);
+          dummy.updateMatrix();
+          dryGroundCubeInstance.setMatrixAt(count, dummy.matrix);
+          dryGroundCubeInstance.setColorAt(count, colorFromHex('#ffffff'));
+
+          count += 1;
+        }
+      }
+      dryGroundCubeInstance.count = count;
+      dryGroundCubeInstance.instanceMatrix.needsUpdate = true;
+      if (dryGroundCubeInstance.instanceColor) dryGroundCubeInstance.instanceColor.needsUpdate = true;
+    } else {
+      dryGroundCubeInstance.count = 0;
     }
 
     if (!hasGround && !useCubeTerrain) {
@@ -1318,7 +1468,8 @@ export function createThreeBoardView({ state }) {
   function playModelUnitAnimation(group, clipName, { restart = false } = {}) {
     const actions = group.userData.actions;
     const next = actions?.[clipName];
-    if (!next || (!restart && group.userData.activeAnimation === clipName)) return;
+    if (!next) return false;
+    if (!restart && group.userData.activeAnimation === clipName) return true;
 
     const previous = actions[group.userData.activeAnimation];
     next.enabled = true;
@@ -1327,6 +1478,7 @@ export function createThreeBoardView({ state }) {
     if (previous && previous !== next) previous.fadeOut(0.12);
 
     group.userData.activeAnimation = clipName;
+    return true;
   }
 
   function heroDebugAnimationId() {
@@ -1378,10 +1530,18 @@ export function createThreeBoardView({ state }) {
         x: action.targetX - action.sourceX,
         y: action.targetY - action.sourceY,
       });
-      playModelUnitAnimation(group, action.animation || modelConfig.attackAnimation, { restart: true });
+      const animationName = action.animation || modelConfig.attackAnimation;
+      const actionKey = `${action.entityId}:${animationName}:${action.startTime}`;
+      const shouldRestart = group.userData.activeModelActionKey !== actionKey;
+      const played = playModelUnitAnimation(group, animationName, { restart: shouldRestart });
+      if (!played && animationName !== modelConfig.attackAnimation) {
+        playModelUnitAnimation(group, modelConfig.attackAnimation, { restart: shouldRestart });
+      }
+      group.userData.activeModelActionKey = actionKey;
       return;
     }
 
+    group.userData.activeModelActionKey = null;
     const isMoving = isMovementActive(movement, now);
     playModelUnitAnimation(
       group,
@@ -1394,7 +1554,7 @@ export function createThreeBoardView({ state }) {
     faceDirection(group, direction);
   }
 
-  function createCardUnitMesh(unit, isPlayer) {
+  function createCardUnitMesh(unit, isPlayer, entityId) {
     const group = new THREE.Group();
     const tint = isPlayer ? '#047857' : unit.tint;
     const source = imageSourceForUnit(unit, isPlayer);
@@ -1407,6 +1567,7 @@ export function createThreeBoardView({ state }) {
     });
     const frame = new THREE.Mesh(new THREE.PlaneGeometry(CARD_WIDTH + 0.08, CARD_HEIGHT + 0.1), frameMaterial);
     frame.position.y = CARD_HEIGHT / 2 + 0.1;
+    frame.userData.entityId = entityId;
     group.add(frame);
 
     const faceMaterial = new THREE.MeshBasicMaterial({
@@ -1416,9 +1577,11 @@ export function createThreeBoardView({ state }) {
     });
     const face = new THREE.Mesh(new THREE.PlaneGeometry(CARD_WIDTH, CARD_HEIGHT), faceMaterial);
     face.position.set(0, CARD_HEIGHT / 2 + 0.1, 0.012);
+    face.userData.entityId = entityId;
     group.add(face);
 
     group.userData = {
+      entityId,
       faceMaterial,
       frameMaterial,
       isPlayer,
@@ -1434,12 +1597,14 @@ export function createThreeBoardView({ state }) {
     const group = new THREE.Group();
     group.rotation.y = modelConfig.initialRotationY;
     group.userData = {
+      entityId,
       isModelUnit: true,
       isPlayer,
       tint: isPlayer ? '#047857' : unit.tint,
       unitType: unitTypeKey(unit, isPlayer),
       modelConfig,
       activeAnimation: null,
+      activeModelActionKey: null,
       heroDebug: {
         clipName: null,
         finished: false,
@@ -1456,6 +1621,9 @@ export function createThreeBoardView({ state }) {
       model.scale.setScalar(modelConfig.scale);
       centerModelOnGround(model);
       model.position.y += modelConfig.groundOffset;
+      model.traverse((child) => {
+        child.userData.entityId = entityId;
+      });
       await prepareGltfModel(modelGltf, model, {
         url: modelConfig.modelUrl,
         typeId: isPlayer ? playerModelKey(unit) : null,
@@ -1516,7 +1684,7 @@ export function createThreeBoardView({ state }) {
       return createModelUnitMesh(unit, isPlayer, entityId, modelConfig);
     }
 
-    return createCardUnitMesh(unit, isPlayer);
+    return createCardUnitMesh(unit, isPlayer, entityId);
   }
 
   function updateWalls(walls) {
@@ -1979,6 +2147,10 @@ export function createThreeBoardView({ state }) {
     const bump = bumpOffset(unit, entityId, animations, now);
     const center = tileCenter(drawX, drawY, currentBoard.width, currentBoard.height);
     group.position.set(center.x + bump.x, 0.02, center.z + bump.z);
+    group.userData.tileX = unit.x;
+    group.userData.tileY = unit.y;
+    group.userData.drawX = drawX;
+    group.userData.drawY = drawY;
 
     if (group.userData.isModelUnit) {
       updateModelUnitState(group, movement, modelAction, now);
@@ -2035,6 +2207,55 @@ export function createThreeBoardView({ state }) {
     }
   }
 
+  function unitGroupForHitObject(object) {
+    let current = object;
+    while (current) {
+      const entityId = current.userData?.entityId;
+      if (entityId && unitMeshes.has(entityId)) return unitMeshes.get(entityId);
+      current = current.parent;
+    }
+    return null;
+  }
+
+  function unitPointAt(layout, px, py) {
+    const viewport = syncCamera(layout, performance.now());
+
+    if (
+      px < viewport.x ||
+      py < viewport.y ||
+      px > viewport.x + viewport.w ||
+      py > viewport.y + viewport.h
+    ) {
+      return null;
+    }
+
+    pointer.x = ((px - viewport.x) / viewport.w) * 2 - 1;
+    pointer.y = -(((py - viewport.y) / viewport.h) * 2 - 1);
+    raycaster.setFromCamera(pointer, activeCamera);
+
+    const hits = raycaster.intersectObjects(Array.from(unitMeshes.values()), true);
+    for (const hit of hits) {
+      const group = unitGroupForHitObject(hit.object);
+      if (!group) continue;
+
+      const x = group.userData.tileX;
+      const y = group.userData.tileY;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      if (x < 0 || y < 0 || x >= currentBoard.width || y >= currentBoard.height) continue;
+
+      return {
+        x,
+        y,
+        worldX: hit.point.x,
+        worldZ: hit.point.z,
+        entityId: group.userData.entityId,
+        kind: 'unit',
+      };
+    }
+
+    return null;
+  }
+
   function worldPointAtAny(layout, px, py) {
     const viewport = syncCamera(layout, performance.now());
 
@@ -2070,6 +2291,9 @@ export function createThreeBoardView({ state }) {
         };
       }
     }
+
+    const unitPoint = unitPointAt(layout, px, py);
+    if (unitPoint) return unitPoint;
 
     if (!raycaster.ray.intersectPlane(boardPlane, rayHit)) return null;
 
@@ -2223,6 +2447,7 @@ export function createThreeBoardView({ state }) {
         mixer.update(delta);
       }
       updateIslandWater(delta);
+      updateAnimatedTextures();
 
       const y = currentLayout.sh - viewport.y - viewport.h;
       renderer.setScissorTest(false);

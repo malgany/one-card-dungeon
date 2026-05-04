@@ -145,7 +145,7 @@ describe('game actions', () => {
     expect(state.game.selectedAttackId).toBe(null);
   });
 
-  it('attacks empty cells in range and keeps movement locked while aiming', () => {
+  it('does not spend AP on empty cells while aiming', () => {
     const game = createDungeonLegacyGame();
     game.phase = PHASES.HERO;
     game.monsters = [];
@@ -163,20 +163,13 @@ describe('game actions', () => {
 
     actions.attackTile({ x: 0, y: 4 });
 
-    expect(state.game.apRemaining).toBe(0);
-    expect(state.game.selectedAttackId).toBe(null);
-    expect(state.game.busy).toBe(true);
-    expect(state.game.animations).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        type: 'modelAction',
-        entityId: 'player',
-        animation: 'Hit_A',
-        sourceX: 0,
-        sourceY: 5,
-        targetX: 0,
-        targetY: 4,
-      }),
-    ]));
+    expect(state.game.apRemaining).toBe(5);
+    expect(state.game.selectedAttackId).toBe(game.player.attackSlot.id);
+    expect(state.game.busy).toBe(false);
+    expect(state.game.lastEvent).toBe('Golpe: nenhum inimigo nessa celula.');
+    expect(state.game.animations.some((animation) => {
+      return animation.type === 'modelAction' && animation.entityId === 'player';
+    })).toBe(false);
     expect(state.game.animations.some((animation) => {
       return animation.type === 'bumpAttack' && animation.entityId === 'player';
     })).toBe(false);
@@ -225,6 +218,52 @@ describe('game actions', () => {
     expect(state.game.animations.some((animation) => {
       return animation.type === 'damageShake' && animation.entityId === 'player';
     })).toBe(false);
+  });
+
+  it('plays the player death animation before entering the defeat phase', () => {
+    const monster = createMonster('skeletonMinion', 0, 4, 0);
+    monster.attack = 5;
+    monster.speed = 0;
+    const game = createDungeonLegacyGame();
+    game.phase = PHASES.HERO;
+    game.player = { ...game.player, x: 0, y: 5, health: 3, defenseBase: 0 };
+    game.monsters = [monster];
+    game.turnQueue = ['player', monster.id];
+    const { state, actions } = createActionHarness(game);
+
+    actions.endHeroPhase();
+    vi.advanceTimersByTime(500);
+    vi.advanceTimersByTime(1);
+
+    const deathAction = state.game.animations.find((animation) => {
+      return animation.type === 'modelAction' && animation.entityId === 'player' && animation.animation === 'Death_A';
+    });
+
+    expect(state.game.player.health).toBe(0);
+    expect(state.game.phase).toBe(PHASES.MONSTER_TURN);
+    expect(state.game.busy).toBe(true);
+    expect(deathAction).toMatchObject({
+      sourceX: 0,
+      sourceY: 5,
+      targetX: 0,
+      targetY: 4,
+      duration: TIMING.PLAYER_DEATH_ANIMATION + TIMING.PLAYER_DEFEAT_EXIT_PAUSE,
+    });
+
+    const defeatDelay = TIMING.ATTACK_BUMP_DURATION
+      + TIMING.PLAYER_DAMAGE_ANIMATION
+      + TIMING.PLAYER_DEATH_ANIMATION
+      + TIMING.PLAYER_DEFEAT_EXIT_PAUSE;
+    vi.advanceTimersByTime(defeatDelay - 1);
+
+    expect(state.game.phase).toBe(PHASES.MONSTER_TURN);
+    expect(state.game.banner?.title).not.toBe('Derrota');
+
+    vi.advanceTimersByTime(1);
+
+    expect(state.game.phase).toBe(PHASES.LOST);
+    expect(state.game.busy).toBe(false);
+    expect(state.game.banner.title).toBe('Derrota');
   });
 
   it('wins the game when the final level monster is defeated', () => {

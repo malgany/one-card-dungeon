@@ -702,12 +702,16 @@ export function createGameActions(state) {
     }
 
     if (!getPlayerAttackTiles().has(posKey(targetCell))) {
-      game.selectedAttackId = null;
-      setEvent('Fora do alcance do ataque.');
+      setEvent('Fora do alcance. Escolha uma celula destacada em vermelho.');
       return false;
     }
 
     const target = game.monsters.find((monster) => samePos(monster, targetCell));
+    if (!target) {
+      setEvent(`${attack.name}: nenhum inimigo nessa celula.`);
+      return false;
+    }
+
     const cost = attack.apCost;
     game.apRemaining -= cost;
     game.selectedAttackId = null;
@@ -771,8 +775,8 @@ export function createGameActions(state) {
         type: 'floatingText',
         x: target.x,
         y: target.y,
-        text: `-${damage}`,
-        color: '#b94735',
+        text: damage > 0 ? `-${damage}` : 'DEF',
+        color: damage > 0 ? '#b94735' : '#d9c894',
         startTime: performance.now() + 150,
         duration: 1200
       });
@@ -780,9 +784,7 @@ export function createGameActions(state) {
 
     game.busy = true;
 
-    if (!target) {
-      setEvent(`${attack.name}: ataque em celula vazia. Gasto: ${cost} AP.`);
-    } else if (target.hp <= 0) {
+    if (target.hp <= 0) {
       setEvent(`${target.name} derrotado.`);
     } else {
       const healText = healed > 0 ? ` Suga ${healed} vida.` : '';
@@ -903,26 +905,17 @@ export function createGameActions(state) {
       if (rangeCost <= monster.range && hasLineOfSight(monster, game.player, walls, blockers)) {
         const totalDefense = game.player.defenseBase;
         const damage = getMitigatedDamage(monster.attack, totalDefense);
+        const attackStartTime = performance.now();
         game.player.health = Math.max(0, game.player.health - damage);
 
         setEvent(`${monster.name} atacou! ATQ ${monster.attack} - DEF ${totalDefense} = ${damage} dano.`);
         
         game.animations.push({
-          type: 'floatingText',
-          x: monster.x,
-          y: monster.y,
-          text: `-${monster.attack}`,
-          color: '#d39b32',
-          startTime: performance.now(),
-          duration: 1200
-        });
-
-        game.animations.push({
           type: 'bumpAttack',
           entityId: monster.id,
           targetX: game.player.x,
           targetY: game.player.y,
-          startTime: performance.now(),
+          startTime: attackStartTime,
           duration: TIMING.ATTACK_BUMP_DURATION
         });
 
@@ -934,10 +927,11 @@ export function createGameActions(state) {
           sourceY: monster.y,
           targetX: game.player.x,
           targetY: game.player.y,
-          startTime: performance.now(),
+          startTime: attackStartTime,
           duration: TIMING.PLAYER_ATTACK_ANIMATION
         });
 
+        const playerDamageStartTime = attackStartTime + TIMING.ATTACK_BUMP_DURATION;
         if (damage > 0) {
           game.animations.push({
             type: 'modelAction',
@@ -947,7 +941,7 @@ export function createGameActions(state) {
             sourceY: game.player.y,
             targetX: monster.x,
             targetY: monster.y,
-            startTime: performance.now() + TIMING.ATTACK_BUMP_DURATION,
+            startTime: playerDamageStartTime,
             duration: TIMING.PLAYER_DAMAGE_ANIMATION
           });
         }
@@ -956,9 +950,9 @@ export function createGameActions(state) {
           type: 'floatingText',
           x: game.player.x,
           y: game.player.y,
-          text: `-${damage}`,
-          color: '#b94735',
-          startTime: performance.now() + 150,
+          text: damage > 0 ? `-${damage}` : 'DEF',
+          color: damage > 0 ? '#b94735' : '#d9c894',
+          startTime: attackStartTime + 150,
           duration: 1200
         });
 
@@ -969,9 +963,36 @@ export function createGameActions(state) {
           }
           game.heroTurnStartedAt = null;
           game.heroTurnEndsAt = null;
-          game.phase = PHASES.LOST;
-          game.busy = false;
-          showBanner('Derrota', 'Seu aventureiro caiu na masmorra.', 2000);
+          game.busy = true;
+
+          const deathStartTime = damage > 0
+            ? playerDamageStartTime + TIMING.PLAYER_DAMAGE_ANIMATION
+            : attackStartTime;
+          const deathActionDuration = TIMING.PLAYER_DEATH_ANIMATION + TIMING.PLAYER_DEFEAT_EXIT_PAUSE;
+          const defeatDelay = Math.max(0, deathStartTime - attackStartTime) + deathActionDuration;
+
+          game.animations.push({
+            type: 'modelAction',
+            entityId: 'player',
+            animation: 'Death_A',
+            sourceX: game.player.x,
+            sourceY: game.player.y,
+            targetX: monster.x,
+            targetY: monster.y,
+            startTime: deathStartTime,
+            duration: deathActionDuration
+          });
+
+          setEvent('Seu aventureiro caiu.');
+          window.setTimeout(() => {
+            const currentGame = getGame();
+            if (currentGame !== game || !isCombatMode(currentGame) || currentGame.phase === PHASES.WON) return;
+            if (currentGame.player.health > 0) return;
+
+            currentGame.phase = PHASES.LOST;
+            currentGame.busy = false;
+            showBanner('Derrota', 'Seu aventureiro caiu na masmorra.', 2000);
+          }, defeatDelay);
           return;
         }
       }

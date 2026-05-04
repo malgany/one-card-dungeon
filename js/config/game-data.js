@@ -99,6 +99,7 @@ export const CARD_SOURCES = {
   specter: './assets/characters/skeleton-mage.png',
   skeletonMage: './assets/characters/skeleton-mage.png',
   boss: './assets/characters/skeleton-warrior.png',
+  actionStrike: './assets/ui/actions/strike-punch.png',
 };
 
 export const LEVELS = [
@@ -136,6 +137,8 @@ export const TIMING = {
   ATTACK_BUMP_DURATION: 250,
   PLAYER_ATTACK_ANIMATION: 670,
   PLAYER_DAMAGE_ANIMATION: 870,
+  PLAYER_DEATH_ANIMATION: 800,
+  PLAYER_DEFEAT_EXIT_PAUSE: 700,
   DAMAGE_SHAKE_DURATION: 350,
   HERO_ATTACK_WAIT_TIME: 600, // Wait time after hero attack before busy=false
 };

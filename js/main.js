@@ -22,7 +22,7 @@ const state = {
   mouse: { x: 0, y: 0 },
   suppressClick: false,
   debugZoom: 1.15,
-  debugPanelOpen: DEBUG_CONFIG.SHOW_STATS,
+  debugPanelOpen: false,
   debugPanelPosition: { x: 12, y: 56 },
   debugPanelDragOffset: null,
   debugPanelTab: 'settings',
@@ -61,6 +61,7 @@ const state = {
     showOutlines: false,
     showGrid: false,
     overworldOrthographicCamera: true,
+    overworldWater: true,
   },
 };
 

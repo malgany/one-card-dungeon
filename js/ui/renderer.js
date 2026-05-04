@@ -448,6 +448,41 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     ctx.restore();
   }
 
+  function drawResourceChip(x, y, w, h, type, value, scale = 1) {
+    const isAction = type === 'action';
+    const accent = isAction ? UI_THEME.accent : UI_THEME.success;
+    const stroke = isAction ? '#d9c894' : '#b6c79a';
+    const iconCx = x + 17 * scale;
+    const iconCy = y + h / 2;
+    const iconSize = Math.min(18 * scale, h * 0.72);
+
+    draw.roundRect(x, y, w, h, 5 * scale, 'rgba(7,8,7,0.42)', 'rgba(111,99,66,0.48)');
+    ctx.save();
+    ctx.lineWidth = Math.max(1.5, 1.8 * scale);
+    ctx.fillStyle = isAction ? UI_THEME.accentDark : UI_THEME.successDark;
+    ctx.strokeStyle = stroke;
+    if (isAction) {
+      beginStarPath(iconCx, iconCy, iconSize * 0.48, iconSize * 0.24);
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(iconCx, iconCy - iconSize * 0.48);
+      ctx.lineTo(iconCx + iconSize * 0.48, iconCy);
+      ctx.lineTo(iconCx, iconCy + iconSize * 0.48);
+      ctx.lineTo(iconCx - iconSize * 0.48, iconCy);
+      ctx.closePath();
+    }
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    draw.drawText(String(value), x + w - 13 * scale, y + h / 2, {
+      align: 'right',
+      baseline: 'middle',
+      font: `900 ${Math.max(11, Math.floor(15 * scale))}px Inter, sans-serif`,
+      color: accent,
+    });
+  }
+
   function drawClockIcon(cx, cy, radius, color = UI_THEME.textMuted) {
     ctx.save();
     ctx.beginPath();
@@ -543,26 +578,20 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     const clickable = activeTurn && !game.busy && !expired;
     const palette = heroTurnPalette(activeTurn, heroTimer?.remainingMs ?? 0);
-    const outerPad = compact ? 5 : 6;
-    const controlH = compact ? 64 : 84;
-    const headerH = compact ? 20 : 24;
-    const headerY = y + outerPad;
-    const headerX = x + outerPad;
-    const headerW = w - outerPad * 2;
-    const panelRadius = compact ? 6 : 8;
-    const badgeW = compact ? 34 : 38;
-    const badgeH = compact ? 18 : 20;
-    const timerH = compact ? 16 : 18;
-    const progressH = compact ? 3 : 4;
-    const badgeX = headerX + 3;
-    const badgeY = headerY + Math.floor((headerH - badgeH) / 2);
-    const timerX = badgeX + badgeW + (compact ? 6 : 8);
-    const timerY = headerY + Math.floor((headerH - timerH) / 2);
-    const timerW = Math.max(54, headerX + headerW - timerX - (compact ? 4 : 6));
-    const buttonX = x + outerPad;
-    const buttonW = w - outerPad * 2;
-    const buttonY = headerY + headerH + (compact ? 5 : 6);
-    const buttonH = Math.max(compact ? 24 : 34, y + controlH - buttonY - outerPad);
+    const controlH = compact ? 58 : 70;
+    const rowH = compact ? 22 : 24;
+    const buttonGap = compact ? 6 : 7;
+    const buttonH = compact ? 30 : 38;
+    const rowX = x;
+    const rowY = y;
+    const rowW = w;
+    const timerX = rowX + (compact ? 38 : 42);
+    const timerY = rowY + (compact ? 5 : 6);
+    const timerW = Math.max(58, rowX + rowW - timerX - (compact ? 8 : 10));
+    const progressH = compact ? 4 : 5;
+    const buttonX = x;
+    const buttonW = w;
+    const buttonY = rowY + rowH + buttonGap;
     const buttonActive = activeTurn && !game.busy && !expired;
     const hovered = clickable && layout.pointInRect(state.mouse.x, state.mouse.y, { x, y, w, h: controlH });
     const buttonGradient = ctx.createLinearGradient(buttonX, buttonY, buttonX, buttonY + buttonH);
@@ -574,56 +603,43 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     buttonGradient.addColorStop(0.52, buttonMid);
     buttonGradient.addColorStop(1, buttonBottom);
 
-    draw.roundRect(x, y, w, controlH, panelRadius, UI_THEME.overlay, 'rgba(111,99,66,0.72)');
-    draw.roundRect(headerX, headerY, headerW, headerH, 5, 'rgba(32,34,25,0.92)', 'rgba(74,70,56,0.95)');
-
-    draw.roundRect(badgeX, badgeY, badgeW, badgeH, 4, 'rgba(23,25,18,0.95)', 'rgba(111,99,66,0.9)');
-    drawClockIcon(badgeX + 10, badgeY + badgeH / 2, Math.max(4.5, badgeH * 0.24), UI_THEME.textMuted);
-    drawShadowedText(String(game.turnCount), badgeX + badgeW - 10, badgeY + badgeH / 2 + 4, {
+    draw.roundRect(rowX, rowY, rowW, rowH, 6, 'rgba(7,8,7,0.64)', 'rgba(111,99,66,0.54)');
+    drawClockIcon(rowX + (compact ? 12 : 13), rowY + rowH / 2, compact ? 5 : 5.5, UI_THEME.textMuted);
+    drawShadowedText(String(game.turnCount), rowX + (compact ? 27 : 30), rowY + rowH / 2 + 3, {
       align: 'center',
       baseline: 'middle',
-      font: `900 ${Math.max(10, Math.floor(badgeH * 0.55))}px Inter, sans-serif`,
+      font: `900 ${compact ? 12 : 13}px Inter, sans-serif`,
       color: UI_THEME.text,
     }, 'rgba(0,0,0,0.9)');
 
-    draw.roundRect(timerX, timerY, timerW, timerH, 10, palette.timerTrack, palette.timerBorder);
-
     if (activeTurn && heroTimer) {
-      const innerPad = compact ? 3 : 4;
-      const innerX = timerX + innerPad;
-      const innerY = timerY + innerPad;
-      const innerW = Math.max(0, timerW - innerPad * 2);
-      const innerH = Math.max(0, timerH - innerPad * 2);
-      const barH = progressH;
-      const barY = timerY + timerH - barH - (compact ? 2 : 3);
-      const barW = Math.max(0, timerW - 14);
+      const barW = Math.max(0, timerW);
       const fillW = Math.min(barW, Math.max(2, barW * heroTimer.progress));
 
-      draw.roundRect(innerX, innerY, innerW, innerH, 4, 'rgba(7,8,7,0.55)', null);
-
-      draw.roundRect(timerX + 7, barY, barW, barH, barH / 2, 'rgba(23,25,18,0.78)', null);
+      draw.roundRect(timerX, timerY, barW, progressH, progressH / 2, palette.timerTrack, palette.timerBorder);
       if (fillW > 0) {
-        draw.roundRect(timerX + 7, barY, fillW, barH, barH / 2, palette.timerFill, null);
+        draw.roundRect(timerX, timerY, fillW, progressH, progressH / 2, palette.timerFill, null);
       }
 
-      drawShadowedText(`${heroTimer.remainingSeconds}s`, timerX + timerW / 2, timerY + timerH / 2 + (compact ? 1 : 2), {
+      drawShadowedText(`${heroTimer.remainingSeconds}s`, timerX + timerW / 2, rowY + rowH / 2 + 3, {
         align: 'center',
         baseline: 'middle',
-        font: `900 ${compact ? 13 : 15}px Inter, sans-serif`,
+        font: `900 ${compact ? 12 : 13}px Inter, sans-serif`,
         color: palette.timerText,
       }, 'rgba(0,0,0,0.85)');
     } else {
-      drawShadowedText('AGUARDE', timerX + timerW / 2, timerY + timerH / 2 + (compact ? 1 : 2), {
+      draw.roundRect(timerX, timerY, timerW, progressH, progressH / 2, palette.timerTrack, palette.timerBorder);
+      drawShadowedText('AGUARDE', timerX + timerW / 2, rowY + rowH / 2 + 3, {
         align: 'center',
         baseline: 'middle',
-        font: `900 ${compact ? 11 : 13}px Inter, sans-serif`,
+        font: `900 ${compact ? 11 : 12}px Inter, sans-serif`,
         color: palette.timerText,
       }, 'rgba(0,0,0,0.85)');
     }
 
-    draw.roundRect(buttonX, buttonY, buttonW, buttonH, 6, buttonGradient, buttonActive ? palette.buttonStroke : UI_THEME.border0);
+    draw.roundRect(buttonX, buttonY, buttonW, buttonH, 6, buttonGradient, buttonActive ? palette.buttonStroke : 'rgba(111,99,66,0.52)');
     if (buttonActive) {
-      draw.roundRect(buttonX + 2, buttonY + 2, buttonW - 4, Math.max(4, Math.floor(buttonH * 0.24)), 4, 'rgba(242,234,215,0.14)', null);
+      draw.roundRect(buttonX + 2, buttonY + 2, buttonW - 4, Math.max(3, Math.floor(buttonH * 0.18)), 4, 'rgba(242,234,215,0.12)', null);
     }
 
     drawShadowedText('FIM DE TURNO', buttonX + buttonW / 2, buttonY + buttonH / 2 + (compact ? 2 : 3), {
@@ -1408,26 +1424,19 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
   function drawPlayerResourceHud(x, y, scale = 1) {
     const game = state.game;
-    const width = 154 * scale;
-    const height = 94 * scale;
-    const heartSize = 74 * scale;
-    const heartCx = x + width / 2;
-    const heartCy = y + 38 * scale;
+    const width = 166 * scale;
+    const height = 76 * scale;
+    const heartSize = 54 * scale;
+    const heartCx = x + 37 * scale;
+    const heartCy = y + 37 * scale;
+    const chipX = x + 78 * scale;
+    const chipW = width - 88 * scale;
+    const chipH = 24 * scale;
 
-    draw.roundRect(x, y + 8 * scale, width, height - 8 * scale, 8 * scale, 'rgba(23,25,18,0.74)', UI_THEME.border0);
+    draw.roundRect(x, y, width, height, 7 * scale, 'rgba(7,8,7,0.46)', 'rgba(111,99,66,0.58)');
     drawHeartMeter(heartCx, heartCy, heartSize, game.player.health, game.player.maxHealth);
-    drawActionPointBadge(
-      heartCx - 45 * scale,
-      heartCy + 36 * scale,
-      34 * scale,
-      game.apRemaining ?? game.player.apMax,
-    );
-    drawMovementPointBadge(
-      heartCx + 45 * scale,
-      heartCy + 36 * scale,
-      34 * scale,
-      game.speedRemaining ?? game.player.speedBase,
-    );
+    drawResourceChip(chipX, y + 12 * scale, chipW, chipH, 'action', game.apRemaining ?? game.player.apMax, scale);
+    drawResourceChip(chipX, y + 42 * scale, chipW, chipH, 'move', game.speedRemaining ?? game.player.speedBase, scale);
 
     return width;
   }
@@ -1452,16 +1461,18 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const attack = actions.getEquippedAttack(game);
     const attackSelected = game.selectedAttackId === attack.id;
     const attackDisabled = game.phase !== PHASES.HERO || game.busy || game.apRemaining < attack.apCost;
-    const slotGap = Math.max(6, Math.floor(slotSize * 0.16));
+    const lacksAp = game.phase === PHASES.HERO && !game.busy && game.apRemaining < attack.apCost;
+    const slotGap = Math.max(8, Math.floor(slotSize * 0.18));
     const slotCount = clamp(Math.floor((availableW + slotGap) / (slotSize + slotGap)), 3, maxSlots);
     const slotsY = y + (showLabel ? 22 : 0);
+    let hoveredAttackSlot = null;
 
     if (showLabel) {
       beginStarPath(x + 8, y + 8, 6, 3);
       ctx.fillStyle = UI_THEME.textMuted;
       ctx.fill();
-      draw.drawText('FEITICOS', x + 20, y + 13, {
-        font: '700 12px Inter, sans-serif',
+      draw.drawText('ACOES', x + 20, y + 13, {
+        font: '800 12px Inter, sans-serif',
         color: UI_THEME.textMuted,
       });
     }
@@ -1478,21 +1489,46 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
           ? UI_THEME.accentDark
           : hovered && !attackDisabled
             ? '#73501d'
-            : UI_THEME.surface1;
-      const stroke = selected ? '#e6c06f' : filled ? UI_THEME.accent : UI_THEME.border0;
+            : lacksAp
+              ? 'rgba(65,24,20,0.82)'
+              : attackDisabled
+                ? 'rgba(23,25,18,0.62)'
+              : UI_THEME.surface1;
+      const stroke = selected
+        ? '#e6c06f'
+        : filled && lacksAp
+          ? UI_THEME.danger
+          : filled
+            ? UI_THEME.accent
+            : UI_THEME.border0;
 
       draw.roundRect(sx, slotsY, slotSize, slotSize, Math.min(6, slotSize * 0.18), fill, stroke);
 
       if (filled) {
-        draw.drawText('\u270A', sx + slotSize / 2, slotsY + slotSize * 0.62, {
-          align: 'center',
-          font: `${Math.floor(slotSize * 0.52)}px Inter, sans-serif`,
-          color: attackDisabled ? UI_THEME.textDim : UI_THEME.text,
-        });
+        if (hovered) hoveredAttackSlot = slot;
 
-        if (!attackDisabled) {
-          state.game.buttons.push({ ...slot, onClick: actions.toggleAttackSelection });
+        const iconPad = Math.max(2, Math.floor(slotSize * 0.06));
+        ctx.save();
+        ctx.globalAlpha = attackDisabled ? 0.68 : 1;
+        const drewIcon = draw.drawImageCover(
+          cardImages.actionStrike,
+          sx + iconPad,
+          slotsY + iconPad,
+          slotSize - iconPad * 2,
+          slotSize - iconPad * 2,
+        );
+        if (!drewIcon) {
+          drawSpellGlyph(sx + slotSize / 2, slotsY + slotSize * 0.54, slotSize * 0.48, attackDisabled);
         }
+        ctx.restore();
+
+        if (lacksAp) {
+          ctx.save();
+          draw.roundRect(sx + 2, slotsY + 2, slotSize - 4, slotSize - 4, Math.min(5, slotSize * 0.14), 'rgba(185,71,53,0.24)', null);
+          ctx.restore();
+        }
+
+        state.game.buttons.push({ ...slot, onClick: actions.toggleAttackSelection });
       } else {
         ctx.save();
         ctx.globalAlpha = 0.7;
@@ -1502,6 +1538,29 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         ctx.fill();
         ctx.restore();
       }
+    }
+
+    if (hoveredAttackSlot) {
+      const waiting = game.phase !== PHASES.HERO || game.busy;
+      const text = waiting
+        ? 'Aguarde sua vez.'
+        : lacksAp
+          ? `${attack.name}: precisa de ${attack.apCost} AP.`
+          : `${attack.name}: ${attack.apCost} AP, ${attack.damage} dano.`;
+      ctx.save();
+      ctx.font = '800 11px Inter, sans-serif';
+      const tipW = Math.min(220, Math.max(132, ctx.measureText(text).width + 18));
+      const tipH = 24;
+      const screenW = layout.getLayout?.().sw || window.innerWidth || 9999;
+      const xPos = clamp(hoveredAttackSlot.x + hoveredAttackSlot.w / 2 - tipW / 2, 8, screenW - tipW - 8);
+      const yPos = Math.max(8, hoveredAttackSlot.y - tipH - 8);
+      draw.roundRect(xPos, yPos, tipW, tipH, 5, 'rgba(7,8,7,0.94)', lacksAp ? UI_THEME.danger : UI_THEME.accent);
+      draw.drawText(text, xPos + tipW / 2, yPos + 16, {
+        align: 'center',
+        font: '800 11px Inter, sans-serif',
+        color: UI_THEME.text,
+      });
+      ctx.restore();
     }
   }
 
@@ -1515,7 +1574,8 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
           name: getPlayerName(game),
           hp: game.player.health,
           maxHp: game.player.maxHealth,
-          emoji: '\uD83E\uDDD9',
+          image: getPlayerCardImage(game),
+          fallback: 'P',
           tint: UI_THEME.success,
         };
       }
@@ -1527,10 +1587,31 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         name: monster.name,
         hp: monster.hp,
         maxHp: monster.maxHp,
-        emoji: monster.emoji,
+        image: cardImages[monster.type] || null,
+        fallback: 'M',
         tint: monster.tint,
       };
     }).filter(Boolean);
+  }
+
+  function drawTurnQueuePortrait(entry, x, y, size, radius) {
+    const image = entry.image;
+
+    ctx.save();
+    draw.roundRect(x, y, size, size, radius, 'rgba(7,8,7,0.42)', null);
+    ctx.clip();
+
+    const drew = draw.drawImageCover(image, x, y, size, size);
+    if (!drew) {
+      draw.drawText(entry.fallback || '?', x + size / 2, y + size / 2 + 1, {
+        align: 'center',
+        baseline: 'middle',
+        font: `900 ${Math.floor(size * 0.5)}px Inter, sans-serif`,
+        color: UI_THEME.text,
+      });
+    }
+
+    ctx.restore();
   }
 
   function turnQueueWidth(game, itemSize, gap) {
@@ -1597,19 +1678,19 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       const hpBarH = Math.max(10, cardSize - (compact ? 6 : 8));
       const hpBarX = cardX + cardSize - hpBarW - contentPad;
       const hpBarY = cardY + Math.floor((cardSize - hpBarH) / 2);
-      const contentCx = cardX + (cardSize - hpBarW - contentPad * 2) / 2;
-      const contentCy = cardY + cardSize / 2;
       const fill = isCurrent ? 'rgba(154,122,50,0.34)' : 'rgba(23,25,18,0.78)';
       const stroke = isCurrent ? UI_THEME.accent : UI_THEME.border0;
 
       draw.roundRect(cardX, cardY, cardSize, cardSize, cardRadius, fill, stroke);
+      drawTurnQueuePortrait(
+        entry,
+        cardX + 2,
+        cardY + 2,
+        cardSize - 4,
+        Math.max(3, cardRadius - 1),
+      );
+      draw.roundRect(cardX, cardY, cardSize, cardSize, cardRadius, null, stroke);
       drawTurnQueueHpBar(hpBarX, hpBarY, hpBarW, hpBarH, entry.hp, entry.maxHp);
-      draw.drawText(entry.emoji || 'P', contentCx, contentCy + 1, {
-        align: 'center',
-        baseline: 'middle',
-        font: `700 ${Math.floor(cardSize * 0.52)}px Inter, sans-serif`,
-        color: UI_THEME.text,
-      });
 
       currentX += itemSize + gap;
     }
@@ -1658,7 +1739,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const spellX = uiX + hudW + 18;
     const spellAvailableW = Math.max(150, btnX - spellX - 18);
 
-    drawSpellBar(spellX, bottomY + 20, spellAvailableW, tight ? 40 : 46, 8, true);
+    drawSpellBar(spellX, bottomY + 20, spellAvailableW, tight ? 40 : 46, 6, true);
     drawHeroTurnControl(btnX, btnY, btnW, now, false);
   }
 
@@ -1900,18 +1981,32 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const game = state.game;
     const attack = actions.getEquippedAttack(game);
     if (game.phase !== PHASES.HERO || game.busy || game.selectedAttackId !== attack.id) return;
+    if (!layout.hoveredTile()) return;
 
-    const size = 38;
-    const x = state.mouse.x + 16;
-    const y = state.mouse.y + 16;
+    const size = 24;
+    const x = state.mouse.x + 18;
+    const y = state.mouse.y + 18;
 
     ctx.save();
-    ctx.globalAlpha = 0.94;
-    draw.roundRect(x, y, size, size, 6, UI_THEME.accentDark, '#e6c06f');
-    draw.drawText('✊', x + size / 2, y + 25, {
+    ctx.globalAlpha = 0.92;
+    ctx.strokeStyle = '#e6c06f';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x + size / 2, y + size / 2, size * 0.36, 0, Math.PI * 2);
+    ctx.moveTo(x + size / 2, y + 2);
+    ctx.lineTo(x + size / 2, y + 8);
+    ctx.moveTo(x + size / 2, y + size - 8);
+    ctx.lineTo(x + size / 2, y + size - 2);
+    ctx.moveTo(x + 2, y + size / 2);
+    ctx.lineTo(x + 8, y + size / 2);
+    ctx.moveTo(x + size - 8, y + size / 2);
+    ctx.lineTo(x + size - 2, y + size / 2);
+    ctx.stroke();
+    draw.roundRect(x + size + 5, y + 3, 56, 18, 5, 'rgba(7,8,7,0.9)', UI_THEME.accent);
+    draw.drawText('ALVO', x + size + 33, y + 16, {
       align: 'center',
-      font: '22px Inter, sans-serif',
-      color: UI_THEME.text,
+      font: '900 10px Inter, sans-serif',
+      color: UI_THEME.accent,
     });
     ctx.restore();
   }
@@ -2123,7 +2218,6 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     ctx.fillStyle = background;
     ctx.fillRect(-20, -20, currentLayout.sw + 40, currentLayout.sh + 40);
 
-    drawSidebar(currentLayout);
     draw.roundRect(
       currentLayout.boardX - 14,
       currentLayout.boardY - 14,
@@ -4106,6 +4200,18 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       checked: !!state.visuals.overworldOrthographicCamera,
       onChange: () => {
         state.visuals.overworldOrthographicCamera = !state.visuals.overworldOrthographicCamera;
+      },
+    });
+
+    cy += 34;
+    drawDebugToggle({
+      x: panelX + 16,
+      y: cy,
+      w: panelW - 32,
+      label: 'Agua',
+      checked: state.visuals.overworldWater !== false,
+      onChange: () => {
+        state.visuals.overworldWater = !(state.visuals.overworldWater !== false);
       },
     });
   }
