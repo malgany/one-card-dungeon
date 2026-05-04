@@ -22,6 +22,8 @@ const COMPACT_OVERWORLD_ORTHO_VIEW_HEIGHT = 8.16;
 const FLOOR_COLORS = ['#353124', '#252217'];
 const SPECULAR_GLOSSINESS_EXTENSION = 'KHR_materials_pbrSpecularGlossiness';
 const DEBUG_MODEL_DEFAULT_SCALE = 0.5;
+const TERRAIN_CUBE_HEIGHT = 0.62;
+const MAX_DEBUG_CUBES = 2000;
 const HIGHLIGHT_ORDER = [
   'hover',
   'playerAttack',
@@ -629,6 +631,18 @@ export function createThreeBoardView({ state }) {
 
   const overworldSideMaterial = new THREE.MeshStandardMaterial({ map: wallSideTexture, roughness: 0.85 });
   const overworldTopMaterial = new THREE.MeshStandardMaterial({ map: wallTopTexture, roughness: 0.85 });
+  const terrainCubeSideMaterial = new THREE.MeshStandardMaterial({
+    color: colorFromHex('#b7854f'),
+    emissive: colorFromHex('#2b1a0d'),
+    roughness: 0.88,
+    metalness: 0.02,
+  });
+  const terrainCubeBottomMaterial = new THREE.MeshStandardMaterial({
+    color: colorFromHex('#5b3a22'),
+    emissive: colorFromHex('#160c06'),
+    roughness: 0.95,
+    metalness: 0.01,
+  });
 
   const overworldWallMaterials = [
     overworldSideMaterial, // +x
@@ -656,6 +670,15 @@ export function createThreeBoardView({ state }) {
   const debugEditorMeshes = new Map();
   const wallGeometry = new THREE.BoxGeometry(0.9, 0.54, 0.9);
   const debugTextureGeometry = new THREE.PlaneGeometry(1, 1);
+  const terrainCubeGeometry = new THREE.BoxGeometry(1.01, TERRAIN_CUBE_HEIGHT, 1.01);
+  const terrainCubeMaterials = [
+    terrainCubeSideMaterial,
+    terrainCubeSideMaterial,
+    groundMaterial,
+    terrainCubeBottomMaterial,
+    terrainCubeSideMaterial,
+    terrainCubeSideMaterial,
+  ];
   
   const base = new THREE.Mesh(new THREE.BoxGeometry(1, 0.18, 1), baseMaterial);
   base.position.y = -0.13;
@@ -696,6 +719,36 @@ export function createThreeBoardView({ state }) {
   tileInstance.receiveShadow = true;
   tileInstance.frustumCulled = true;
   boardGroup.add(tileInstance);
+
+  const terrainCubeInstance = new THREE.InstancedMesh(terrainCubeGeometry, terrainCubeMaterials, MAX_TILES);
+  terrainCubeInstance.castShadow = true;
+  terrainCubeInstance.receiveShadow = true;
+  terrainCubeInstance.frustumCulled = true;
+  boardGroup.add(terrainCubeInstance);
+
+  const debugCubeInstance = new THREE.InstancedMesh(terrainCubeGeometry, terrainCubeMaterials, MAX_DEBUG_CUBES);
+  debugCubeInstance.castShadow = true;
+  debugCubeInstance.receiveShadow = true;
+  debugCubeInstance.frustumCulled = true;
+  debugCubeInstance.count = 0;
+  boardGroup.add(debugCubeInstance);
+  const debugCubeHitTargets = [];
+  const debugCubeTopHeights = new Map();
+
+  const debugCubeSelectionMarker = new THREE.Mesh(
+    new THREE.RingGeometry(0.44, 0.52, 36),
+    new THREE.MeshBasicMaterial({
+      color: colorFromHex('#facc15'),
+      transparent: true,
+      opacity: 0.92,
+      depthTest: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  debugCubeSelectionMarker.rotation.x = -Math.PI / 2;
+  debugCubeSelectionMarker.renderOrder = 46;
+  debugCubeSelectionMarker.visible = false;
+  boardGroup.add(debugCubeSelectionMarker);
 
   const gridMaterial = new THREE.LineBasicMaterial({
     color: colorFromHex('#e0f2fe'),
@@ -872,6 +925,7 @@ export function createThreeBoardView({ state }) {
   function syncBoardGeometry(width = BOARD_SIZE, height = BOARD_SIZE) {
     const isOverworld = state.game.mode === GAME_MODES.OVERWORLD;
     const hasGround = isOverworld && syncGroundMaterial();
+    const useCubeTerrain = isOverworld;
     const terrain = isOverworld ? currentOverworldTerrain() : null;
     const terrainId = terrain?.id || null;
     const showGrid = !!state.visuals?.showGrid;
@@ -893,21 +947,40 @@ export function createThreeBoardView({ state }) {
     currentBoard.showGrid = showGrid;
 
     base.scale.set(width + 0.55, 1, height + 0.55);
+    base.visible = !useCubeTerrain;
     syncGridLines(width, height);
 
-    // Update ground plane
     groundPlane.scale.set(width, height, 1);
     groundPlane.position.set(0, 0.01, 0);
-    groundPlane.visible = hasGround;
-    if (groundMaterial.map) {
-      groundMaterial.map.repeat.set(width, height);
-      groundMaterial.map.needsUpdate = true;
+    groundPlane.visible = hasGround && !useCubeTerrain;
+
+    tileInstance.visible = !hasGround && !useCubeTerrain;
+    terrainCubeInstance.visible = useCubeTerrain;
+
+    if (useCubeTerrain) {
+      let count = 0;
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          if (count >= MAX_TILES) break;
+          const center = tileCenter(x, y, width, height);
+
+          dummy.position.set(center.x, -TERRAIN_CUBE_HEIGHT / 2, center.z);
+          dummy.scale.set(1, 1, 1);
+          dummy.updateMatrix();
+          terrainCubeInstance.setMatrixAt(count, dummy.matrix);
+          terrainCubeInstance.setColorAt(count, colorFromHex('#ffffff'));
+
+          count += 1;
+        }
+      }
+      terrainCubeInstance.count = count;
+      terrainCubeInstance.instanceMatrix.needsUpdate = true;
+      terrainCubeInstance.instanceColor.needsUpdate = true;
+    } else {
+      terrainCubeInstance.count = 0;
     }
 
-    // Toggle tiles
-    tileInstance.visible = !hasGround;
-
-    if (!hasGround) {
+    if (!hasGround && !useCubeTerrain) {
       let count = 0;
       for (let y = 0; y < height; y += 1) {
         for (let x = 0; x < width; x += 1) {
@@ -926,6 +999,8 @@ export function createThreeBoardView({ state }) {
       tileInstance.count = count;
       tileInstance.instanceMatrix.needsUpdate = true;
       tileInstance.instanceColor.needsUpdate = true;
+    } else {
+      tileInstance.count = 0;
     }
 
     // Always update highlights (on top of ground/tiles)
@@ -1448,6 +1523,54 @@ export function createThreeBoardView({ state }) {
     }
   }
 
+  function updateDebugCubes() {
+    const debugCubes = state.debugCubes;
+    const mapId = currentDebugMapId();
+    const placements = Array.isArray(debugCubes?.placements) ? debugCubes.placements : [];
+    let count = 0;
+    let selected = null;
+    debugCubeHitTargets.length = 0;
+    debugCubeTopHeights.clear();
+
+    for (const cube of placements) {
+      if (cube.mapId !== mapId || count >= MAX_DEBUG_CUBES) continue;
+      const center = tileCenter(cube.x, cube.y, currentBoard.width, currentBoard.height);
+      const level = Math.max(0, cube.level ?? 0);
+      const topHeight = TERRAIN_CUBE_HEIGHT * (level + 1) + 0.055;
+      const tileKey = keyFor(cube.x, cube.y);
+
+      dummy.position.set(center.x, TERRAIN_CUBE_HEIGHT * (level + 0.5), center.z);
+      dummy.scale.set(1, 1, 1);
+      dummy.updateMatrix();
+      debugCubeInstance.setMatrixAt(count, dummy.matrix);
+      debugCubeInstance.setColorAt(count, colorFromHex('#ffffff'));
+      debugCubeHitTargets[count] = cube;
+      debugCubeTopHeights.set(tileKey, Math.max(debugCubeTopHeights.get(tileKey) ?? 0.055, topHeight));
+      count += 1;
+
+      if (cube.id === debugCubes?.selectedCubeId) selected = cube;
+    }
+
+    debugCubeInstance.count = count;
+    debugCubeInstance.instanceMatrix.needsUpdate = true;
+    debugCubeInstance.computeBoundingBox();
+    debugCubeInstance.computeBoundingSphere();
+    if (debugCubeInstance.instanceColor) debugCubeInstance.instanceColor.needsUpdate = true;
+
+    if (selected) {
+      const center = tileCenter(selected.x, selected.y, currentBoard.width, currentBoard.height);
+      const level = Math.max(0, selected.level ?? 0);
+      debugCubeSelectionMarker.position.set(center.x, TERRAIN_CUBE_HEIGHT * (level + 1) + 0.012, center.z);
+      debugCubeSelectionMarker.visible = true;
+    } else {
+      debugCubeSelectionMarker.visible = false;
+    }
+  }
+
+  function debugCubeHighlightHeight(x, y) {
+    return debugCubeTopHeights.get(keyFor(x, y)) ?? 0.055;
+  }
+
   function updateHighlights({
     hoverTile,
     reachable,
@@ -1481,7 +1604,7 @@ export function createThreeBoardView({ state }) {
         }
 
         const center = tileCenter(x, y, width, height);
-        dummy.position.set(center.x, 0.055, center.z);
+        dummy.position.set(center.x, debugCubeHighlightHeight(x, y), center.z);
         dummy.updateMatrix();
         highlightInstance.setMatrixAt(count, dummy.matrix);
         count += 1;
@@ -1637,6 +1760,26 @@ export function createThreeBoardView({ state }) {
     pointer.y = -(((py - viewport.y) / viewport.h) * 2 - 1);
     raycaster.setFromCamera(pointer, activeCamera);
 
+    if (debugCubeInstance.count > 0) {
+      const cubeHits = raycaster.intersectObject(debugCubeInstance, false);
+      const cubeHit = cubeHits.find((hit) => {
+        return Number.isInteger(hit.instanceId) && debugCubeHitTargets[hit.instanceId];
+      });
+
+      if (cubeHit) {
+        const cube = debugCubeHitTargets[cubeHit.instanceId];
+        return {
+          x: cube.x,
+          y: cube.y,
+          worldX: cubeHit.point.x,
+          worldZ: cubeHit.point.z,
+          cubeId: cube.id,
+          cubeLevel: Math.max(0, cube.level ?? 0),
+          kind: 'debugCube',
+        };
+      }
+    }
+
     if (!raycaster.ray.intersectPlane(boardPlane, rayHit)) return null;
 
     const x = Math.floor(rayHit.x + currentBoard.width / 2);
@@ -1723,6 +1866,7 @@ export function createThreeBoardView({ state }) {
       updateWalls(walls);
       updateWorldObjects(objects);
       updateDebugEditorModels();
+      updateDebugCubes();
       updateHighlights({
         hoverTile,
         reachable,

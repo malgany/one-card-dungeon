@@ -36,6 +36,7 @@ const TEXTURE_OUTSIDE_BOARD_MULTIPLIER = 2;
 const DEBUG_PANEL_MARGIN = 12;
 const DEBUG_PANEL_MINIMIZED_Y = 12;
 const DEBUG_PANEL_OPEN_TAB_OVERHANG = 28;
+const DEBUG_CUBE_HEIGHT = 0.62;
 
 export function getAnimationEndTime(anim) {
   const startTime = Number.isFinite(anim.startTime) ? anim.startTime : 0;
@@ -113,6 +114,17 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     if (!state.debugHero) state.debugHero = {};
     if (state.debugHero.selectedAnimationId === undefined) state.debugHero.selectedAnimationId = null;
     return state.debugHero;
+  }
+
+  function ensureDebugCubes() {
+    if (!state.debugCubes) state.debugCubes = {};
+    const debugCubes = state.debugCubes;
+    if (!Array.isArray(debugCubes.placements)) debugCubes.placements = [];
+    if (debugCubes.enabled === undefined) debugCubes.enabled = false;
+    if (debugCubes.selectedCubeId === undefined) debugCubes.selectedCubeId = null;
+    if (!Number.isFinite(debugCubes.lastCopiedAt)) debugCubes.lastCopiedAt = 0;
+    if (!Number.isFinite(debugCubes.listScroll)) debugCubes.listScroll = 0;
+    return debugCubes;
   }
 
   function syncDebugHeroOverlay(bounds = null) {
@@ -2177,6 +2189,65 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     }
   }
 
+  function selectedDebugCube() {
+    const debugCubes = ensureDebugCubes();
+    const currentMapId = currentEditorMapId();
+    return debugCubes.placements.find((cube) => {
+      return cube.id === debugCubes.selectedCubeId && cube.mapId === currentMapId;
+    }) || null;
+  }
+
+  function removeSelectedDebugCube() {
+    const debugCubes = ensureDebugCubes();
+    const selected = selectedDebugCube();
+    if (!selected) return;
+
+    removeDebugCube(selected.id);
+  }
+
+  function removeDebugCube(cubeId) {
+    const debugCubes = ensureDebugCubes();
+    const index = debugCubes.placements.findIndex((cube) => cube.id === cubeId);
+    if (index >= 0) debugCubes.placements.splice(index, 1);
+    if (debugCubes.selectedCubeId === cubeId) debugCubes.selectedCubeId = null;
+  }
+
+  function currentDebugCubes() {
+    const debugCubes = ensureDebugCubes();
+    const currentMapId = currentEditorMapId();
+    return debugCubes.placements
+      .filter((cube) => !currentMapId || cube.mapId === currentMapId)
+      .slice()
+      .sort((a, b) => {
+        return (a.y - b.y) || (a.x - b.x) || ((a.level ?? 0) - (b.level ?? 0));
+      });
+  }
+
+  function drawSelectedDebugCubeDelete(currentLayout) {
+    const cube = selectedDebugCube();
+    if (!cube) return;
+
+    const level = Math.max(0, cube.level ?? 0);
+    const point = screenPointForTile(currentLayout, cube.x, cube.y, DEBUG_CUBE_HEIGHT * (level + 1) + 0.28);
+    const size = 30;
+    const x = clamp(point.x + 8, 8, currentLayout.sw - size - 8);
+    const y = clamp(point.y - size - 8, 8, currentLayout.sh - size - 8);
+
+    draw.roundRect(x, y, size, size, 6, UI_THEME.dangerDark, '#fca5a5');
+    draw.drawText('🗑', x + size / 2, y + 20, {
+      align: 'center',
+      font: '16px Inter, sans-serif',
+      color: UI_THEME.text,
+    });
+    state.game.buttons.push({
+      x,
+      y,
+      w: size,
+      h: size,
+      onClick: removeSelectedDebugCube,
+    });
+  }
+
   function getDebugMemoryLabel() {
     if (!window.performance?.memory) return 'N/A';
     return `${Math.round(window.performance.memory.usedJSHeapSize / 1048576)} MB`;
@@ -2515,6 +2586,34 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     }
   }
 
+  function debugCubeSummary(cube) {
+    if (!cube) return '';
+    return [
+      `Mapa: ${cube.mapId}`,
+      'Tipo: Cubo',
+      `Tile: ${cube.x},${cube.y}`,
+      `Nivel: ${cube.level ?? 0}`,
+    ].join('\n');
+  }
+
+  function copyAllDebugCubeSummaries() {
+    const debugCubes = ensureDebugCubes();
+    const summary = debugCubes.placements
+      .map((cube) => debugCubeSummary(cube))
+      .filter(Boolean)
+      .join('\n\n\n');
+    if (!summary) return;
+
+    debugCubes.lastCopiedAt = performance.now();
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(summary).catch(() => {
+        window.prompt('Resumo dos cubos', summary);
+      });
+    } else {
+      window.prompt('Resumo dos cubos', summary);
+    }
+  }
+
   function visibleAssetTreeRows(libraryItems, expandedFolders) {
     const rows = [];
     const sortedItems = libraryItems;
@@ -2662,7 +2761,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     );
     draw.drawText(label, x + w / 2, y + 18, {
       align: 'center',
-      font: '900 11px Inter, sans-serif',
+      font: w < 48 ? '900 9px Inter, sans-serif' : '900 11px Inter, sans-serif',
       color: active ? UI_THEME.text : UI_THEME.textMuted,
     });
     state.game.buttons.push({ x, y, w, h: 28, onClick });
@@ -2753,9 +2852,10 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     const activeTab = state.debugPanelTab || 'settings';
     const editorTab = activeTab === 'editor';
+    const cubeTab = activeTab === 'cube';
     const heroTab = activeTab === 'hero';
-    const panelTargetW = editorTab ? 380 : heroTab ? 340 : 276;
-    const panelTargetH = editorTab ? 820 : heroTab ? 360 : 464;
+    const panelTargetW = editorTab ? 380 : (cubeTab || heroTab) ? 340 : 320;
+    const panelTargetH = editorTab ? 820 : cubeTab ? 600 : heroTab ? 360 : activeTab === 'settings' ? 464 : 464;
     const panelW = Math.min(panelTargetW, Math.max(236, currentLayout.sw - 48));
     const availablePanelH = Math.max(220, currentLayout.sh - DEBUG_PANEL_MARGIN * 2);
     const panelH = Math.min(panelTargetH, Math.max(334, availablePanelH), availablePanelH);
@@ -2771,6 +2871,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       state.debugPanelBounds = null;
       state.debugEditorTreeBounds = null;
       state.debugEditorSceneBounds = null;
+      state.debugCubeListBounds = null;
       syncDebugHeroOverlay(null);
       draw.roundRect(tabX - 8, tabY, tabW + 8, tabH, 0, 'rgba(7,8,7,0.92)', UI_THEME.border1);
       draw.drawText('>', tabX + 10, tabY + 37, {
@@ -2868,46 +2969,25 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     cy += 50;
     const tabGap = 8;
-    const tabButtonW = (panelW - 32 - tabGap * 3) / 4;
-    drawDebugTab({
-      x: panelX + 16,
-      y: cy,
-      w: tabButtonW,
-      label: 'Ajustes',
-      active: activeTab === 'settings',
-      onClick: () => {
-        state.debugPanelTab = 'settings';
-      },
-    });
-    drawDebugTab({
-      x: panelX + 16 + tabButtonW + tabGap,
-      y: cy,
-      w: tabButtonW,
-      label: 'Mapas',
-      active: activeTab === 'maps',
-      onClick: () => {
-        state.debugPanelTab = 'maps';
-      },
-    });
-    drawDebugTab({
-      x: panelX + 16 + (tabButtonW + tabGap) * 2,
-      y: cy,
-      w: tabButtonW,
-      label: 'Editor',
-      active: activeTab === 'editor',
-      onClick: () => {
-        state.debugPanelTab = 'editor';
-      },
-    });
-    drawDebugTab({
-      x: panelX + 16 + (tabButtonW + tabGap) * 3,
-      y: cy,
-      w: tabButtonW,
-      label: 'Hero',
-      active: activeTab === 'hero',
-      onClick: () => {
-        state.debugPanelTab = 'hero';
-      },
+    const tabs = [
+      ['settings', 'Ajustes'],
+      ['maps', 'Mapas'],
+      ['editor', 'Editor'],
+      ['cube', 'Cubo'],
+      ['hero', 'Hero'],
+    ];
+    const tabButtonW = (panelW - 32 - tabGap * (tabs.length - 1)) / tabs.length;
+    tabs.forEach(([id, label], index) => {
+      drawDebugTab({
+        x: panelX + 16 + index * (tabButtonW + tabGap),
+        y: cy,
+        w: tabButtonW,
+        label,
+        active: activeTab === id,
+        onClick: () => {
+          state.debugPanelTab = id;
+        },
+      });
     });
 
     cy += 38;
@@ -3370,6 +3450,165 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       return;
     }
 
+    if (activeTab === 'cube') {
+      syncDebugHeroOverlay(null);
+      state.debugEditorTreeBounds = null;
+      state.debugEditorSceneBounds = null;
+
+      const debugCubes = ensureDebugCubes();
+      const currentMapId = currentEditorMapId();
+      const cubes = currentDebugCubes();
+      const contentX = panelX + 16;
+      const contentW = panelW - 32;
+
+      drawDebugToggle({
+        x: contentX,
+        y: cy,
+        w: contentW,
+        label: 'Modo cubo',
+        checked: !!debugCubes.enabled,
+        onChange: () => {
+          debugCubes.enabled = !debugCubes.enabled;
+        },
+      });
+
+      cy += 42;
+      draw.drawText(`Mapa: ${currentMapId || 'atual'}`, contentX, cy, {
+        align: 'left',
+        font: '900 10px Inter, sans-serif',
+        color: UI_THEME.textDim,
+      });
+      draw.drawText(`${cubes.length} cubo${cubes.length === 1 ? '' : 's'}`, contentX + contentW, cy, {
+        align: 'right',
+        font: '900 10px Inter, sans-serif',
+        color: UI_THEME.textMuted,
+      });
+
+      cy += 12;
+      const actionGap = 8;
+      const actionW = (contentW - actionGap) / 2;
+      draw.drawButton(contentX, cy, actionW, 30, 'Copiar tudo', () => {
+        copyAllDebugCubeSummaries();
+      }, {
+        fill: UI_THEME.accentDark,
+        hoverFill: UI_THEME.accent,
+        stroke: '#e6c06f',
+        disabled: debugCubes.placements.length === 0,
+        font: 'bold 11px Inter, sans-serif',
+      });
+      draw.drawButton(contentX + actionW + actionGap, cy, actionW, 30, 'Desmarcar', () => {
+        debugCubes.selectedCubeId = null;
+      }, {
+        fill: UI_THEME.surface1,
+        hoverFill: UI_THEME.surface2,
+        stroke: UI_THEME.border1,
+        disabled: !debugCubes.selectedCubeId,
+        font: 'bold 11px Inter, sans-serif',
+      });
+
+      if (performance.now() - (debugCubes.lastCopiedAt || 0) < 1800) {
+        draw.drawText('Cubos copiados.', contentX + contentW / 2, cy + 44, {
+          align: 'center',
+          font: 'bold 10px Inter, sans-serif',
+          color: UI_THEME.success,
+        });
+      }
+
+      cy += 44;
+      draw.drawText('Cubos colocados', contentX, cy, {
+        align: 'left',
+        font: '900 10px Inter, sans-serif',
+        color: UI_THEME.textDim,
+      });
+
+      cy += 10;
+      const listX = contentX;
+      const listY = cy;
+      const listW = contentW;
+      const listH = Math.max(60, panelY + panelH - listY - 16);
+      const rowH = 42;
+      const deleteW = 58;
+      const maxScroll = Math.max(0, cubes.length * rowH - listH);
+      debugCubes.listScroll = clamp(debugCubes.listScroll || 0, 0, maxScroll);
+      state.debugCubeListBounds = { x: listX, y: listY, w: listW, h: listH };
+
+      draw.roundRect(listX, listY, listW, listH, 6, 'rgba(17,19,13,0.82)', UI_THEME.border0);
+      if (cubes.length === 0) {
+        draw.drawText('Nenhum cubo neste mapa.', listX + listW / 2, listY + listH / 2 + 4, {
+          align: 'center',
+          font: 'bold 11px Inter, sans-serif',
+          color: UI_THEME.textMuted,
+        });
+      } else {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(listX, listY, listW, listH);
+        ctx.clip();
+        cubes.forEach((cube, index) => {
+          const rowY = listY + index * rowH - debugCubes.listScroll;
+          if (rowY + rowH < listY || rowY > listY + listH) return;
+
+          const selected = cube.id === debugCubes.selectedCubeId;
+          draw.roundRect(
+            listX + 6,
+            rowY + 5,
+            listW - 12,
+            rowH - 8,
+            5,
+            selected ? 'rgba(154,111,42,0.62)' : 'rgba(32,34,25,0.72)',
+            selected ? '#f2c94c' : 'rgba(111,99,66,0.65)',
+          );
+          draw.drawText(`Tile ${cube.x},${cube.y} | nivel ${Math.max(0, cube.level ?? 0) + 1}`, listX + 16, rowY + 19, {
+            align: 'left',
+            font: '900 11px Inter, sans-serif',
+            color: selected ? UI_THEME.text : UI_THEME.textMuted,
+            maxWidth: listW - deleteW - 34,
+          });
+          draw.drawText(cube.id, listX + 16, rowY + 33, {
+            align: 'left',
+            font: '9px Inter, sans-serif',
+            color: UI_THEME.textDim,
+            maxWidth: listW - deleteW - 34,
+          });
+
+          const deleteX = listX + listW - deleteW - 10;
+          draw.roundRect(deleteX, rowY + 12, deleteW, 18, 4, UI_THEME.dangerDark, '#fca5a5');
+          draw.drawText('Excluir', deleteX + deleteW / 2, rowY + 25, {
+            align: 'center',
+            font: '900 9px Inter, sans-serif',
+            color: UI_THEME.text,
+          });
+
+          state.game.buttons.push({
+            x: listX + 6,
+            y: rowY + 5,
+            w: listW - deleteW - 22,
+            h: rowH - 8,
+            onClick: () => {
+              debugCubes.selectedCubeId = selected ? null : cube.id;
+            },
+          });
+          state.game.buttons.push({
+            x: deleteX,
+            y: rowY + 12,
+            w: deleteW,
+            h: 18,
+            onClick: () => {
+              removeDebugCube(cube.id);
+            },
+          });
+        });
+        ctx.restore();
+
+        if (maxScroll > 0) {
+          const thumbH = Math.max(18, listH * (listH / (listH + maxScroll)));
+          const thumbY = listY + (listH - thumbH) * (debugCubes.listScroll / maxScroll);
+          draw.roundRect(listX + listW - 5, thumbY, 3, thumbH, 2, UI_THEME.border1, null);
+        }
+      }
+      return;
+    }
+
     if (activeTab === 'hero') {
       const heroCardX = panelX + 16;
       const heroCardY = cy + 8;
@@ -3446,7 +3685,6 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       },
     });
 
-    cy += 34;
     drawDebugToggle({
       x: panelX + 16,
       y: cy,

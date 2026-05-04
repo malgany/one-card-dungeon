@@ -28,6 +28,13 @@ const state = {
   debugHero: {
     selectedAnimationId: null,
   },
+  debugCubes: {
+    enabled: false,
+    placements: [],
+    selectedCubeId: null,
+    lastCopiedAt: 0,
+    listScroll: 0,
+  },
   debugEditor: {
     expandedFolders: {},
     placements: [],

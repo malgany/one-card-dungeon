@@ -4,6 +4,22 @@ import { getCurrentWorldBounds } from '../game/world-state.js';
 const TEXTURE_OUTSIDE_BOARD_MULTIPLIER = 2;
 
 export function registerCanvasInput({ canvas, state, actions, layout }) {
+  function syncMouseFromEvent(event) {
+    if (!event) return;
+    const rect = canvas.getBoundingClientRect();
+    state.mouse.x = event.clientX - rect.left;
+    state.mouse.y = event.clientY - rect.top;
+  }
+
+  function ensureDebugCubes() {
+    if (!state.debugCubes) state.debugCubes = {};
+    const debugCubes = state.debugCubes;
+    if (!Array.isArray(debugCubes.placements)) debugCubes.placements = [];
+    if (debugCubes.enabled === undefined) debugCubes.enabled = false;
+    if (debugCubes.selectedCubeId === undefined) debugCubes.selectedCubeId = null;
+    return debugCubes;
+  }
+
   function pointInDebugPanel() {
     return (
       state.debugPanelOpen &&
@@ -17,6 +33,13 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
       return getCurrentWorldBounds(state.game.overworld);
     }
     return { width: BOARD_SIZE, height: BOARD_SIZE };
+  }
+
+  function currentDebugMapId() {
+    if (state.game.mode === GAME_MODES.OVERWORLD) {
+      return state.game.overworld?.currentMapId || null;
+    }
+    return `combat:${state.game.levelIndex ?? 0}`;
   }
 
   function tileCenterFromPoint(point) {
@@ -54,10 +77,33 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     return true;
   }
 
+  function placeDebugCube(mouseX, mouseY) {
+    const debugCubes = ensureDebugCubes();
+    if (!debugCubes.enabled || pointInDebugPanel() || state.game.menuOpen) return false;
+
+    const mapId = currentDebugMapId();
+    const tile = layout.tileAt(layout.getLayout(), mouseX, mouseY);
+    if (!mapId || !tile) return false;
+
+    const sameTile = debugCubes.placements.filter((cube) => {
+      return cube.mapId === mapId && cube.x === tile.x && cube.y === tile.y;
+    });
+    const level = sameTile.reduce((highest, cube) => Math.max(highest, cube.level ?? 0), -1) + 1;
+    const cube = {
+      id: `debug-cube-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+      mapId,
+      x: tile.x,
+      y: tile.y,
+      level,
+    };
+
+    debugCubes.placements.push(cube);
+    debugCubes.selectedCubeId = cube.id;
+    return true;
+  }
+
   canvas.addEventListener('mousemove', (event) => {
-    const rect = canvas.getBoundingClientRect();
-    state.mouse.x = event.clientX - rect.left;
-    state.mouse.y = event.clientY - rect.top;
+    syncMouseFromEvent(event);
 
     if (state.game.draggingControl) {
       state.game.draggingControl.onDrag?.(state.mouse.x, state.mouse.y);
@@ -88,13 +134,26 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
       editor.sceneScroll = Math.max(0, (editor.sceneScroll || 0) + event.deltaY * 0.65);
       return;
     }
+    if (
+      state.debugPanelOpen &&
+      state.debugPanelTab === 'cube' &&
+      state.debugCubeListBounds &&
+      layout.pointInRect(state.mouse.x, state.mouse.y, state.debugCubeListBounds)
+    ) {
+      event.preventDefault();
+      const debugCubes = ensureDebugCubes();
+      debugCubes.listScroll = Math.max(0, (debugCubes.listScroll || 0) + event.deltaY * 0.65);
+      return;
+    }
 
     event.preventDefault();
     const delta = event.deltaY > 0 ? 0.92 : 1.08;
     state.debugZoom = Math.min(8.0, Math.max(0.2, (state.debugZoom || 1.15) * delta));
   }, { passive: false });
 
-  canvas.addEventListener('mousedown', () => {
+  canvas.addEventListener('mousedown', (event) => {
+    syncMouseFromEvent(event);
+
     for (let index = state.game.buttons.length - 1; index >= 0; index -= 1) {
       const button = state.game.buttons[index];
       if (!layout.pointInRect(state.mouse.x, state.mouse.y, button)) continue;
@@ -135,7 +194,9 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     }
   });
 
-  canvas.addEventListener('mouseup', () => {
+  canvas.addEventListener('mouseup', (event) => {
+    syncMouseFromEvent(event);
+
     if (state.game.draggingControl) {
       state.game.draggingControl.onDragEnd?.(state.mouse.x, state.mouse.y);
       state.game.draggingControl = null;
@@ -186,7 +247,9 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     state.suppressClick = true;
   });
 
-  canvas.addEventListener('click', () => {
+  canvas.addEventListener('click', (event) => {
+    syncMouseFromEvent(event);
+
     if (state.suppressClick) {
       state.suppressClick = false;
       return;
@@ -203,6 +266,10 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
       state.game.menuOpen = false;
       state.game.menuView = 'main';
       return;
+    }
+
+    if (DEBUG_CONFIG.SHOW_STATS && ensureDebugCubes().enabled) {
+      if (placeDebugCube(state.mouse.x, state.mouse.y)) return;
     }
 
     if (state.game.phase === PHASES.ENERGY) return;
