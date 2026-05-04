@@ -40,9 +40,7 @@ test('loads and renders the canvas game without console errors', async ({ page }
 
   expect(await page.locator('canvas').count()).toBeGreaterThanOrEqual(2);
   await page.waitForFunction(() => window.__ONE_RPG_DEBUG__?.state?.game?.overworld?.currentMapId === 'chao3-start');
-  await page.waitForFunction(() => {
-    return performance.getEntriesByType('resource').some((entry) => entry.name.includes('/assets/textures/debug-grass-tile.png'));
-  });
+  await page.waitForFunction(() => document.querySelector('.board-webgl')?.clientWidth > 100);
   expect(await page.evaluate(() => {
     const game = window.__ONE_RPG_DEBUG__.state.game;
     return game.overworld.mapStates[game.overworld.currentMapId].enemies.length;

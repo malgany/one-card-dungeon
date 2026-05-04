@@ -117,6 +117,7 @@ export function createOverworldMapState(map) {
     mapId: map.id,
     enemies: overworldEnemies(map),
     removedObjectIds: [],
+    debugColors: null,
   };
 }
 

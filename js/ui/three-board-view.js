@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { BOARD_SIZE, CARD_SOURCES, DEBUG_CONFIG, GAME_MODES, TERRAIN_TYPES, WORLD_ASSETS, WORLD_OBJECT_TYPES } from '../config/game-data.js';
-import { getCurrentWorldEnemies, getCurrentWorldMap } from '../game/world-state.js';
+import { getCurrentWorldEnemies, getCurrentWorldMap, getCurrentWorldMapState } from '../game/world-state.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { paletteSignature } from '../config/character-palettes.js';
+import { DEFAULT_MAP_COLOR_VALUES } from '../config/map-colors.js';
 import { configureCharacterTexture, loadCharacterPaletteTexture } from './character-palette-texture.js';
 
 const CARD_WIDTH = 0.56;
@@ -24,6 +25,15 @@ const SPECULAR_GLOSSINESS_EXTENSION = 'KHR_materials_pbrSpecularGlossiness';
 const DEBUG_MODEL_DEFAULT_SCALE = 0.5;
 const TERRAIN_CUBE_HEIGHT = 0.62;
 const MAX_DEBUG_CUBES = 2000;
+const ISLAND_WATER_LEVEL = -TERRAIN_CUBE_HEIGHT / 2;
+const ISLAND_WATER_PADDING = 18;
+const ISLAND_WATER_BOB_AMOUNT = 0.04;
+const ISLAND_WATER_BOB_SPEED = 1.18;
+const ISLAND_WATER_LIGHT_BAND = 0.12;
+const ISLAND_WATER_DARK_BAND = 0.48;
+const KEY_LIGHT_DEFAULT_DIRECTION_DEG = 84;
+const KEY_LIGHT_RADIUS = Math.hypot(5, 5);
+const KEY_LIGHT_HEIGHT = 10;
 const HIGHLIGHT_ORDER = [
   'hover',
   'playerAttack',
@@ -414,6 +424,7 @@ export function createThreeBoardView({ state }) {
     exposure: 1.0,
     ambientIntensity: 1.0,
     keyIntensity: 1.5,
+    keyLightDirectionDeg: KEY_LIGHT_DEFAULT_DIRECTION_DEG,
     fogDensity: 0.015,
     shadowMapEnabled: true,
   };
@@ -455,6 +466,158 @@ export function createThreeBoardView({ state }) {
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = 8;
     textureCache.set(src, texture);
+    return texture;
+  }
+
+  function normalizeHexColor(value, fallback = '#ffffff') {
+    if (typeof value !== 'string') return fallback;
+    const trimmed = value.trim();
+    return /^#[0-9a-f]{6}$/i.test(trimmed) ? trimmed.toLowerCase() : fallback;
+  }
+
+  function debugColorValues() {
+    const mapState = getCurrentWorldMapState(state.game.overworld);
+    const values = state.debugColors?.values || mapState?.debugColors?.values || {};
+    return Object.fromEntries(Object.entries(DEFAULT_MAP_COLOR_VALUES).map(([key, fallback]) => {
+      return [key, normalizeHexColor(values[key], fallback)];
+    }));
+  }
+
+  function hexToRgba(hex, alpha) {
+    const value = normalizeHexColor(hex, '#ffffff').slice(1);
+    const r = parseInt(value.slice(0, 2), 16);
+    const g = parseInt(value.slice(2, 4), 16);
+    const b = parseInt(value.slice(4, 6), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
+  const PROCEDURAL_GRASS_PRESETS = {
+    detailed: {
+      base: '#6fb354',
+      patches: [
+        [10, 14, 26, 18, '#78bd5b', 0.5],
+        [76, 8, 18, 18, '#8acb68', 0.42],
+        [36, 42, 34, 24, '#5fa247', 0.22],
+        [88, 58, 28, 22, '#7fc460', 0.38],
+        [14, 88, 22, 18, '#86c764', 0.36],
+        [58, 96, 36, 20, '#629f49', 0.2],
+      ],
+      speckles: 90,
+      sprigs: 22,
+    },
+    soft: {
+      base: '#5cad54',
+      patches: [
+        [18, 18, 28, 20, '#67b95e', 0.22],
+        [78, 22, 30, 18, '#71bf65', 0.2],
+        [22, 82, 32, 22, '#68ba60', 0.2],
+        [82, 92, 26, 18, '#529f4d', 0.12],
+      ],
+      speckles: 30,
+      sprigs: 12,
+    },
+  };
+
+  function paintProceduralGrassTexture(texture, presetName = 'soft', colors = debugColorValues()) {
+    const preset = PROCEDURAL_GRASS_PRESETS[presetName] || PROCEDURAL_GRASS_PRESETS.soft;
+    const textureCanvas = texture.image;
+    const textureCtx = textureCanvas.getContext('2d');
+    textureCtx.imageSmoothingEnabled = false;
+
+    textureCtx.clearRect(0, 0, 128, 128);
+    textureCtx.fillStyle = colors.top1 || preset.base;
+    textureCtx.fillRect(0, 0, 128, 128);
+
+    const patchColors = [colors.top2, colors.top2, colors.top2, colors.top3, colors.top2, colors.top3];
+    preset.patches.forEach(([x, y, w, h, color, alpha], index) => {
+      textureCtx.globalAlpha = alpha;
+      textureCtx.fillStyle = patchColors[index] || color;
+      textureCtx.fillRect(x, y, w, h);
+    });
+
+    textureCtx.globalAlpha = 1;
+    for (let index = 0; index < preset.speckles; index += 1) {
+      const x = (index * 37 + 17) % 124;
+      const y = (index * 53 + 11) % 124;
+      const light = index % 3 !== 0;
+      textureCtx.fillStyle = light ? hexToRgba(colors.top4, 0.28) : hexToRgba(colors.top5, 0.16);
+      textureCtx.fillRect(x, y, 2, 2);
+      if (index % 5 === 0) textureCtx.fillRect(x + 3, y + 1, 2, 2);
+    }
+
+    for (let index = 0; index < preset.sprigs; index += 1) {
+      const x = (index * 29 + 7) % 122;
+      const y = (index * 43 + 19) % 122;
+      textureCtx.fillStyle = hexToRgba(colors.top4, 0.28);
+      textureCtx.fillRect(x + 2, y, 2, 6);
+      textureCtx.fillRect(x, y + 2, 6, 2);
+    }
+
+    textureCtx.globalAlpha = 1;
+    texture.needsUpdate = true;
+  }
+
+  function createProceduralGrassTexture(presetName = 'soft', colors = debugColorValues()) {
+    const textureCanvas = document.createElement('canvas');
+    textureCanvas.width = 128;
+    textureCanvas.height = 128;
+    const texture = new THREE.CanvasTexture(textureCanvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(1, 1);
+    texture.anisotropy = 8;
+    paintProceduralGrassTexture(texture, presetName, colors);
+    return texture;
+  }
+
+  function paintProceduralDirtSideTexture(texture, colors = debugColorValues()) {
+    const textureCanvas = texture.image;
+    const textureCtx = textureCanvas.getContext('2d');
+    textureCtx.imageSmoothingEnabled = false;
+
+    textureCtx.clearRect(0, 0, 128, 128);
+    textureCtx.fillStyle = colors.side1;
+    textureCtx.fillRect(0, 0, 128, 128);
+
+    const blocks = [
+      [8, 14, 18, 10, colors.side2],
+      [36, 28, 12, 8, colors.side3],
+      [72, 16, 22, 12, colors.side4],
+      [102, 36, 12, 18, colors.side3],
+      [18, 58, 28, 12, colors.side2],
+      [62, 66, 16, 10, colors.side5],
+      [90, 82, 26, 14, colors.side2],
+      [28, 98, 14, 12, colors.side3],
+      [54, 108, 30, 10, colors.side4],
+    ];
+
+    blocks.forEach(([x, y, w, h, color]) => {
+      textureCtx.fillStyle = color;
+      textureCtx.fillRect(x, y, w, h);
+    });
+
+    textureCtx.fillStyle = hexToRgba(colors.side5, 0.18);
+    for (let index = 0; index < 28; index += 1) {
+      const x = (index * 41 + 9) % 124;
+      const y = (index * 23 + 17) % 124;
+      textureCtx.fillRect(x, y, 4, 3);
+    }
+
+    texture.needsUpdate = true;
+  }
+
+  function createProceduralDirtSideTexture(colors = debugColorValues()) {
+    const textureCanvas = document.createElement('canvas');
+    textureCanvas.width = 128;
+    textureCanvas.height = 128;
+    const texture = new THREE.CanvasTexture(textureCanvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(1, 1);
+    texture.anisotropy = 8;
+    paintProceduralDirtSideTexture(texture, colors);
     return texture;
   }
 
@@ -631,9 +794,12 @@ export function createThreeBoardView({ state }) {
 
   const overworldSideMaterial = new THREE.MeshStandardMaterial({ map: wallSideTexture, roughness: 0.85 });
   const overworldTopMaterial = new THREE.MeshStandardMaterial({ map: wallTopTexture, roughness: 0.85 });
+  const proceduralDirtSideTexture = createProceduralDirtSideTexture();
   const terrainCubeSideMaterial = new THREE.MeshStandardMaterial({
-    color: colorFromHex('#b7854f'),
+    color: colorFromHex('#ffffff'),
     emissive: colorFromHex('#2b1a0d'),
+    emissiveIntensity: 0.06,
+    map: proceduralDirtSideTexture,
     roughness: 0.88,
     metalness: 0.02,
   });
@@ -662,6 +828,40 @@ export function createThreeBoardView({ state }) {
   const groundMaterial = new THREE.MeshStandardMaterial({
     roughness: 0.9,
     metalness: 0.05,
+  });
+  const proceduralGrassTextures = {
+    detailed: createProceduralGrassTexture('detailed'),
+    soft: createProceduralGrassTexture('soft'),
+  };
+  const activeProceduralGrassTexture = proceduralGrassTextures.soft;
+  let debugColorSignature = '';
+  const waterMaterial = new THREE.MeshBasicMaterial({
+    color: colorFromHex('#28c3e6'),
+    side: THREE.DoubleSide,
+  });
+  const waterLightBandMaterial = new THREE.MeshBasicMaterial({
+    color: colorFromHex('#7fdce8'),
+    side: THREE.DoubleSide,
+  });
+
+  function syncDebugColorMaterials() {
+    const colors = debugColorValues();
+    const signature = JSON.stringify(colors);
+    if (signature === debugColorSignature) return;
+
+    debugColorSignature = signature;
+    waterMaterial.color.set(colors.water1);
+    waterDarkBandMaterial.color.set(colors.water2);
+    waterLightBandMaterial.color.set(colors.water3);
+    paintProceduralGrassTexture(activeProceduralGrassTexture, 'soft', colors);
+    paintProceduralDirtSideTexture(proceduralDirtSideTexture, colors);
+    groundMaterial.userData.colorSignature = signature;
+    groundMaterial.needsUpdate = true;
+    terrainCubeSideMaterial.needsUpdate = true;
+  }
+  const waterDarkBandMaterial = new THREE.MeshBasicMaterial({
+    color: colorFromHex('#128eaa'),
+    side: THREE.DoubleSide,
   });
 
   const wallMeshes = new Map();
@@ -692,6 +892,38 @@ export function createThreeBoardView({ state }) {
   groundPlane.position.y = 0.01; // Slightly above base
   groundPlane.receiveShadow = true;
   boardGroup.add(groundPlane);
+
+  const waterPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 32, 32), waterMaterial);
+  waterPlane.rotation.x = -Math.PI / 2;
+  waterPlane.position.y = ISLAND_WATER_LEVEL;
+  waterPlane.receiveShadow = false;
+  waterPlane.frustumCulled = false;
+  waterPlane.visible = false;
+  waterPlane.userData.phase = 0;
+  boardGroup.add(waterPlane);
+
+  function createWaterStrip(material) {
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.receiveShadow = false;
+    mesh.frustumCulled = false;
+    mesh.visible = false;
+    boardGroup.add(mesh);
+    return mesh;
+  }
+
+  const waterLightStrips = [
+    createWaterStrip(waterLightBandMaterial),
+    createWaterStrip(waterLightBandMaterial),
+    createWaterStrip(waterLightBandMaterial),
+    createWaterStrip(waterLightBandMaterial),
+  ];
+  const waterDarkStrips = [
+    createWaterStrip(waterDarkBandMaterial),
+    createWaterStrip(waterDarkBandMaterial),
+    createWaterStrip(waterDarkBandMaterial),
+    createWaterStrip(waterDarkBandMaterial),
+  ];
 
   const debugEditorGroup = new THREE.Group();
   boardGroup.add(debugEditorGroup);
@@ -790,7 +1022,6 @@ export function createThreeBoardView({ state }) {
   scene.add(hemisphere);
 
   const keyLight = new THREE.DirectionalLight(colorFromHex('#fff7ed'), state.visuals?.keyIntensity ?? 1.5);
-  keyLight.position.set(5, 10, 5);
   keyLight.castShadow = state.visuals?.shadowMapEnabled ?? false;
   keyLight.shadow.mapSize.width = 1024;
   keyLight.shadow.mapSize.height = 1024;
@@ -800,6 +1031,20 @@ export function createThreeBoardView({ state }) {
   keyLight.shadow.camera.bottom = -15;
   keyLight.shadow.bias = -0.0005;
   scene.add(keyLight);
+
+  function applyKeyLightDirection() {
+    const directionDeg = Number.isFinite(state.visuals?.keyLightDirectionDeg)
+      ? state.visuals.keyLightDirectionDeg
+      : KEY_LIGHT_DEFAULT_DIRECTION_DEG;
+    const radians = THREE.MathUtils.degToRad(directionDeg);
+    keyLight.position.set(
+      Math.cos(radians) * KEY_LIGHT_RADIUS,
+      KEY_LIGHT_HEIGHT,
+      Math.sin(radians) * KEY_LIGHT_RADIUS,
+    );
+  }
+
+  applyKeyLightDirection();
 
   const rimLight = new THREE.DirectionalLight(colorFromHex('#7dd3fc'), 0.7);
   rimLight.position.set(-4, 3.2, -3.5);
@@ -836,9 +1081,15 @@ export function createThreeBoardView({ state }) {
     if (state.game.mode !== GAME_MODES.OVERWORLD) return false;
 
     const terrain = currentOverworldTerrain();
-    if (groundMaterial.userData.terrainId === terrain.id) return !!groundMaterial.map;
+    if (
+      groundMaterial.userData.terrainId === terrain.id &&
+      groundMaterial.userData.syncedColorSignature === debugColorSignature
+    ) {
+      return !!groundMaterial.map;
+    }
 
-    const groundTexture = textureFor(terrain.texture);
+    const useProceduralGrass = terrain.id === 'grass' || terrain.id === 'debugGrass';
+    const groundTexture = useProceduralGrass ? activeProceduralGrassTexture : textureFor(terrain.texture);
     if (groundTexture) {
       groundTexture.wrapS = THREE.RepeatWrapping;
       groundTexture.wrapT = THREE.RepeatWrapping;
@@ -848,6 +1099,7 @@ export function createThreeBoardView({ state }) {
     groundMaterial.map = groundTexture;
     groundMaterial.color.set(groundTexture ? '#ffffff' : terrain.color);
     groundMaterial.userData.terrainId = terrain.id;
+    groundMaterial.userData.syncedColorSignature = debugColorSignature;
     groundMaterial.needsUpdate = true;
     return !!groundMaterial.map;
   }
@@ -953,6 +1205,40 @@ export function createThreeBoardView({ state }) {
     groundPlane.scale.set(width, height, 1);
     groundPlane.position.set(0, 0.01, 0);
     groundPlane.visible = hasGround && !useCubeTerrain;
+
+    const waterWidth = width + ISLAND_WATER_PADDING;
+    const waterHeight = height + ISLAND_WATER_PADDING;
+    waterPlane.scale.set(waterWidth, waterHeight, 1);
+    waterPlane.position.set(0, ISLAND_WATER_LEVEL, 0);
+    waterPlane.visible = useCubeTerrain;
+
+    const light = ISLAND_WATER_LIGHT_BAND;
+    const dark = ISLAND_WATER_DARK_BAND;
+    const lightTopBottomW = width + light * 2;
+    const darkTopBottomW = width + (light + dark) * 2;
+    const darkSideH = height + light * 2;
+    const lightY = ISLAND_WATER_LEVEL + 0.008;
+    const darkY = ISLAND_WATER_LEVEL + 0.006;
+
+    waterLightStrips.forEach((strip) => { strip.visible = useCubeTerrain; });
+    waterDarkStrips.forEach((strip) => { strip.visible = useCubeTerrain; });
+    waterLightStrips[0].position.set(0, lightY, -height / 2 - light / 2);
+    waterLightStrips[0].scale.set(lightTopBottomW, light, 1);
+    waterLightStrips[1].position.set(0, lightY, height / 2 + light / 2);
+    waterLightStrips[1].scale.set(lightTopBottomW, light, 1);
+    waterLightStrips[2].position.set(-width / 2 - light / 2, lightY, 0);
+    waterLightStrips[2].scale.set(light, height, 1);
+    waterLightStrips[3].position.set(width / 2 + light / 2, lightY, 0);
+    waterLightStrips[3].scale.set(light, height, 1);
+
+    waterDarkStrips[0].position.set(0, darkY, -height / 2 - light - dark / 2);
+    waterDarkStrips[0].scale.set(darkTopBottomW, dark, 1);
+    waterDarkStrips[1].position.set(0, darkY, height / 2 + light + dark / 2);
+    waterDarkStrips[1].scale.set(darkTopBottomW, dark, 1);
+    waterDarkStrips[2].position.set(-width / 2 - light - dark / 2, darkY, 0);
+    waterDarkStrips[2].scale.set(dark, darkSideH, 1);
+    waterDarkStrips[3].position.set(width / 2 + light + dark / 2, darkY, 0);
+    waterDarkStrips[3].scale.set(dark, darkSideH, 1);
 
     tileInstance.visible = !hasGround && !useCubeTerrain;
     terrainCubeInstance.visible = useCubeTerrain;
@@ -1806,6 +2092,52 @@ export function createThreeBoardView({ state }) {
     return { x: point.x, y: point.y };
   }
 
+  function updateIslandWater(delta) {
+    if (!waterPlane.visible) return;
+    waterPlane.userData.phase += delta;
+    const bob = Math.sin(waterPlane.userData.phase * ISLAND_WATER_BOB_SPEED) * ISLAND_WATER_BOB_AMOUNT;
+    waterPlane.position.y = ISLAND_WATER_LEVEL + bob;
+    waterLightStrips.forEach((strip) => {
+      strip.position.y = ISLAND_WATER_LEVEL + 0.008 + bob;
+    });
+    waterDarkStrips.forEach((strip) => {
+      strip.position.y = ISLAND_WATER_LEVEL + 0.006 + bob;
+    });
+  }
+
+  function disposeMaterial(material) {
+    if (!material) return;
+    const materials = Array.isArray(material) ? material : [material];
+    for (const currentMaterial of materials) {
+      for (const value of Object.values(currentMaterial)) {
+        if (value?.isTexture && typeof value.dispose === 'function') value.dispose();
+      }
+      currentMaterial.dispose?.();
+    }
+  }
+
+  function disposeObject3D(object) {
+    object.traverse?.((child) => {
+      child.geometry?.dispose?.();
+      disposeMaterial(child.material);
+    });
+  }
+
+  function disposeThreeBoard() {
+    mixers.clear();
+    textureCache.forEach((texture) => texture.dispose?.());
+    textureCache.clear();
+    geometryCache.forEach((geometry) => geometry.dispose?.());
+    geometryCache.clear();
+    materialCache.forEach((material) => material.dispose?.());
+    materialCache.clear();
+    disposeObject3D(scene);
+    renderer.dispose();
+    renderer.forceContextLoss?.();
+    renderer.domElement.remove();
+    if (state.boardInteraction?.tileAt === tileAt) state.boardInteraction = null;
+  }
+
   state.boardInteraction = {
     tileAt,
     worldPointAt,
@@ -1844,6 +2176,7 @@ export function createThreeBoardView({ state }) {
       connections = [],
       now,
     }) {
+      syncDebugColorMaterials();
       syncBoardGeometry(boardWidth, boardHeight);
       syncRendererSize(currentLayout);
       const viewport = syncCamera(currentLayout, now);
@@ -1861,6 +2194,7 @@ export function createThreeBoardView({ state }) {
         hemisphere.intensity = state.visuals.ambientIntensity;
         keyLight.intensity = state.visuals.keyIntensity;
         keyLight.castShadow = state.visuals.shadowMapEnabled;
+        applyKeyLightDirection();
       }
 
       updateWalls(walls);
@@ -1883,6 +2217,7 @@ export function createThreeBoardView({ state }) {
       for (const mixer of mixers.values()) {
         mixer.update(delta);
       }
+      updateIslandWater(delta);
 
       const y = currentLayout.sh - viewport.y - viewport.h;
       renderer.setScissorTest(false);
@@ -1892,6 +2227,9 @@ export function createThreeBoardView({ state }) {
       renderer.setScissorTest(true);
       renderer.render(scene, activeCamera);
       renderer.setScissorTest(false);
+    },
+    dispose() {
+      disposeThreeBoard();
     },
   };
 }

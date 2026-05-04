@@ -9,6 +9,7 @@ import {
 } from '../game/world-state.js';
 import { MODEL_LIBRARY } from '../config/world/model-library.js';
 import { TEXTURE_LIBRARY } from '../config/world/texture-library.js';
+import { DEFAULT_MAP_COLOR_VALUES } from '../config/map-colors.js';
 import { createDrawPrimitives } from './draw-primitives.js';
 import { createThreeBoardView, HERO_DEBUG_ANIMATION_OPTIONS } from './three-board-view.js';
 
@@ -37,6 +38,22 @@ const DEBUG_PANEL_MARGIN = 12;
 const DEBUG_PANEL_MINIMIZED_Y = 12;
 const DEBUG_PANEL_OPEN_TAB_OVERHANG = 28;
 const DEBUG_CUBE_HEIGHT = 0.62;
+const DEBUG_COLOR_FIELDS = [
+  { key: 'water1', group: 'Agua', label: 'Agua 1', description: 'cor principal', codeUse: 'waterMaterial.color, agua base solida em volta da ilha' },
+  { key: 'water2', group: 'Agua', label: 'Agua 2', description: 'faixa grossa', codeUse: 'waterDarkBandMaterial.color, contorno azul mais escuro na superficie' },
+  { key: 'water3', group: 'Agua', label: 'Agua 3', description: 'faixa perto da borda', codeUse: 'waterLightBandMaterial.color, contorno claro junto ao barranco' },
+  { key: 'top1', group: 'Cor do topo', label: 'Cor 1', description: 'base', codeUse: 'paintProceduralGrassTexture, preenchimento principal do topo do chao/cubo' },
+  { key: 'top2', group: 'Cor do topo', label: 'Cor 2', description: 'manchas claras', codeUse: 'paintProceduralGrassTexture, manchas grandes claras do topo' },
+  { key: 'top3', group: 'Cor do topo', label: 'Cor 3', description: 'manchas escuras', codeUse: 'paintProceduralGrassTexture, manchas grandes escuras do topo' },
+  { key: 'top4', group: 'Cor do topo', label: 'Cor 4', description: 'detalhes claros', codeUse: 'paintProceduralGrassTexture, pontinhos e raminhos claros do topo' },
+  { key: 'top5', group: 'Cor do topo', label: 'Cor 5', description: 'detalhes escuros', codeUse: 'paintProceduralGrassTexture, pontinhos escuros do topo' },
+  { key: 'side1', group: 'Cor da lateral', label: 'Cor 1', description: 'base', codeUse: 'paintProceduralDirtSideTexture, preenchimento principal da lateral de terra' },
+  { key: 'side2', group: 'Cor da lateral', label: 'Cor 2', description: 'blocos medios', codeUse: 'paintProceduralDirtSideTexture, blocos medios da lateral' },
+  { key: 'side3', group: 'Cor da lateral', label: 'Cor 3', description: 'blocos escuros', codeUse: 'paintProceduralDirtSideTexture, blocos escuros da lateral' },
+  { key: 'side4', group: 'Cor da lateral', label: 'Cor 4', description: 'blocos claros', codeUse: 'paintProceduralDirtSideTexture, blocos claros da lateral' },
+  { key: 'side5', group: 'Cor da lateral', label: 'Cor 5', description: 'pontos escuros', codeUse: 'paintProceduralDirtSideTexture, pontos pequenos escuros da lateral' },
+];
+const DEBUG_COLOR_DEFAULTS = DEFAULT_MAP_COLOR_VALUES;
 
 export function getAnimationEndTime(anim) {
   const startTime = Number.isFinite(anim.startTime) ? anim.startTime : 0;
@@ -70,6 +87,8 @@ function isAnimationActive(anim, now) {
 export function createRenderer({ canvas, ctx, cardImages, state, actions, layout, onExitToMainMenu = null }) {
   const draw = createDrawPrimitives({ ctx, state, cardImages });
   const threeBoard = createThreeBoardView({ state });
+  let renderFrameId = null;
+  let disposed = false;
   const debugHeroOverlay = document.createElement('div');
   const debugHeroTitle = document.createElement('strong');
   const debugHeroHelp = document.createElement('p');
@@ -77,6 +96,8 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   const debugHeroFieldLabel = document.createElement('span');
   const debugHeroSelect = document.createElement('select');
   const debugHeroStatus = document.createElement('p');
+  const debugColorInputs = new Map();
+  const debugColorHexInputs = new Map();
 
   debugHeroOverlay.className = 'debug-hero-overlay';
   debugHeroOverlay.hidden = true;
@@ -93,6 +114,70 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   debugHeroField.append(debugHeroFieldLabel, debugHeroSelect);
   debugHeroOverlay.append(debugHeroTitle, debugHeroHelp, debugHeroField, debugHeroStatus);
   document.body.append(debugHeroOverlay);
+
+  DEBUG_COLOR_FIELDS.forEach((field) => {
+    const input = document.createElement('input');
+    input.type = 'color';
+    input.setAttribute('aria-label', `${field.group} ${field.label}`);
+    input.style.position = 'fixed';
+    input.style.display = 'none';
+    input.style.zIndex = '40';
+    input.style.width = '24px';
+    input.style.height = '24px';
+    input.style.padding = '0';
+    input.style.border = '0';
+    input.style.opacity = '0.01';
+    input.style.cursor = 'pointer';
+    input.addEventListener('input', () => {
+      const debugColors = ensureDebugColors();
+      debugColors.values[field.key] = normalizeDebugHexColor(input.value, debugColors.values[field.key]);
+    });
+    debugColorInputs.set(field.key, input);
+    document.body.append(input);
+
+    const hexInput = document.createElement('input');
+    hexInput.type = 'text';
+    hexInput.inputMode = 'text';
+    hexInput.spellcheck = false;
+    hexInput.maxLength = 7;
+    hexInput.setAttribute('aria-label', `Hex ${field.group} ${field.label}`);
+    hexInput.style.position = 'fixed';
+    hexInput.style.display = 'none';
+    hexInput.style.zIndex = '41';
+    hexInput.style.boxSizing = 'border-box';
+    hexInput.style.height = '22px';
+    hexInput.style.padding = '0 6px';
+    hexInput.style.border = '1px solid rgba(111,99,66,0.7)';
+    hexInput.style.borderRadius = '4px';
+    hexInput.style.background = 'rgba(13,15,11,0.86)';
+    hexInput.style.color = '#d39b32';
+    hexInput.style.font = '900 11px Inter, sans-serif';
+    hexInput.style.textAlign = 'right';
+    hexInput.style.textTransform = 'uppercase';
+    hexInput.style.outline = 'none';
+    hexInput.addEventListener('input', () => {
+      const parsed = parseDebugHexInput(hexInput.value);
+      if (!parsed) return;
+      const debugColors = ensureDebugColors();
+      debugColors.values[field.key] = parsed;
+    });
+    hexInput.addEventListener('focus', () => {
+      requestAnimationFrame(() => hexInput.select());
+    });
+    hexInput.addEventListener('pointerup', (event) => {
+      event.preventDefault();
+      hexInput.select();
+    });
+    hexInput.addEventListener('blur', () => {
+      const debugColors = ensureDebugColors();
+      hexInput.value = debugColors.values[field.key].toUpperCase();
+    });
+    hexInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') hexInput.blur();
+    });
+    debugColorHexInputs.set(field.key, hexInput);
+    document.body.append(hexInput);
+  });
 
   const autoHeroOption = document.createElement('option');
   autoHeroOption.value = 'auto';
@@ -125,6 +210,81 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     if (!Number.isFinite(debugCubes.lastCopiedAt)) debugCubes.lastCopiedAt = 0;
     if (!Number.isFinite(debugCubes.listScroll)) debugCubes.listScroll = 0;
     return debugCubes;
+  }
+
+  function normalizeDebugHexColor(value, fallback = '#ffffff') {
+    if (typeof value !== 'string') return fallback;
+    const normalized = value.trim().toLowerCase();
+    return /^#[0-9a-f]{6}$/.test(normalized) ? normalized : fallback;
+  }
+
+  function parseDebugHexInput(value) {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().toLowerCase();
+    const match = normalized.match(/^#?([0-9a-f]{6})$/);
+    return match ? `#${match[1]}` : null;
+  }
+
+  function ensureDebugColors() {
+    if (!state.debugColors) state.debugColors = {};
+    const debugColors = state.debugColors;
+    if (!debugColors.values) debugColors.values = {};
+    for (const field of DEBUG_COLOR_FIELDS) {
+      debugColors.values[field.key] = normalizeDebugHexColor(debugColors.values[field.key], DEBUG_COLOR_DEFAULTS[field.key]);
+    }
+    if (!Number.isFinite(debugColors.lastCopiedAt)) debugColors.lastCopiedAt = 0;
+    if (!Number.isFinite(debugColors.lastAppliedAt)) debugColors.lastAppliedAt = 0;
+    if (!Number.isFinite(debugColors.scroll)) debugColors.scroll = 0;
+    return debugColors;
+  }
+
+  function openDebugColorPicker(key) {
+    const debugColors = ensureDebugColors();
+    const input = debugColorInputs.get(key);
+    if (!input) return;
+    input.value = debugColors.values[key];
+    input.click();
+  }
+
+  function hideDebugColorInputs() {
+    debugColorInputs.forEach((input) => {
+      input.style.display = 'none';
+    });
+    debugColorHexInputs.forEach((input) => {
+      input.style.display = 'none';
+    });
+  }
+
+  function syncDebugColorInput(key, { x, y, size, value, visible }) {
+    const input = debugColorInputs.get(key);
+    if (!input) return;
+    if (!visible) {
+      input.style.display = 'none';
+      return;
+    }
+    input.value = value;
+    input.style.left = `${Math.round(x)}px`;
+    input.style.top = `${Math.round(y)}px`;
+    input.style.width = `${Math.round(size)}px`;
+    input.style.height = `${Math.round(size)}px`;
+    input.style.display = 'block';
+  }
+
+  function syncDebugColorHexInput(key, { x, y, w, h, value, visible }) {
+    const input = debugColorHexInputs.get(key);
+    if (!input) return;
+    if (!visible) {
+      input.style.display = 'none';
+      return;
+    }
+    if (document.activeElement !== input) {
+      input.value = value.toUpperCase();
+    }
+    input.style.left = `${Math.round(x)}px`;
+    input.style.top = `${Math.round(y)}px`;
+    input.style.width = `${Math.round(w)}px`;
+    input.style.height = `${Math.round(h)}px`;
+    input.style.display = 'block';
   }
 
   function syncDebugHeroOverlay(bounds = null) {
@@ -1884,7 +2044,8 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   }
 
   function render() {
-    requestAnimationFrame(render);
+    if (disposed) return;
+    renderFrameId = requestAnimationFrame(render);
 
     state.game.buttons = [];
     const now = performance.now();
@@ -2614,6 +2775,80 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     }
   }
 
+  function debugColorSummary() {
+    const debugColors = ensureDebugColors();
+    let currentGroup = '';
+    const lines = [
+      `Mapa: ${currentEditorMapId() || 'atual'}`,
+      'Tipo: Cores do mapa',
+      'Estado editavel: state.debugColors.values em js/main.js',
+      'Aplicacao visual: js/ui/three-board-view.js -> syncDebugColorMaterials(), paintProceduralGrassTexture() e paintProceduralDirtSideTexture()',
+      '',
+      'Formato: Nome visual | chave tecnica | cor | onde pinta',
+    ];
+
+    for (const field of DEBUG_COLOR_FIELDS) {
+      if (field.group !== currentGroup) {
+        currentGroup = field.group;
+        lines.push('', `[${currentGroup}]`);
+      }
+      lines.push(`${field.label} (${field.description}) | chave: ${field.key} | cor: ${debugColors.values[field.key].toUpperCase()} | pinta: ${field.codeUse}`);
+    }
+
+    return lines.join('\n');
+  }
+
+  function copyAllDebugColorSummaries() {
+    const debugColors = ensureDebugColors();
+    const summary = debugColorSummary();
+    debugColors.lastCopiedAt = performance.now();
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(summary).catch(() => {
+        window.prompt('Resumo das cores', summary);
+      });
+    } else {
+      window.prompt('Resumo das cores', summary);
+    }
+  }
+
+  async function applyDebugColorsToCurrentMap() {
+    const debugColors = ensureDebugColors();
+    const mapId = currentEditorMapId();
+    const values = Object.fromEntries(DEBUG_COLOR_FIELDS.map((field) => {
+      return [field.key, normalizeDebugHexColor(debugColors.values[field.key], DEBUG_COLOR_DEFAULTS[field.key])];
+    }));
+
+    debugColors.values = { ...values };
+    debugColors.applyStatus = 'pending';
+    debugColors.applyError = '';
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+
+    if (mapId && state.game.overworld) {
+      const mapState = ensureOverworldMapState(state.game.overworld, mapId);
+      if (mapState) {
+        mapState.debugColors = { values: { ...values } };
+      }
+    }
+
+    try {
+      const response = await fetch('/__debug/map-colors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+
+      debugColors.lastAppliedAt = performance.now();
+      debugColors.appliedMapId = mapId;
+      debugColors.applyStatus = 'applied';
+    } catch (error) {
+      debugColors.applyStatus = 'failed';
+      debugColors.applyError = error instanceof Error ? error.message : 'Falha desconhecida.';
+    }
+  }
+
   function visibleAssetTreeRows(libraryItems, expandedFolders) {
     const rows = [];
     const sortedItems = libraryItems;
@@ -2845,6 +3080,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   function drawDebugOverlay(currentLayout) {
     if (!DEBUG_CONFIG.SHOW_STATS) {
       syncDebugHeroOverlay(null);
+      hideDebugColorInputs();
       return;
     }
 
@@ -2853,9 +3089,11 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const activeTab = state.debugPanelTab || 'settings';
     const editorTab = activeTab === 'editor';
     const cubeTab = activeTab === 'cube';
+    const colorTab = activeTab === 'color';
     const heroTab = activeTab === 'hero';
-    const panelTargetW = editorTab ? 380 : (cubeTab || heroTab) ? 340 : 320;
-    const panelTargetH = editorTab ? 820 : cubeTab ? 600 : heroTab ? 360 : activeTab === 'settings' ? 464 : 464;
+    if (!colorTab) hideDebugColorInputs();
+    const panelTargetW = (editorTab || colorTab) ? 380 : (cubeTab || heroTab) ? 340 : 320;
+    const panelTargetH = editorTab ? 820 : colorTab ? 800 : cubeTab ? 600 : heroTab ? 360 : activeTab === 'settings' ? 560 : 464;
     const panelW = Math.min(panelTargetW, Math.max(236, currentLayout.sw - 48));
     const availablePanelH = Math.max(220, currentLayout.sh - DEBUG_PANEL_MARGIN * 2);
     const panelH = Math.min(panelTargetH, Math.max(334, availablePanelH), availablePanelH);
@@ -2872,6 +3110,8 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       state.debugEditorTreeBounds = null;
       state.debugEditorSceneBounds = null;
       state.debugCubeListBounds = null;
+      state.debugColorListBounds = null;
+      hideDebugColorInputs();
       syncDebugHeroOverlay(null);
       draw.roundRect(tabX - 8, tabY, tabW + 8, tabH, 0, 'rgba(7,8,7,0.92)', UI_THEME.border1);
       draw.drawText('>', tabX + 10, tabY + 37, {
@@ -2974,6 +3214,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       ['maps', 'Mapas'],
       ['editor', 'Editor'],
       ['cube', 'Cubo'],
+      ['color', 'Cor'],
       ['hero', 'Hero'],
     ];
     const tabButtonW = (panelW - 32 - tabGap * (tabs.length - 1)) / tabs.length;
@@ -3450,6 +3691,161 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       return;
     }
 
+    if (activeTab === 'color') {
+      syncDebugHeroOverlay(null);
+      state.debugEditorTreeBounds = null;
+      state.debugEditorSceneBounds = null;
+      state.debugCubeListBounds = null;
+
+      const debugColors = ensureDebugColors();
+      const contentX = panelX + 16;
+      const contentW = panelW - 32;
+
+      draw.drawText('Cores do mapa', contentX, cy + 4, {
+        align: 'left',
+        font: '900 11px Inter, sans-serif',
+        color: UI_THEME.text,
+      });
+      draw.drawText('Editar mostra na hora. Aplicar grava no codigo.', contentX, cy + 20, {
+        align: 'left',
+        font: '10px Inter, sans-serif',
+        color: UI_THEME.textDim,
+      });
+      draw.drawText(`Mapa: ${currentEditorMapId() || 'atual'}`, contentX + contentW, cy + 20, {
+        align: 'right',
+        font: '900 10px Inter, sans-serif',
+        color: UI_THEME.accent,
+      });
+      cy += 34;
+
+      const actionY = panelY + panelH - 42;
+      const listX = contentX;
+      const listY = cy;
+      const listW = contentW;
+      const listH = Math.max(120, actionY - listY - 12);
+      let totalListH = 0;
+      let previousGroup = '';
+      DEBUG_COLOR_FIELDS.forEach((field) => {
+        if (field.group !== previousGroup) {
+          previousGroup = field.group;
+          totalListH += 26;
+        }
+        totalListH += 35;
+      });
+      const maxScroll = Math.max(0, totalListH - listH);
+      debugColors.scroll = clamp(debugColors.scroll || 0, 0, maxScroll);
+      state.debugColorListBounds = { x: listX, y: listY, w: listW, h: listH };
+
+      draw.roundRect(listX, listY, listW, listH, 6, 'rgba(17,19,13,0.68)', UI_THEME.border0);
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(listX, listY, listW, listH);
+      ctx.clip();
+
+      let currentGroup = '';
+      let rowCursor = listY - debugColors.scroll;
+      DEBUG_COLOR_FIELDS.forEach((field) => {
+        if (field.group !== currentGroup) {
+          currentGroup = field.group;
+          rowCursor += 12;
+          draw.drawText(currentGroup, contentX, rowCursor + 4, {
+            align: 'left',
+            font: '900 10px Inter, sans-serif',
+            color: UI_THEME.textDim,
+          });
+          rowCursor += 14;
+        }
+
+        const rowY = rowCursor;
+        const swatchSize = 24;
+        const swatchX = contentX;
+        const hex = debugColors.values[field.key];
+        const visible = rowY >= listY && rowY + 31 <= listY + listH;
+        const hexW = 88;
+        const hexH = 22;
+        const hexX = contentX + contentW - hexW - 7;
+        const hexY = rowY + 5;
+        if (visible) {
+          draw.roundRect(contentX, rowY, contentW, 31, 5, 'rgba(32,34,25,0.58)', 'rgba(111,99,66,0.5)');
+          draw.roundRect(swatchX + 7, rowY + 4, swatchSize, swatchSize, 5, hex, '#f2ead7');
+          draw.drawText(field.label, swatchX + 40, rowY + 14, {
+            align: 'left',
+            font: '900 10px Inter, sans-serif',
+            color: UI_THEME.text,
+            maxWidth: 86,
+          });
+          draw.drawText(field.description, swatchX + 40, rowY + 27, {
+            align: 'left',
+            font: '9px Inter, sans-serif',
+            color: UI_THEME.textDim,
+            maxWidth: 108,
+          });
+          draw.roundRect(hexX, hexY, hexW, hexH, 4, 'rgba(13,15,11,0.72)', 'rgba(111,99,66,0.7)');
+          state.game.buttons.push({
+            x: contentX,
+            y: rowY,
+            w: contentW,
+            h: 31,
+            onClick: () => {
+              openDebugColorPicker(field.key);
+            },
+          });
+        }
+        syncDebugColorInput(field.key, {
+          x: swatchX + 7,
+          y: rowY + 4,
+          size: swatchSize,
+          value: hex,
+          visible,
+        });
+        syncDebugColorHexInput(field.key, {
+          x: hexX + 2,
+          y: hexY + 1,
+          w: hexW - 4,
+          h: hexH - 2,
+          value: hex,
+          visible,
+        });
+        rowCursor += 35;
+      });
+      ctx.restore();
+
+      if (maxScroll > 0) {
+        const thumbH = Math.max(18, listH * (listH / (listH + maxScroll)));
+        const thumbY = listY + (listH - thumbH) * (debugColors.scroll / maxScroll);
+        draw.roundRect(listX + listW - 5, thumbY, 3, thumbH, 2, UI_THEME.border1, null);
+      }
+
+      draw.drawButton(contentX, actionY, contentW, 30, 'Aplicar', () => {
+        applyDebugColorsToCurrentMap();
+      }, {
+        fill: UI_THEME.accentDark,
+        hoverFill: UI_THEME.accent,
+        stroke: '#e6c06f',
+        font: 'bold 11px Inter, sans-serif',
+      });
+      if (debugColors.applyStatus === 'pending') {
+        draw.drawText('Aplicando no codigo...', contentX + contentW / 2, actionY - 10, {
+          align: 'center',
+          font: 'bold 10px Inter, sans-serif',
+          color: UI_THEME.accent,
+        });
+      } else if (debugColors.applyStatus === 'failed') {
+        draw.drawText('Falha ao aplicar no codigo.', contentX + contentW / 2, actionY - 10, {
+          align: 'center',
+          font: 'bold 10px Inter, sans-serif',
+          color: UI_THEME.danger,
+        });
+      } else if (performance.now() - (debugColors.lastAppliedAt || 0) < 1800) {
+        draw.drawText('Cores aplicadas.', contentX + contentW / 2, actionY - 10, {
+          align: 'center',
+          font: 'bold 10px Inter, sans-serif',
+          color: UI_THEME.success,
+        });
+      }
+      return;
+    }
+
     if (activeTab === 'cube') {
       syncDebugHeroOverlay(null);
       state.debugEditorTreeBounds = null;
@@ -3629,6 +4025,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       { label: 'Exposicao', key: 'exposure', min: 0.1, max: 3.0, digits: 2 },
       { label: 'Luz ambiente', key: 'ambientIntensity', min: 0, max: 3.0, digits: 2 },
       { label: 'Luz direta', key: 'keyIntensity', min: 0, max: 5.0, digits: 2 },
+      { label: 'Direcao da luz', key: 'keyLightDirectionDeg', min: 0, max: 360, digits: 0, suffix: 'deg' },
       { label: 'Nevoa', key: 'fogDensity', min: 0, max: 0.1, digits: 3 },
     ];
 
@@ -3642,7 +4039,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         value: state.visuals[ctrl.key],
         min: ctrl.min,
         max: ctrl.max,
-        formatValue: (value) => value.toFixed(ctrl.digits),
+        formatValue: (value) => `${value.toFixed(ctrl.digits)}${ctrl.suffix || ''}`,
         onChange: (value) => {
           state.visuals[ctrl.key] = clamp(value, ctrl.min, ctrl.max);
         },
@@ -3685,6 +4082,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       },
     });
 
+    cy += 34;
     drawDebugToggle({
       x: panelX + 16,
       y: cy,
@@ -3742,7 +4140,20 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
   return {
     start() {
+      if (disposed || renderFrameId !== null) return;
       render();
+    },
+    dispose() {
+      disposed = true;
+      if (renderFrameId !== null) {
+        cancelAnimationFrame(renderFrameId);
+        renderFrameId = null;
+      }
+      hideDebugColorInputs();
+      debugColorInputs.forEach((input) => input.remove());
+      debugColorHexInputs.forEach((input) => input.remove());
+      debugHeroOverlay.remove();
+      threeBoard.dispose?.();
     },
   };
 }

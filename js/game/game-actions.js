@@ -87,6 +87,12 @@ export function createGameActions(state) {
     }
   }
 
+  function updateOverworldMusicVolume(volume) {
+    const nextVolume = setOverworldMusicVolume(volume);
+    syncOverworldMusic();
+    return nextVolume;
+  }
+
   function setEvent(text) {
     const game = getGame();
     game.lastEvent = text;
@@ -1100,6 +1106,14 @@ export function createGameActions(state) {
     };
   }
 
+  function normalizeLoadedMapDebugColors(debugColors) {
+    if (!debugColors || typeof debugColors !== 'object' || typeof debugColors.values !== 'object') return null;
+
+    return {
+      values: { ...debugColors.values },
+    };
+  }
+
   function normalizeLoadedOverworld(loadedOverworld, fallbackOverworld) {
     if (!fallbackOverworld) return null;
     if (!loadedOverworld || typeof loadedOverworld !== 'object') return fallbackOverworld;
@@ -1126,6 +1140,7 @@ export function createGameActions(state) {
           removedObjectIds: Array.isArray(loadedMapState?.removedObjectIds)
             ? loadedMapState.removedObjectIds
             : (fallbackMapState.removedObjectIds || []),
+          debugColors: normalizeLoadedMapDebugColors(loadedMapState?.debugColors) || fallbackMapState.debugColors || null,
         };
       }
     } else if (Array.isArray(loadedOverworld.enemies)) {
@@ -1306,7 +1321,7 @@ export function createGameActions(state) {
     newGame,
     newDungeonLegacyGame,
     saveGame,
-    setOverworldMusicVolume,
+    setOverworldMusicVolume: updateOverworldMusicVolume,
     setEvent,
     showBanner,
     startHeroTurn,

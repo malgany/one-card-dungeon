@@ -200,6 +200,8 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
   if (!menuRoot.id) menuRoot.id = 'menu-root';
   if (!menuRoot.parentElement) document.body.append(menuRoot);
 
+  const eventController = new AbortController();
+  const eventOptions = { signal: eventController.signal };
   let characters = loadCharacters();
   let selectedCharacterId = getSelectedCharacterId() || characters[0]?.id || null;
   let activeTypeId = CHARACTER_TYPES[0].id;
@@ -631,7 +633,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
         renderSelect();
       }
     }
-  });
+  }, eventOptions);
 
   menuRoot.addEventListener('pointerover', (event) => {
     const paletteSlot = event.target.closest('[data-palette-slot-id]');
@@ -639,14 +641,14 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     if (paletteSlot.contains(event.relatedTarget)) return;
 
     flashPaletteSlot(paletteSlot.dataset.paletteSlotId);
-  });
+  }, eventOptions);
 
   menuRoot.addEventListener('focusin', (event) => {
     const paletteSlot = event.target.closest?.('[data-palette-slot-id]');
     if (!paletteSlot || !menuRoot.contains(paletteSlot)) return;
 
     flashPaletteSlot(paletteSlot.dataset.paletteSlotId);
-  });
+  }, eventOptions);
 
   menuRoot.addEventListener('input', (event) => {
     if (event.target?.matches?.('[data-palette-color-input]')) {
@@ -670,13 +672,13 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     if (event.target?.name === 'characterName') {
       syncNameInput(event.target);
     }
-  });
+  }, eventOptions);
 
   menuRoot.addEventListener('submit', (event) => {
     if (!event.target.matches('[data-character-form]')) return;
     event.preventDefault();
     createAndPlay();
-  });
+  }, eventOptions);
 
   return {
     show: renderHome,
@@ -684,5 +686,9 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     showCharacterSelect: renderSelect,
     showCharacterCreate: renderCreate,
     flashPaletteSlot,
+    dispose() {
+      eventController.abort();
+      disposeCharacterPreview();
+    },
   };
 }

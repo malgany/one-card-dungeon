@@ -102,15 +102,15 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     return true;
   }
 
-  canvas.addEventListener('mousemove', (event) => {
+  function handleMouseMove(event) {
     syncMouseFromEvent(event);
 
     if (state.game.draggingControl) {
       state.game.draggingControl.onDrag?.(state.mouse.x, state.mouse.y);
     }
-  });
+  }
  
-  canvas.addEventListener('wheel', (event) => {
+  function handleWheel(event) {
     if (!DEBUG_CONFIG.SHOW_STATS) return;
     if (
       state.debugPanelOpen &&
@@ -145,13 +145,24 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
       debugCubes.listScroll = Math.max(0, (debugCubes.listScroll || 0) + event.deltaY * 0.65);
       return;
     }
+    if (
+      state.debugPanelOpen &&
+      state.debugPanelTab === 'color' &&
+      state.debugColorListBounds &&
+      layout.pointInRect(state.mouse.x, state.mouse.y, state.debugColorListBounds)
+    ) {
+      event.preventDefault();
+      const debugColors = state.debugColors;
+      if (debugColors) debugColors.scroll = Math.max(0, (debugColors.scroll || 0) + event.deltaY * 0.65);
+      return;
+    }
 
     event.preventDefault();
     const delta = event.deltaY > 0 ? 0.92 : 1.08;
     state.debugZoom = Math.min(8.0, Math.max(0.2, (state.debugZoom || 1.15) * delta));
-  }, { passive: false });
+  }
 
-  canvas.addEventListener('mousedown', (event) => {
+  function handleMouseDown(event) {
     syncMouseFromEvent(event);
 
     for (let index = state.game.buttons.length - 1; index >= 0; index -= 1) {
@@ -192,9 +203,9 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
       };
       return;
     }
-  });
+  }
 
-  canvas.addEventListener('mouseup', (event) => {
+  function handleMouseUp(event) {
     syncMouseFromEvent(event);
 
     if (state.game.draggingControl) {
@@ -245,9 +256,9 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
 
     state.game.draggingDie = null;
     state.suppressClick = true;
-  });
+  }
 
-  canvas.addEventListener('click', (event) => {
+  function handleClick(event) {
     syncMouseFromEvent(event);
 
     if (state.suppressClick) {
@@ -317,5 +328,19 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
       state.game.selectedEntity = null;
       actions.movePlayer(tile);
     }
-  });
+  }
+
+  canvas.addEventListener('mousemove', handleMouseMove);
+  canvas.addEventListener('wheel', handleWheel, { passive: false });
+  canvas.addEventListener('mousedown', handleMouseDown);
+  canvas.addEventListener('mouseup', handleMouseUp);
+  canvas.addEventListener('click', handleClick);
+
+  return () => {
+    canvas.removeEventListener('mousemove', handleMouseMove);
+    canvas.removeEventListener('wheel', handleWheel);
+    canvas.removeEventListener('mousedown', handleMouseDown);
+    canvas.removeEventListener('mouseup', handleMouseUp);
+    canvas.removeEventListener('click', handleClick);
+  };
 }

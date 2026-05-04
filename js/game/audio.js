@@ -65,11 +65,16 @@ export function setOverworldMusicVolume(volume) {
   const normalized = Math.min(1, Math.max(0, Number(volume) || 0));
   overworldMusicVolume = normalized;
   storeOverworldMusicVolume(normalized);
-  if (overworldMusic) overworldMusic.volume = normalized;
+  if (overworldMusic) {
+    overworldMusic.volume = normalized;
+    if (normalized === 0) stopOverworldMusic();
+  }
   return overworldMusicVolume;
 }
 
 export function playOverworldMusic() {
+  if (overworldMusicVolume === 0) return;
+
   const audio = getOverworldMusic();
   if (!audio || !audio.paused) return;
 

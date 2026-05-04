@@ -1,0 +1,15 @@
+export const DEFAULT_MAP_COLOR_VALUES = Object.freeze({
+  water1: '#28c3e6',
+  water2: '#128eaa',
+  water3: '#7fdce8',
+  top1: '#5cad54',
+  top2: '#67b95e',
+  top3: '#529f4d',
+  top4: '#b1e07c',
+  top5: '#4a9041',
+  side1: '#b7854f',
+  side2: '#9d6b3d',
+  side3: '#7e4e2c',
+  side4: '#a77343',
+  side5: '#5b3a22',
+});

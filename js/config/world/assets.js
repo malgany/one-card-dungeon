@@ -20,7 +20,7 @@ export const WORLD_ASSETS = {
   characters: {
     mage: './assets/models/adventurers/characters/mage.glb',
     barbarian: './assets/models/adventurers/characters/barbarian.glb',
-    knight: './assets/models/adventurers/characters/knight.glb',
+    knight: './assets/models/adventurers/characters/knight-v2.glb',
     ranger: './assets/models/adventurers/characters/ranger.glb',
     rogue: './assets/models/adventurers/characters/rogue.glb',
     rogueHooded: './assets/models/adventurers/characters/rogue-hooded.glb',

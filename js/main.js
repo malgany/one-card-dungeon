@@ -1,6 +1,7 @@
 import { createGameActions } from './game/game-actions.js';
 import { createGame, loadCardImages } from './game/game-factories.js';
 import { DEBUG_CONFIG } from './config/game-data.js';
+import { DEFAULT_MAP_COLOR_VALUES } from './config/map-colors.js';
 import { registerCanvasInput } from './ui/input.js';
 import { createLayoutTools } from './ui/layout.js';
 import { createMenuFlow } from './ui/menu-flow.js';
@@ -35,6 +36,13 @@ const state = {
     lastCopiedAt: 0,
     listScroll: 0,
   },
+  debugColors: {
+    values: { ...DEFAULT_MAP_COLOR_VALUES },
+    lastCopiedAt: 0,
+    lastAppliedAt: 0,
+    applyStatus: null,
+    scroll: 0,
+  },
   debugEditor: {
     expandedFolders: {},
     placements: [],
@@ -47,11 +55,12 @@ const state = {
     exposure: 1.0,
     ambientIntensity: 1.05,
     keyIntensity: 1.75,
+    keyLightDirectionDeg: 84,
     fogDensity: 0.0,
     shadowMapEnabled: true,
     showOutlines: false,
     showGrid: false,
-    overworldOrthographicCamera: false,
+    overworldOrthographicCamera: true,
   },
 };
 
@@ -75,7 +84,17 @@ if (['localhost', '127.0.0.1'].includes(window.location.hostname)) {
 
 window.addEventListener('resize', layout.resize);
 layout.resize();
-registerCanvasInput({ canvas, state, actions, layout });
+const unregisterCanvasInput = registerCanvasInput({ canvas, state, actions, layout });
 if (DEBUG_CONFIG.SHOW_STATS) menuFlow.showDebugEntry();
 else menuFlow.show();
 renderer.start();
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    renderer.dispose?.();
+    menuFlow.dispose?.();
+    unregisterCanvasInput?.();
+    window.removeEventListener('resize', layout.resize);
+    if (window.__ONE_RPG_DEBUG__?.state === state) delete window.__ONE_RPG_DEBUG__;
+  });
+}
