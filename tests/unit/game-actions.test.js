@@ -9,6 +9,14 @@ function createActionHarness(game = createDungeonLegacyGame()) {
   return { state, actions: createGameActions(state) };
 }
 
+function monsterDeathFinishDelay(damage = 1) {
+  return (
+    (damage > 0 ? TIMING.ATTACK_BUMP_DURATION + TIMING.PLAYER_DAMAGE_ANIMATION : 0)
+    + TIMING.MONSTER_DEATH_ANIMATION
+    + TIMING.MONSTER_DEFEAT_EXIT_PAUSE
+  );
+}
+
 describe('game actions', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -93,7 +101,7 @@ describe('game actions', () => {
     expect(state.game.busy).toBe(false);
   });
 
-  it('attacks a reachable monster without healing and removes it when defeated', () => {
+  it('plays enemy death before removing a defeated monster', () => {
     const monster = createMonster('skeletonMinion', 1, 5, 0);
     monster.hp = 4;
     const game = createDungeonLegacyGame();
@@ -119,9 +127,20 @@ describe('game actions', () => {
         entityId: monster.id,
         animation: 'Hit_B',
       }),
+      expect.objectContaining({
+        type: 'modelAction',
+        entityId: monster.id,
+        animation: 'Death_A',
+        duration: TIMING.MONSTER_DEATH_ANIMATION + TIMING.MONSTER_DEFEAT_EXIT_PAUSE,
+      }),
     ]));
 
     vi.advanceTimersByTime(TIMING.HERO_ATTACK_WAIT_TIME);
+    expect(state.game.monsters).toEqual([monster]);
+    expect(state.game.phase).toBe(PHASES.HERO);
+    expect(state.game.busy).toBe(true);
+
+    vi.advanceTimersByTime(monsterDeathFinishDelay() - TIMING.HERO_ATTACK_WAIT_TIME);
     expect(state.game.monsters).toEqual([]);
     expect(state.game.phase).toBe(PHASES.LEVELUP);
   });
@@ -280,7 +299,7 @@ describe('game actions', () => {
     const { state, actions } = createActionHarness(game);
 
     actions.attackMonster(monster.id);
-    vi.advanceTimersByTime(TIMING.HERO_ATTACK_WAIT_TIME);
+    vi.advanceTimersByTime(monsterDeathFinishDelay());
 
     expect(state.game.monsters).toEqual([]);
     expect(state.game.phase).toBe(PHASES.WON);
@@ -399,7 +418,7 @@ describe('game actions', () => {
     state.game.selectedAttackId = state.game.player.attackSlot.id;
 
     actions.attackMonster(target.id);
-    vi.advanceTimersByTime(TIMING.HERO_ATTACK_WAIT_TIME);
+    vi.advanceTimersByTime(monsterDeathFinishDelay());
 
     expect(state.game.mode).toBe(GAME_MODES.OVERWORLD);
     expect(state.game.overworld.currentMapId).toBe('open-road');

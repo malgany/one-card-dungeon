@@ -586,9 +586,9 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const rowY = y;
     const rowW = w;
     const timerX = rowX + (compact ? 38 : 42);
-    const timerY = rowY + (compact ? 5 : 6);
+    const timerY = rowY + 3;
     const timerW = Math.max(58, rowX + rowW - timerX - (compact ? 8 : 10));
-    const progressH = compact ? 4 : 5;
+    const timerH = Math.max(14, rowH - 6);
     const buttonX = x;
     const buttonW = w;
     const buttonY = rowY + rowH + buttonGap;
@@ -616,20 +616,20 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       const barW = Math.max(0, timerW);
       const fillW = Math.min(barW, Math.max(2, barW * heroTimer.progress));
 
-      draw.roundRect(timerX, timerY, barW, progressH, progressH / 2, palette.timerTrack, palette.timerBorder);
+      draw.roundRect(timerX, timerY, barW, timerH, timerH / 2, palette.timerTrack, palette.timerBorder);
       if (fillW > 0) {
-        draw.roundRect(timerX, timerY, fillW, progressH, progressH / 2, palette.timerFill, null);
+        draw.roundRect(timerX, timerY, fillW, timerH, timerH / 2, palette.timerFill, null);
       }
 
-      drawShadowedText(`${heroTimer.remainingSeconds}s`, timerX + timerW / 2, rowY + rowH / 2 + 3, {
+      drawShadowedText(`${heroTimer.remainingSeconds}s`, timerX + timerW / 2, timerY + timerH / 2 + 2, {
         align: 'center',
         baseline: 'middle',
         font: `900 ${compact ? 12 : 13}px Inter, sans-serif`,
-        color: palette.timerText,
+        color: UI_THEME.text,
       }, 'rgba(0,0,0,0.85)');
     } else {
-      draw.roundRect(timerX, timerY, timerW, progressH, progressH / 2, palette.timerTrack, palette.timerBorder);
-      drawShadowedText('AGUARDE', timerX + timerW / 2, rowY + rowH / 2 + 3, {
+      draw.roundRect(timerX, timerY, timerW, timerH, timerH / 2, palette.timerTrack, palette.timerBorder);
+      drawShadowedText('AGUARDE', timerX + timerW / 2, timerY + timerH / 2 + 2, {
         align: 'center',
         baseline: 'middle',
         font: `900 ${compact ? 11 : 12}px Inter, sans-serif`,
@@ -1710,37 +1710,80 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   }
 
   function drawCombatBottomUI(currentLayout, now = performance.now()) {
-    const game = state.game;
-    const bottomY = currentLayout.sh - currentLayout.bottomUIHeight;
+    const slotWidth = (slotSize, slotCount) => {
+      const gap = Math.max(8, Math.floor(slotSize * 0.18));
+      return slotCount * slotSize + Math.max(0, slotCount - 1) * gap;
+    };
 
     if (currentLayout.compact) {
-      const uiX = currentLayout.boardX;
-      const uiW = currentLayout.boardW;
-      const hudW = drawPlayerResourceHud(uiX, bottomY + 6, 0.74);
-      drawSpellBar(uiX + hudW + 8, bottomY + 13, uiW - hudW - 8, 39, 4, false);
-
+      const panelMargin = 8;
+      const panelPad = 10;
+      const panelW = Math.min(currentLayout.sw - panelMargin * 2, 520);
+      const panelH = 132;
+      const panelX = Math.round((currentLayout.sw - panelW) / 2);
+      const panelY = currentLayout.sh - panelH - panelMargin;
+      const hudScale = 0.74;
+      const hudW = 166 * hudScale;
+      const hudH = 76 * hudScale;
+      const slotSize = 39;
+      const spellW = Math.min(slotWidth(slotSize, 4), panelW - panelPad * 2 - hudW - 10);
+      const topGap = 10;
+      const topContentW = hudW + topGap + spellW;
+      const topX = panelX + Math.max(panelPad, Math.floor((panelW - topContentW) / 2));
+      const topCenterY = panelY + 40;
+      const bottomCenterY = panelY + 102;
       const queueItem = 29;
       const queueGap = 5;
-      drawTurnQueue(uiX, bottomY + 78, queueItem, queueGap, now, true);
+      const queueW = turnQueueWidth(state.game, queueItem, queueGap);
+      const btnW = Math.min(156, Math.max(132, panelW * 0.44));
+      const bottomGap = 18;
+      const bottomContentW = queueW + bottomGap + btnW;
+      const bottomX = panelX + Math.max(panelPad, Math.floor((panelW - bottomContentW) / 2));
 
-      const btnW = Math.min(156, uiW * 0.48);
-      drawHeroTurnControl(uiX + uiW - btnW, bottomY + 68, btnW, now, true);
+      draw.roundRect(panelX, panelY, panelW, panelH, 9, UI_THEME.surface0, UI_THEME.border0);
+      drawPlayerResourceHud(topX, topCenterY - hudH / 2, hudScale);
+      drawSpellBar(topX + hudW + topGap, topCenterY - slotSize / 2, spellW, slotSize, 4, false);
+
+      drawTurnQueue(bottomX, bottomCenterY - queueItem / 2, queueItem, queueGap, now, true);
+      drawHeroTurnControl(bottomX + queueW + bottomGap, bottomCenterY - 29, btnW, now, true);
       return;
     }
 
-    const uiX = currentLayout.sidebarW + 24;
-    const uiW = currentLayout.sw - currentLayout.sidebarW - 48;
-    const tight = uiW < 760;
+    const availableScreenW = currentLayout.sw - 32;
+    const tight = availableScreenW < 760;
+    const panelPad = tight ? 14 : 18;
+    const panelMaxW = Math.min(availableScreenW, tight ? availableScreenW : 860);
+    const panelH = tight ? 88 : 96;
+    const panelY = currentLayout.sh - panelH - 18;
+    const centerY = panelY + panelH / 2;
     const hudScale = tight ? 0.74 : 0.88;
-    const hudW = drawPlayerResourceHud(uiX, bottomY + 15, hudScale);
+    const hudW = 166 * hudScale;
+    const hudH = 76 * hudScale;
     const btnW = tight ? 162 : 182;
-    const btnX = uiX + uiW - btnW;
-    const btnY = bottomY + 18;
-    const spellX = uiX + hudW + 18;
-    const spellAvailableW = Math.max(150, btnX - spellX - 18);
+    const slotSize = tight ? 40 : 46;
+    const hudGap = tight ? 16 : 22;
+    const buttonGap = tight ? 20 : 30;
+    let slotCount = 6;
+    let spellW = slotWidth(slotSize, slotCount);
+    let contentW = hudW + hudGap + spellW + buttonGap + btnW;
 
-    drawSpellBar(spellX, bottomY + 20, spellAvailableW, tight ? 40 : 46, 6, true);
-    drawHeroTurnControl(btnX, btnY, btnW, now, false);
+    while (slotCount > 3 && contentW + panelPad * 2 > panelMaxW) {
+      slotCount -= 1;
+      spellW = slotWidth(slotSize, slotCount);
+      contentW = hudW + hudGap + spellW + buttonGap + btnW;
+    }
+
+    const panelW = Math.min(panelMaxW, contentW + panelPad * 2);
+    const panelX = Math.round((currentLayout.sw - panelW) / 2);
+    const contentX = panelX + Math.max(panelPad, Math.floor((panelW - contentW) / 2));
+    const hudX = contentX;
+    const spellX = hudX + hudW + hudGap;
+    const btnX = spellX + spellW + buttonGap;
+
+    draw.roundRect(panelX, panelY, panelW, panelH, 10, UI_THEME.surface0, UI_THEME.border0);
+    drawPlayerResourceHud(hudX, centerY - hudH / 2, hudScale);
+    drawSpellBar(spellX, centerY - slotSize / 2 - 22, spellW, slotSize, slotCount, true);
+    drawHeroTurnControl(btnX, centerY - 35, btnW, now, false);
   }
 
   function drawSelectedEntityModal(currentLayout) {
@@ -1983,31 +2026,36 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     if (game.phase !== PHASES.HERO || game.busy || game.selectedAttackId !== attack.id) return;
     if (!layout.hoveredTile()) return;
 
-    const size = 24;
-    const x = state.mouse.x + 18;
-    const y = state.mouse.y + 18;
+    const size = 46;
+    const currentLayout = layout.getLayout?.();
+    const screenW = currentLayout?.sw || window.innerWidth || 9999;
+    const screenH = currentLayout?.sh || window.innerHeight || 9999;
+    const x = clamp(state.mouse.x + 18, 8, screenW - size - 8);
+    const y = clamp(state.mouse.y + 18, 8, screenH - size - 8);
+    const imagePad = 3;
 
     ctx.save();
     ctx.globalAlpha = 0.92;
-    ctx.strokeStyle = '#e6c06f';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(x + size / 2, y + size / 2, size * 0.36, 0, Math.PI * 2);
-    ctx.moveTo(x + size / 2, y + 2);
-    ctx.lineTo(x + size / 2, y + 8);
-    ctx.moveTo(x + size / 2, y + size - 8);
-    ctx.lineTo(x + size / 2, y + size - 2);
-    ctx.moveTo(x + 2, y + size / 2);
-    ctx.lineTo(x + 8, y + size / 2);
-    ctx.moveTo(x + size - 8, y + size / 2);
-    ctx.lineTo(x + size - 2, y + size / 2);
-    ctx.stroke();
-    draw.roundRect(x + size + 5, y + 3, 56, 18, 5, 'rgba(7,8,7,0.9)', UI_THEME.accent);
-    draw.drawText('ALVO', x + size + 33, y + 16, {
-      align: 'center',
-      font: '900 10px Inter, sans-serif',
-      color: UI_THEME.accent,
-    });
+    ctx.shadowColor = 'rgba(0,0,0,0.55)';
+    ctx.shadowBlur = 12;
+    ctx.shadowOffsetY = 4;
+    draw.roundRect(x, y, size, size, 6, UI_THEME.accentDark, '#e6c06f');
+    ctx.shadowColor = 'transparent';
+
+    ctx.save();
+    draw.roundRect(x + imagePad, y + imagePad, size - imagePad * 2, size - imagePad * 2, 5, null, null);
+    ctx.clip();
+    const drewIcon = draw.drawImageCover(
+      cardImages.actionStrike,
+      x + imagePad,
+      y + imagePad,
+      size - imagePad * 2,
+      size - imagePad * 2,
+    );
+    if (!drewIcon) {
+      drawSpellGlyph(x + size / 2, y + size / 2, size * 0.48, false);
+    }
+    ctx.restore();
     ctx.restore();
   }
 

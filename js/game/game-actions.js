@@ -715,6 +715,7 @@ export function createGameActions(state) {
     const cost = attack.apCost;
     game.apRemaining -= cost;
     game.selectedAttackId = null;
+    const attackStartTime = performance.now();
 
     game.animations.push({
       type: 'floatingText',
@@ -722,7 +723,7 @@ export function createGameActions(state) {
       y: game.player.y,
       text: `-${cost}`,
       color: '#d39b32',
-      startTime: performance.now(),
+      startTime: attackStartTime,
       duration: 1200
     });
 
@@ -734,7 +735,7 @@ export function createGameActions(state) {
       sourceY: game.player.y,
       targetX: targetCell.x,
       targetY: targetCell.y,
-      startTime: performance.now(),
+      startTime: attackStartTime,
       duration: TIMING.PLAYER_ATTACK_ANIMATION
     });
 
@@ -753,10 +754,11 @@ export function createGameActions(state) {
       game.animations.push({
         type: 'damageShake',
         entityId: target.id,
-        startTime: performance.now() + TIMING.ATTACK_BUMP_DURATION,
+        startTime: attackStartTime + TIMING.ATTACK_BUMP_DURATION,
         duration: TIMING.DAMAGE_SHAKE_DURATION
       });
 
+      const targetDamageStartTime = attackStartTime + TIMING.ATTACK_BUMP_DURATION;
       if (damage > 0) {
         game.animations.push({
           type: 'modelAction',
@@ -766,7 +768,7 @@ export function createGameActions(state) {
           sourceY: target.y,
           targetX: game.player.x,
           targetY: game.player.y,
-          startTime: performance.now() + TIMING.ATTACK_BUMP_DURATION,
+          startTime: targetDamageStartTime,
           duration: TIMING.PLAYER_DAMAGE_ANIMATION
         });
       }
@@ -777,7 +779,7 @@ export function createGameActions(state) {
         y: target.y,
         text: damage > 0 ? `-${damage}` : 'DEF',
         color: damage > 0 ? '#b94735' : '#d9c894',
-        startTime: performance.now() + 150,
+        startTime: attackStartTime + 150,
         duration: 1200
       });
     }
@@ -789,6 +791,33 @@ export function createGameActions(state) {
     } else {
       const healText = healed > 0 ? ` Suga ${healed} vida.` : '';
       setEvent(`${attack.name}: ${attack.damage} - DEF ${target.defense} = ${damage} dano. Gasto: ${cost} AP.${healText}`);
+    }
+
+    const targetDefeated = target.hp <= 0;
+    const finishDelay = targetDefeated
+      ? (
+        (damage > 0 ? TIMING.ATTACK_BUMP_DURATION + TIMING.PLAYER_DAMAGE_ANIMATION : 0)
+        + TIMING.MONSTER_DEATH_ANIMATION
+        + TIMING.MONSTER_DEFEAT_EXIT_PAUSE
+      )
+      : TIMING.HERO_ATTACK_WAIT_TIME;
+
+    if (targetDefeated) {
+      const deathStartTime = damage > 0
+        ? attackStartTime + TIMING.ATTACK_BUMP_DURATION + TIMING.PLAYER_DAMAGE_ANIMATION
+        : attackStartTime;
+
+      game.animations.push({
+        type: 'modelAction',
+        entityId: target.id,
+        animation: 'Death_A',
+        sourceX: target.x,
+        sourceY: target.y,
+        targetX: game.player.x,
+        targetY: game.player.y,
+        startTime: deathStartTime,
+        duration: TIMING.MONSTER_DEATH_ANIMATION + TIMING.MONSTER_DEFEAT_EXIT_PAUSE
+      });
     }
 
     setTimeout(() => {
@@ -820,7 +849,7 @@ export function createGameActions(state) {
           showBanner('Nível concluído', 'Escolha curar ou melhorar um atributo.', 2000);
         }
       }
-    }, TIMING.HERO_ATTACK_WAIT_TIME);
+    }, finishDelay);
 
     return true;
   }

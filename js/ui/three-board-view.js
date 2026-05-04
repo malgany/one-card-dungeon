@@ -250,6 +250,16 @@ function modelActionFor(entityId, animations, now) {
   });
 }
 
+function hasPendingModelAction(entityId, animations, now, animationName) {
+  return animations.some((animation) => {
+    if (animation.type !== 'modelAction' || animation.entityId !== entityId) return false;
+    if (animationName && animation.animation !== animationName) return false;
+    const startTime = Number.isFinite(animation.startTime) ? animation.startTime : 0;
+    const duration = Math.max(0, animation.duration || 0);
+    return now < startTime + duration;
+  });
+}
+
 function movementDirection(movement, now) {
   if (!movement?.path || movement.path.length < 2) return null;
 
@@ -2173,7 +2183,12 @@ export function createThreeBoardView({ state }) {
       : state.game.monsters;
 
     for (const monster of units) {
-      if (monster.hp <= 0) continue;
+      if (
+        monster.hp <= 0 &&
+        !hasPendingModelAction(monster.id, state.game.animations || [], now, 'Death_A')
+      ) {
+        continue;
+      }
       desiredIds.add(monster.id);
       updateUnit(monster, monster.id, false, now);
     }

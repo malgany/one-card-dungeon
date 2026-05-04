@@ -4,8 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "assets:textures": "node scripts/generate-texture-library.mjs",
+    "assets:sync": "node scripts/sync-public-assets.mjs",
+    "assets:prepare": "npm run assets:textures && npm run assets:sync",
+    "predev": "npm run assets:prepare",
     "dev": "vite --host 127.0.0.1",
-    "prebuild": "node scripts/sync-public-assets.mjs",
+    "prebuild": "npm run assets:prepare",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "test:unit": "vitest run",
