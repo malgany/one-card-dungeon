@@ -154,8 +154,32 @@ function paletteSlotControl(slotControl, color, activeSlotId, index) {
   `;
 }
 
+function characterClothingColors(character) {
+  const fallback = normalizeHexColor(character.color) || '#ffffff';
+  const draft = createPaletteDraft(character.type, character.palette);
+  const controls = getPaletteSlotControls(character.type);
+
+  const colorForControl = (label, fallbackColor) => {
+    const control = controls.find((candidate) => candidate.label === label);
+    const slotId = control?.slots?.[0];
+    return normalizeHexColor(slotId ? draft[slotId] : null) || fallbackColor;
+  };
+
+  const primary = colorForControl('Roupas 1', fallback);
+  const secondary = colorForControl('Roupas 2', primary);
+
+  return { primary, secondary };
+}
+
 function characterRow(character, selectedId) {
   const active = character.id === selectedId ? ' is-selected' : '';
+  const clothingColors = characterClothingColors(character);
+  const colorStyle = [
+    `--character-color:${escapeHtml(character.color)}`,
+    `--character-primary-color:${escapeHtml(clothingColors.primary)}`,
+    `--character-secondary-color:${escapeHtml(clothingColors.secondary)}`,
+  ].join('; ');
+
   return `
     <div class="menu-character-row${active}" data-menu-action="select-character" data-character-id="${escapeHtml(character.id)}">
       <img src="${escapeHtml(character.image)}" alt="" class="menu-character-thumb">
@@ -163,7 +187,7 @@ function characterRow(character, selectedId) {
         <strong>${escapeHtml(character.name)}</strong>
         <small>${escapeHtml(character.typeLabel)}</small>
       </span>
-      <span class="menu-character-color" style="--character-color:${escapeHtml(character.color)}"></span>
+      <span class="menu-character-color" title="Roupa 1 em cima, Roupa 2 embaixo" style="${colorStyle}"></span>
       <button class="menu-delete-button" type="button" data-menu-action="delete-character" data-character-id="${escapeHtml(character.id)}" title="Excluir personagem">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
       </button>
@@ -183,6 +207,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
   const activePaletteSlotByType = {};
   let nameDraft = '';
   let activeCharacterPreview = null;
+  let createReturnScreen = 'home';
 
   function selectedCharacter() {
     return characters.find((character) => character.id === selectedCharacterId) || characters[0] || null;
@@ -422,7 +447,10 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
           <div class="menu-character-preview" data-menu-character-preview aria-label="${escapeHtml(activeType.label)}"></div>
           <form class="menu-create-form" data-character-form>
             <input class="menu-name-input" name="characterName" value="${escapeHtml(nameDraft)}" maxlength="${CHARACTER_NAME_MAX_LENGTH}" pattern="${CHARACTER_NAME_PATTERN}" required autocomplete="off" spellcheck="false" placeholder="Nome do personagem" title="Use apenas letras e números, sem espaços.">
-            <button class="menu-primary-button" type="submit" data-menu-action="create-and-play">Jogar</button>
+            <div class="menu-create-actions">
+              <button class="menu-secondary-button" type="button" data-menu-action="back-from-create">Voltar</button>
+              <button class="menu-primary-button" type="submit" data-menu-action="create-and-play">Jogar</button>
+            </div>
           </form>
         </main>
         <aside class="menu-panel menu-glass">
@@ -488,6 +516,18 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     hideRoot();
   }
 
+  function renderDebugEntry() {
+    characters = loadCharacters();
+    if (characters.length > 0) {
+      selectedCharacterId = characters[0].id;
+      playCharacter(characters[0]);
+      return;
+    }
+
+    createReturnScreen = 'home';
+    renderCreate();
+  }
+
   function createAndPlay() {
     if (characters.length >= MAX_CHARACTERS) return;
 
@@ -530,7 +570,10 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
       characters = loadCharacters();
       selectedCharacterId = getSelectedCharacterId() || characters[0]?.id || null;
       if (characters.length > 0) renderSelect();
-      else renderCreate();
+      else {
+        createReturnScreen = 'home';
+        renderCreate();
+      }
       return;
     }
 
@@ -541,7 +584,16 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     }
 
     if (action === 'show-create') {
+      createReturnScreen = 'select';
       renderCreate();
+      return;
+    }
+
+    if (action === 'back-from-create') {
+      syncNameInput(menuRoot.querySelector('[name="characterName"]'));
+      characters = loadCharacters();
+      if (createReturnScreen === 'select' && characters.length > 0) renderSelect();
+      else renderHome();
       return;
     }
 
@@ -628,6 +680,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
 
   return {
     show: renderHome,
+    showDebugEntry: renderDebugEntry,
     showCharacterSelect: renderSelect,
     showCharacterCreate: renderCreate,
     flashPaletteSlot,

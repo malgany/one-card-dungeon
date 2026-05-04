@@ -1,13 +1,16 @@
-import { BOARD_SIZE, DEBUG_CONFIG, GAME_MODES, LEVELS, PHASES, STAT_META } from '../config/game-data.js';
+import { BOARD_SIZE, DEBUG_CONFIG, GAME_MODES, LEVELS, PHASES, STAT_META, WORLD_MAPS, WORLD_OBJECT_TYPES } from '../config/game-data.js';
 import { levelWallsSet, posKey, samePos } from '../game/board-logic.js';
+import { ensureOverworldMapState } from '../game/game-factories.js';
 import {
   getCurrentWorldBounds,
   getCurrentWorldMap,
   getCurrentWorldMapState,
   getCurrentWorldObjects,
 } from '../game/world-state.js';
+import { MODEL_LIBRARY } from '../config/world/model-library.js';
+import { TEXTURE_LIBRARY } from '../config/world/texture-library.js';
 import { createDrawPrimitives } from './draw-primitives.js';
-import { createThreeBoardView } from './three-board-view.js';
+import { createThreeBoardView, HERO_DEBUG_ANIMATION_OPTIONS } from './three-board-view.js';
 
 const UI_THEME = {
   bg0: '#070807',
@@ -29,6 +32,10 @@ const UI_THEME = {
   textDim: '#8f8773',
   overlay: 'rgba(7,8,7,0.94)',
 };
+const TEXTURE_OUTSIDE_BOARD_MULTIPLIER = 2;
+const DEBUG_PANEL_MARGIN = 12;
+const DEBUG_PANEL_MINIMIZED_Y = 12;
+const DEBUG_PANEL_OPEN_TAB_OVERHANG = 28;
 
 export function getAnimationEndTime(anim) {
   const startTime = Number.isFinite(anim.startTime) ? anim.startTime : 0;
@@ -62,6 +69,74 @@ function isAnimationActive(anim, now) {
 export function createRenderer({ canvas, ctx, cardImages, state, actions, layout, onExitToMainMenu = null }) {
   const draw = createDrawPrimitives({ ctx, state, cardImages });
   const threeBoard = createThreeBoardView({ state });
+  const debugHeroOverlay = document.createElement('div');
+  const debugHeroTitle = document.createElement('strong');
+  const debugHeroHelp = document.createElement('p');
+  const debugHeroField = document.createElement('label');
+  const debugHeroFieldLabel = document.createElement('span');
+  const debugHeroSelect = document.createElement('select');
+  const debugHeroStatus = document.createElement('p');
+
+  debugHeroOverlay.className = 'debug-hero-overlay';
+  debugHeroOverlay.hidden = true;
+  debugHeroTitle.className = 'debug-hero-title';
+  debugHeroTitle.textContent = 'Hero';
+  debugHeroHelp.className = 'debug-hero-help';
+  debugHeroHelp.textContent = 'Idle, walk e run ficam em loop. Ataques, mortes e acoes tocam 1x e param no fim.';
+  debugHeroField.className = 'debug-hero-field';
+  debugHeroFieldLabel.textContent = 'Animacao';
+  debugHeroSelect.className = 'debug-hero-select';
+  debugHeroSelect.setAttribute('aria-label', 'Animacao do Hero');
+  debugHeroStatus.className = 'debug-hero-status';
+
+  debugHeroField.append(debugHeroFieldLabel, debugHeroSelect);
+  debugHeroOverlay.append(debugHeroTitle, debugHeroHelp, debugHeroField, debugHeroStatus);
+  document.body.append(debugHeroOverlay);
+
+  const autoHeroOption = document.createElement('option');
+  autoHeroOption.value = 'auto';
+  autoHeroOption.textContent = 'Auto (jogo)';
+  debugHeroSelect.append(autoHeroOption);
+  HERO_DEBUG_ANIMATION_OPTIONS.forEach((option) => {
+    const element = document.createElement('option');
+    element.value = option.id;
+    element.textContent = `${option.label}${option.loop ? ' (loop)' : ' (1x)'}`;
+    debugHeroSelect.append(element);
+  });
+
+  debugHeroSelect.addEventListener('change', () => {
+    const heroDebug = ensureDebugHeroState();
+    heroDebug.selectedAnimationId = debugHeroSelect.value === 'auto' ? null : debugHeroSelect.value;
+  });
+
+  function ensureDebugHeroState() {
+    if (!state.debugHero) state.debugHero = {};
+    if (state.debugHero.selectedAnimationId === undefined) state.debugHero.selectedAnimationId = null;
+    return state.debugHero;
+  }
+
+  function syncDebugHeroOverlay(bounds = null) {
+    const visible = !!bounds;
+    debugHeroOverlay.hidden = !visible;
+    if (!visible) return;
+
+    const heroDebug = ensureDebugHeroState();
+    const selectedAnimationId = heroDebug.selectedAnimationId;
+    const selectedOption = HERO_DEBUG_ANIMATION_OPTIONS.find((option) => option.id === selectedAnimationId) || null;
+    const selectValue = selectedAnimationId || 'auto';
+
+    if (debugHeroSelect.value !== selectValue) {
+      debugHeroSelect.value = selectValue;
+    }
+
+    debugHeroStatus.textContent = selectedOption
+      ? `Atual: ${selectedOption.label}${selectedOption.loop ? ' (loop)' : ' (1x e para)'}`
+      : 'Atual: Auto (jogo)';
+
+    debugHeroOverlay.style.left = `${Math.round(bounds.x)}px`;
+    debugHeroOverlay.style.top = `${Math.round(bounds.y)}px`;
+    debugHeroOverlay.style.width = `${Math.round(bounds.w)}px`;
+  }
 
   function clearThreeBoardViewport(currentLayout) {
     const viewport = threeBoard.getViewport(currentLayout);
@@ -602,15 +677,142 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       });
     }
 
-    if (DEBUG_CONFIG.SHOW_STATS && !currentLayout.compact) {
-      drawDebugPanel(x + 12, y + h - 230, w - 24);
-    }
   }
 
   function drawMenu(currentLayout) {
     if (!state.game.menuOpen) return;
 
     const menuView = state.game.menuView || 'main';
+    if (menuView === 'main' || menuView === 'sound') {
+      const soundView = menuView === 'sound';
+      const w = soundView ? 360 : 260;
+      const h = soundView ? 228 : 288;
+      const x = (currentLayout.sw - w) / 2;
+      const y = (currentLayout.sh - h) / 2;
+      const contentX = x + 24;
+      const contentY = y + 64;
+      const contentW = w - 48;
+
+      function closeMenu() {
+        state.game.menuOpen = false;
+        state.game.menuView = 'main';
+      }
+
+      function openTutorialModal() {
+        closeMenu();
+        const modal = document.getElementById('tutorial-modal');
+        if (modal) modal.style.display = 'flex';
+      }
+
+      draw.roundRect(x, y, w, h, 8, UI_THEME.overlay, UI_THEME.border1);
+      draw.drawText(soundView ? 'Sons' : 'Menu', x + w / 2, y + 30, {
+        align: 'center',
+        font: 'bold 17px Inter, sans-serif',
+        color: UI_THEME.text,
+      });
+      draw.drawButton(x + w - 38, y + 9, 28, 26, 'X', closeMenu, {
+        fill: UI_THEME.surface1,
+        hoverFill: UI_THEME.surface2,
+        stroke: UI_THEME.border1,
+      });
+
+      if (soundView) {
+        const volume = actions.getOverworldMusicVolume?.() ?? 0.5;
+        const percent = Math.round(volume * 100);
+        const sliderX = contentX;
+        const sliderY = contentY + 80;
+        const sliderW = contentW;
+        const sliderH = 24;
+        const trackY = sliderY + sliderH / 2;
+        const knobX = sliderX + sliderW * volume;
+
+        function setVolumeFromMouse(mouseX) {
+          const nextVolume = clamp((mouseX - sliderX) / sliderW, 0, 1);
+          actions.setOverworldMusicVolume?.(nextVolume);
+        }
+
+        draw.drawText('Volume da música', contentX, contentY + 6, {
+          align: 'left',
+          font: 'bold 16px Inter, sans-serif',
+          color: UI_THEME.text,
+        });
+        draw.drawText(`${percent}%`, x + w - 24, contentY + 6, {
+          align: 'right',
+          font: 'bold 16px Inter, sans-serif',
+          color: UI_THEME.accent,
+        });
+        draw.drawText('Volume da música do jogo como um todo.', contentX, contentY + 34, {
+          align: 'left',
+          font: '13px Inter, sans-serif',
+          color: UI_THEME.textMuted,
+          maxWidth: contentW,
+        });
+
+        ctx.save();
+        draw.roundRect(sliderX, trackY - 4, sliderW, 8, 4, 'rgba(32,34,25,0.92)', UI_THEME.border1);
+        draw.roundRect(sliderX, trackY - 4, Math.max(8, knobX - sliderX), 8, 4, UI_THEME.accentDark, null);
+        draw.roundRect(knobX - 9, trackY - 11, 18, 22, 6, '#d6b36e', '#f3d79a');
+        ctx.restore();
+
+        state.game.buttons.push({
+          x: sliderX,
+          y: sliderY,
+          w: sliderW,
+          h: sliderH,
+          onClick: () => setVolumeFromMouse(state.mouse.x),
+          onDragStart: () => setVolumeFromMouse(state.mouse.x),
+          onDrag: (mouseX) => setVolumeFromMouse(mouseX),
+        });
+
+        draw.drawButton(contentX, y + h - 48, contentW, 34, 'Fechar', closeMenu, {
+          fill: UI_THEME.surface1,
+          hoverFill: UI_THEME.surface2,
+          stroke: UI_THEME.border1,
+        });
+        return;
+      }
+
+      const buttonH = 38;
+      const buttonGap = 10;
+      let buttonY = y + 54;
+
+      draw.drawButton(contentX, buttonY, contentW, buttonH, 'Como jogar', openTutorialModal, {
+        fill: UI_THEME.surface1,
+        hoverFill: UI_THEME.surface2,
+        stroke: UI_THEME.border1,
+      });
+      buttonY += buttonH + buttonGap;
+
+      draw.drawButton(contentX, buttonY, contentW, buttonH, 'Sons', () => {
+        state.game.menuView = 'sound';
+      }, {
+        fill: UI_THEME.surface1,
+        hoverFill: UI_THEME.surface2,
+        stroke: UI_THEME.border1,
+      });
+      buttonY += buttonH + buttonGap;
+
+      draw.drawButton(contentX, buttonY, contentW, buttonH, 'Dungeon Legado', () => {
+        closeMenu();
+        actions.newDungeonLegacyGame();
+      }, {
+        fill: UI_THEME.surface1,
+        hoverFill: UI_THEME.surface2,
+        stroke: UI_THEME.border1,
+      });
+      buttonY += buttonH + buttonGap;
+
+      draw.drawButton(contentX, buttonY, contentW, buttonH, 'Sair', () => {
+        closeMenu();
+        onExitToMainMenu?.();
+      }, {
+        fill: UI_THEME.dangerDark,
+        hoverFill: UI_THEME.danger,
+        stroke: '#fca5a5',
+      });
+      return;
+    }
+
     const optionsTab = state.game.optionsTab || 'how-to';
     const w = menuView === 'options' ? 420 : 220;
     const h = menuView === 'options' ? 300 : 142;
@@ -1646,16 +1848,15 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     drawMenu(currentLayout);
     draw.drawButton(currentLayout.sw - 48, 16, 32, 32, '⚙️', () => {
       state.game.menuOpen = !state.game.menuOpen;
+      state.game.menuView = 'main';
     }, {
       fill: UI_THEME.surface0, hoverFill: UI_THEME.surface1, stroke: UI_THEME.border1, font: '16px Inter, sans-serif',
     });
     drawOverworldChat(currentLayout);
     drawBanner(currentLayout);
  
-    if (DEBUG_CONFIG.SHOW_STATS) {
-      drawDebugPanel(16, 60, 190);
-      drawStats(currentLayout);
-    }
+    drawDebugOverlay(currentLayout);
+    drawDebugMinimap(currentLayout);
  
     ctx.restore();
 
@@ -1936,6 +2137,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     // Top right settings button
     draw.drawButton(currentLayout.sw - 48, 16, 32, 32, '⚙️', () => {
       state.game.menuOpen = !state.game.menuOpen;
+      state.game.menuView = 'main';
     }, {
       fill: UI_THEME.surface0, hoverFill: UI_THEME.surface1, stroke: UI_THEME.border1, font: '16px Inter, sans-serif',
     });
@@ -1945,9 +2147,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     drawEnergyFocusMask(currentLayout);
     drawBanner(currentLayout);
     
-    if (DEBUG_CONFIG.SHOW_STATS) {
-      drawStats(currentLayout);
-    }
+    drawDebugOverlay(currentLayout);
     
     ctx.restore();
 
@@ -1967,7 +2167,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   let lastTime = performance.now();
   let currentFps = 0;
 
-  function drawStats(currentLayout) {
+  function updateDebugMetrics() {
     frameCount += 1;
     const now = performance.now();
     if (now - lastTime >= 1000) {
@@ -1975,39 +2175,1288 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       frameCount = 0;
       lastTime = now;
     }
+  }
 
-    const x = 16;
-    const y = currentLayout.sh - 40;
-    const w = 210;
-    const h = 24;
+  function getDebugMemoryLabel() {
+    if (!window.performance?.memory) return 'N/A';
+    return `${Math.round(window.performance.memory.usedJSHeapSize / 1048576)} MB`;
+  }
 
-    ctx.save();
-    ctx.fillStyle = 'rgba(7, 8, 7, 0.78)';
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = UI_THEME.success;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x, y, w, h);
-    
-    draw.drawText(`FPS: ${currentFps}`, x + 10, y + 17, {
-      font: 'bold 12px Inter, sans-serif',
-      color: UI_THEME.success,
+  function clampDebugPanelPosition(currentLayout, panelW, panelH, position) {
+    const minX = DEBUG_PANEL_MARGIN;
+    const minY = DEBUG_PANEL_MARGIN;
+    const maxX = Math.max(minX, currentLayout.sw - panelW - DEBUG_PANEL_OPEN_TAB_OVERHANG - DEBUG_PANEL_MARGIN);
+    const maxY = Math.max(minY, currentLayout.sh - panelH - DEBUG_PANEL_MARGIN);
+
+    return {
+      x: clamp(position.x, minX, maxX),
+      y: clamp(position.y, minY, maxY),
+    };
+  }
+
+  function debugPanelPosition(currentLayout, panelW, panelH, fallbackY) {
+    const position = state.debugPanelPosition || { x: DEBUG_PANEL_MARGIN, y: fallbackY };
+    state.debugPanelPosition = clampDebugPanelPosition(currentLayout, panelW, panelH, position);
+    return state.debugPanelPosition;
+  }
+
+  function moveDebugPanel(currentLayout, panelW, panelH, mouseX, mouseY) {
+    const offset = state.debugPanelDragOffset || { x: 0, y: 0 };
+    state.debugPanelPosition = clampDebugPanelPosition(currentLayout, panelW, panelH, {
+      x: mouseX - offset.x,
+      y: mouseY - offset.y,
     });
-    
-    const zoomPct = Math.round((state.debugZoom || 1.15) * 100);
-    draw.drawText(`ZOOM: ${zoomPct}%`, x + 65, y + 17, {
-      font: 'bold 12px Inter, sans-serif',
+  }
+
+  function drawDebugSlider({ x, y, w, label, value, min, max, onChange, formatValue }) {
+    const sliderH = 18;
+    const sliderY = y + 19;
+    const trackY = y + 28;
+    const normalized = clamp((value - min) / (max - min), 0, 1);
+    const knobX = x + w * normalized;
+
+    function setFromMouse(mouseX) {
+      const nextValue = min + clamp((mouseX - x) / w, 0, 1) * (max - min);
+      onChange(nextValue);
+    }
+
+    draw.drawText(label, x, y + 10, {
+      align: 'left',
+      font: 'bold 11px Inter, sans-serif',
+      color: UI_THEME.textMuted,
+    });
+    draw.drawText(formatValue(value), x + w, y + 10, {
+      align: 'right',
+      font: 'bold 11px Inter, sans-serif',
       color: UI_THEME.accent,
     });
 
-    // Simple memory check for Chrome
-    if (window.performance && window.performance.memory) {
-      const mb = Math.round(window.performance.memory.usedJSHeapSize / 1048576);
-      draw.drawText(`MEM: ${mb}MB`, x + 145, y + 17, {
-        font: 'bold 12px Inter, sans-serif',
-        color: '#b8ac86',
-      });
-    }
+    ctx.save();
+    draw.roundRect(x, trackY - 4, w, 8, 4, 'rgba(32,34,25,0.92)', UI_THEME.border1);
+    draw.roundRect(x, trackY - 4, Math.max(8, knobX - x), 8, 4, UI_THEME.accentDark, null);
+    draw.roundRect(knobX - 9, trackY - 11, 18, 22, 6, '#d6b36e', '#f3d79a');
     ctx.restore();
+
+    state.game.buttons.push({
+      x,
+      y: sliderY,
+      w,
+      h: sliderH,
+      onClick: () => setFromMouse(state.mouse.x),
+      onDragStart: () => setFromMouse(state.mouse.x),
+      onDrag: (mouseX) => setFromMouse(mouseX),
+    });
+  }
+
+  function drawDebugToggle({ x, y, w, label, checked, onChange }) {
+    const toggleW = 62;
+    const toggleH = 24;
+    const toggleX = x + w - toggleW;
+    const knobSize = 18;
+    const knobX = checked ? toggleX + toggleW - knobSize - 3 : toggleX + 3;
+
+    draw.drawText(label, x, y + 16, {
+      align: 'left',
+      font: 'bold 12px Inter, sans-serif',
+      color: UI_THEME.textMuted,
+    });
+    draw.roundRect(
+      toggleX,
+      y,
+      toggleW,
+      toggleH,
+      12,
+      checked ? UI_THEME.successDark : UI_THEME.surface2,
+      checked ? UI_THEME.success : UI_THEME.border1,
+    );
+    draw.drawText(checked ? 'ON' : 'OFF', checked ? toggleX + 19 : toggleX + 42, y + 16, {
+      align: 'center',
+      font: '900 9px Inter, sans-serif',
+      color: checked ? '#f2ead7' : UI_THEME.textDim,
+    });
+    draw.roundRect(knobX, y + 3, knobSize, knobSize, 9, '#f2ead7', 'rgba(7,8,7,0.35)');
+
+    state.game.buttons.push({
+      x: toggleX,
+      y,
+      w: toggleW,
+      h: toggleH,
+      onClick: onChange,
+    });
+  }
+
+  function ensureDebugEditor() {
+    if (!state.debugEditor) state.debugEditor = {};
+    const editor = state.debugEditor;
+    if (!editor.expandedFolders) editor.expandedFolders = {};
+    if (!editor.expandedTextureFolders) editor.expandedTextureFolders = { textures: true };
+    if (editor.expandedTextureFolders.textures === undefined) editor.expandedTextureFolders.textures = true;
+    if (!Array.isArray(editor.placements)) editor.placements = [];
+    if (!Number.isFinite(editor.treeScroll)) editor.treeScroll = 0;
+    if (!Number.isFinite(editor.sceneScroll)) editor.sceneScroll = 0;
+    if (!editor.editorAssetTab) editor.editorAssetTab = 'models';
+    return editor;
+  }
+
+  function currentEditorMapId() {
+    if (state.game.mode === GAME_MODES.OVERWORLD) {
+      return state.game.overworld?.currentMapId || null;
+    }
+    return `combat:${state.game.levelIndex ?? 0}`;
+  }
+
+  function currentEditorBounds() {
+    if (state.game.mode === GAME_MODES.OVERWORLD) {
+      return getCurrentWorldBounds(state.game.overworld);
+    }
+    return { width: BOARD_SIZE, height: BOARD_SIZE };
+  }
+
+  function tileForWorldPosition(position) {
+    const bounds = currentEditorBounds();
+    return {
+      x: Math.floor((position?.x || 0) + bounds.width / 2),
+      y: Math.floor((position?.z || 0) + bounds.height / 2),
+    };
+  }
+
+  function tileCenterForCell(cell) {
+    const bounds = currentEditorBounds();
+    return {
+      x: cell.x - bounds.width / 2 + 0.5,
+      z: cell.y - bounds.height / 2 + 0.5,
+    };
+  }
+
+  function textureCellLimits(bounds) {
+    return {
+      minX: -bounds.width * TEXTURE_OUTSIDE_BOARD_MULTIPLIER,
+      maxX: bounds.width * (TEXTURE_OUTSIDE_BOARD_MULTIPLIER + 1) - 1,
+      minY: -bounds.height * TEXTURE_OUTSIDE_BOARD_MULTIPLIER,
+      maxY: bounds.height * (TEXTURE_OUTSIDE_BOARD_MULTIPLIER + 1) - 1,
+    };
+  }
+
+  function snapDegrees(value, step = 5) {
+    return Math.round(value / step) * step;
+  }
+
+  function textureDropTarget(mouseX, mouseY) {
+    const bounds = currentEditorBounds();
+    const limits = textureCellLimits(bounds);
+    const point = state.boardInteraction?.worldPointAtAny?.(layout.getLayout(), mouseX, mouseY)
+      || state.boardInteraction?.worldPointAt?.(layout.getLayout(), mouseX, mouseY);
+    const fallbackCell = state.game.player
+      ? { x: state.game.player.x, y: state.game.player.y }
+      : { x: Math.floor(bounds.width / 2), y: Math.floor(bounds.height / 2) };
+    const cell = point
+      ? {
+        x: clamp(point.x, limits.minX, limits.maxX),
+        y: clamp(point.y, limits.minY, limits.maxY),
+      }
+      : fallbackCell;
+    const roundedCell = {
+      x: Math.round(clamp(cell.x, limits.minX, limits.maxX)),
+      y: Math.round(clamp(cell.y, limits.minY, limits.maxY)),
+    };
+    const center = tileCenterForCell(roundedCell);
+    return {
+      cell: roundedCell,
+      position: { x: center.x, y: 0.02, z: center.z },
+    };
+  }
+
+  function moveDebugPlacementToMouse(placement, mouseX, mouseY) {
+    const point = placement?.kind === 'texture'
+      ? state.boardInteraction?.worldPointAtAny?.(layout.getLayout(), mouseX, mouseY)
+      : state.boardInteraction?.worldPointAt?.(layout.getLayout(), mouseX, mouseY);
+    if (!point || !placement) return false;
+
+    placement.position = placement.position || { x: 0, y: 0, z: 0 };
+    if (placement.kind === 'texture') {
+      const target = textureDropTarget(mouseX, mouseY);
+      placement.position.x = target.position.x;
+      placement.position.z = target.position.z;
+    } else {
+      placement.position.x = point.worldX;
+      placement.position.z = point.worldZ;
+    }
+    placement.mapId = currentEditorMapId() || placement.mapId;
+    return true;
+  }
+
+  function selectedDebugPlacement() {
+    const editor = ensureDebugEditor();
+    const currentMapId = currentEditorMapId();
+    return editor.placements.find((placement) => {
+      return placement.id === editor.selectedPlacementId && (!currentMapId || placement.mapId === currentMapId);
+    }) || null;
+  }
+
+  function removeDebugPlacement(placementId) {
+    const editor = ensureDebugEditor();
+    const index = editor.placements.findIndex((placement) => placement.id === placementId);
+    if (index < 0) return;
+
+    const [removed] = editor.placements.splice(index, 1);
+    if (editor.selectedPlacementId === removed.id) editor.selectedPlacementId = null;
+  }
+
+  function createDebugPlacement(libraryItem, mouseX, mouseY) {
+    const editor = ensureDebugEditor();
+    const mapId = currentEditorMapId();
+    if (!libraryItem || !mapId) return null;
+
+    const point = state.boardInteraction?.worldPointAt?.(layout.getLayout(), mouseX, mouseY);
+    const fallback = state.game.player
+      ? {
+        worldX: state.game.player.x - currentEditorBounds().width / 2 + 0.5,
+        worldZ: state.game.player.y - currentEditorBounds().height / 2 + 0.5,
+      }
+      : { worldX: 0, worldZ: 0 };
+    const drop = point || fallback;
+    const placement = {
+      id: `debug-model-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+      kind: 'model',
+      mapId,
+      libraryId: libraryItem.id,
+      modelUrl: libraryItem.url,
+      modelName: libraryItem.name,
+      folder: libraryItem.folder,
+      position: { x: drop.worldX, y: 0, z: drop.worldZ },
+      rotation: { x: 0, y: 0, z: 0 },
+      scale: 0.5,
+    };
+
+    editor.placements.push(placement);
+    editor.selectedPlacementId = placement.id;
+    editor.selectedLibraryId = libraryItem.id;
+    return placement;
+  }
+
+  function createDebugTexturePlacement(textureItem, mouseX, mouseY) {
+    const editor = ensureDebugEditor();
+    const mapId = currentEditorMapId();
+    if (!textureItem || !mapId) return null;
+
+    const drop = textureDropTarget(mouseX, mouseY);
+    const placement = {
+      id: `debug-texture-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+      kind: 'texture',
+      mapId,
+      libraryId: textureItem.id,
+      modelUrl: textureItem.url,
+      textureUrl: textureItem.url,
+      modelName: textureItem.name,
+      folder: textureItem.folder,
+      position: { ...drop.position, y: 1 },
+      rotation: { x: 0, y: Math.PI / 4, z: 0 },
+      scale: 1,
+    };
+
+    editor.placements.push(placement);
+    editor.selectedPlacementId = placement.id;
+    editor.selectedTextureId = textureItem.id;
+    return placement;
+  }
+
+  function debugPlacementSummary(placement) {
+    if (!placement) return '';
+    const tile = tileForWorldPosition(placement.position);
+    const assetUrl = placement.modelUrl || placement.textureUrl || '-';
+    const kindLabel = placement.kind === 'texture' ? 'Imagem' : 'Modelo 3D';
+    const rotationYDeg = Math.round(((placement.rotation?.y || 0) * 180) / Math.PI);
+    const position = placement.position || { x: 0, y: 0, z: 0 };
+    const scale = Number.isFinite(placement.scale) ? placement.scale : 0.5;
+
+    return [
+      `Mapa: ${placement.mapId}`,
+      `Tipo: ${kindLabel}`,
+      `Modelo: ${assetUrl}`,
+      `Nome: ${placement.modelName}`,
+      `Pasta: ${placement.folder || '-'}`,
+      `Tile: ${tile.x},${tile.y}`,
+      `Posicao XYZ: x=${position.x.toFixed(3)}, y=${position.y.toFixed(3)}, z=${position.z.toFixed(3)}`,
+      `Rotacao: x=${((placement.rotation?.x || 0) * 180 / Math.PI).toFixed(1)}deg, y=${rotationYDeg}deg, z=${((placement.rotation?.z || 0) * 180 / Math.PI).toFixed(1)}deg`,
+      `Escala: ${scale.toFixed(3)}`,
+    ].join('\n');
+  }
+
+  function copyDebugPlacementSummary(placement) {
+    const editor = ensureDebugEditor();
+    const summary = debugPlacementSummary(placement);
+    if (!summary) return;
+
+    editor.lastCopiedAt = performance.now();
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(summary).catch(() => {
+        window.prompt('Resumo do modelo', summary);
+      });
+    } else {
+      window.prompt('Resumo do modelo', summary);
+    }
+  }
+
+  function copyAllDebugPlacementSummaries() {
+    const editor = ensureDebugEditor();
+    const summary = editor.placements
+      .map((placement) => debugPlacementSummary(placement))
+      .filter(Boolean)
+      .join('\n\n\n');
+    if (!summary) return;
+
+    editor.lastCopiedAt = performance.now();
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(summary).catch(() => {
+        window.prompt('Resumo dos modelos', summary);
+      });
+    } else {
+      window.prompt('Resumo dos modelos', summary);
+    }
+  }
+
+  function visibleAssetTreeRows(libraryItems, expandedFolders) {
+    const rows = [];
+    const sortedItems = libraryItems;
+
+    function childFolders(prefixParts) {
+      const prefixLength = prefixParts.length;
+      const prefix = prefixParts.join('/');
+      const folders = new Set();
+      for (const item of sortedItems) {
+        const itemPrefix = item.path.slice(0, prefixLength).join('/');
+        if (itemPrefix !== prefix) continue;
+        const nextPart = item.path[prefixLength];
+        if (nextPart && item.path.length > prefixLength + 1) folders.add(nextPart);
+      }
+      return [...folders].sort((a, b) => a.localeCompare(b));
+    }
+
+    function filesIn(prefixParts) {
+      const prefix = prefixParts.join('/');
+      return sortedItems.filter((item) => item.folder === prefix);
+    }
+
+    function visit(prefixParts, depth) {
+      for (const folder of childFolders(prefixParts)) {
+        const nextParts = [...prefixParts, folder];
+        const key = nextParts.join('/');
+        const expanded = !!expandedFolders[key];
+        rows.push({ type: 'folder', key, label: folder, depth, expanded });
+        if (expanded) visit(nextParts, depth + 1);
+      }
+
+      for (const file of filesIn(prefixParts)) {
+        rows.push({ type: 'file', key: file.id, label: file.name, depth, item: file });
+      }
+    }
+
+    visit([], 0);
+    return rows;
+  }
+
+  function visibleModelTreeRows() {
+    const editor = ensureDebugEditor();
+    return visibleAssetTreeRows(MODEL_LIBRARY, editor.expandedFolders);
+  }
+
+  function visibleTextureTreeRows() {
+    const editor = ensureDebugEditor();
+    return visibleAssetTreeRows(TEXTURE_LIBRARY, editor.expandedTextureFolders);
+  }
+
+  function debugMapBlockedKeys(map, mapState) {
+    const blocked = new Set();
+
+    for (const object of map.objects || []) {
+      const type = WORLD_OBJECT_TYPES[object.type];
+      if (!type || type.blocksMovement === false) continue;
+      const footprint = object.footprint || type.footprint || [[0, 0]];
+      for (const [dx, dy] of footprint) {
+        blocked.add(posKey({ x: object.x + dx, y: object.y + dy }));
+      }
+    }
+
+    for (const enemy of mapState?.enemies || []) {
+      if (enemy.hp <= 0) continue;
+      blocked.add(posKey(enemy));
+    }
+
+    return blocked;
+  }
+
+  function debugSpawnForMap(map, mapState) {
+    const blocked = debugMapBlockedKeys(map, mapState);
+    const preferred = [
+      { x: 0, y: 0 },
+      { x: 0, y: 1 },
+      { x: 1, y: 0 },
+      { x: 1, y: 1 },
+    ];
+
+    function isFree(cell) {
+      return (
+        cell.x >= 0 &&
+        cell.y >= 0 &&
+        cell.x < map.size.width &&
+        cell.y < map.size.height &&
+        !blocked.has(posKey(cell))
+      );
+    }
+
+    for (const cell of preferred) {
+      if (isFree(cell)) return cell;
+    }
+
+    for (let y = 0; y < map.size.height; y += 1) {
+      for (let x = 0; x < map.size.width; x += 1) {
+        const cell = { x, y };
+        if (isFree(cell)) return cell;
+      }
+    }
+
+    return map.playerStart || { x: 0, y: 0 };
+  }
+
+  function debugJumpToMap(mapId) {
+    const map = WORLD_MAPS[mapId];
+    if (!map) return;
+
+    const game = state.game;
+    if (!game.overworld) {
+      game.overworld = { currentMapId: map.id, mapStates: {} };
+    }
+
+    const mapState = ensureOverworldMapState(game.overworld, map.id);
+    const spawn = debugSpawnForMap(map, mapState);
+
+    game.mode = GAME_MODES.OVERWORLD;
+    game.overworld.currentMapId = map.id;
+    game.player.x = spawn.x;
+    game.player.y = spawn.y;
+    game.monsters = [];
+    game.combatContext = null;
+    game.turnQueue = ['player'];
+    game.turnCount = 0;
+    game.phase = PHASES.HERO;
+    game.heroTurnStartedAt = null;
+    game.heroTurnEndsAt = null;
+    game.speedRemaining = game.player.speedBase;
+    game.apRemaining = game.player.apMax;
+    game.selectedEntity = null;
+    game.selectedAttackId = null;
+    game.animations = [];
+    game.busy = false;
+    actions.setEvent?.(`Debug: entrou em ${map.name} (${spawn.x}, ${spawn.y}).`);
+  }
+
+  function drawDebugTab({ x, y, w, label, active, onClick }) {
+    draw.roundRect(
+      x,
+      y,
+      w,
+      28,
+      6,
+      active ? UI_THEME.accentDark : UI_THEME.surface1,
+      active ? '#e6c06f' : UI_THEME.border1,
+    );
+    draw.drawText(label, x + w / 2, y + 18, {
+      align: 'center',
+      font: '900 11px Inter, sans-serif',
+      color: active ? UI_THEME.text : UI_THEME.textMuted,
+    });
+    state.game.buttons.push({ x, y, w, h: 28, onClick });
+  }
+
+  function drawMinimapDiamond(cx, cy, halfW, halfH, fill, stroke) {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - halfH);
+    ctx.lineTo(cx + halfW, cy);
+    ctx.lineTo(cx, cy + halfH);
+    ctx.lineTo(cx - halfW, cy);
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    if (stroke) {
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    }
+  }
+
+  function drawDebugMinimap(currentLayout) {
+    if (!DEBUG_CONFIG.SHOW_STATS || state.game.mode !== GAME_MODES.OVERWORLD) return;
+
+    const activeMap = getCurrentWorldMap(state.game.overworld);
+    if (!activeMap?.gridPosition) return;
+
+    const maps = Object.values(WORLD_MAPS).filter((map) => map.gridPosition);
+    if (maps.length === 0) return;
+
+    const radius = currentLayout.compact ? 78 : 94;
+    const cx = currentLayout.sw - radius - 18;
+    const cy = currentLayout.sh - radius - 18;
+    const stepX = currentLayout.compact ? 26 : 32;
+    const stepY = currentLayout.compact ? 18 : 22;
+    const halfW = currentLayout.compact ? 20 : 24;
+    const halfH = currentLayout.compact ? 13 : 16;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(7,8,7,0.78)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(230,192,111,0.58)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.clip();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius - 7, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(242,234,215,0.08)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    maps
+      .slice()
+      .sort((a, b) => (a.gridPosition.x - a.gridPosition.y) - (b.gridPosition.x - b.gridPosition.y))
+      .forEach((map) => {
+        const { x, y } = map.gridPosition;
+        const tileCx = cx + (x + y) * stepX;
+        const tileCy = cy + (x - y) * stepY;
+        const active = map.id === activeMap.id;
+        drawMinimapDiamond(
+          tileCx,
+          tileCy,
+          halfW,
+          halfH,
+          active ? '#f2c94c' : 'rgba(32,34,25,0.92)',
+          active ? '#fff0a6' : 'rgba(111,99,66,0.95)',
+        );
+        draw.drawText(`${x},${y}`, tileCx, tileCy + 4, {
+          align: 'center',
+          font: currentLayout.compact ? '900 9px Inter, sans-serif' : '900 10px Inter, sans-serif',
+          color: active ? '#221707' : UI_THEME.textMuted,
+        });
+      });
+
+    ctx.restore();
+  }
+
+  function drawDebugOverlay(currentLayout) {
+    if (!DEBUG_CONFIG.SHOW_STATS) {
+      syncDebugHeroOverlay(null);
+      return;
+    }
+
+    updateDebugMetrics();
+
+    const activeTab = state.debugPanelTab || 'settings';
+    const editorTab = activeTab === 'editor';
+    const heroTab = activeTab === 'hero';
+    const panelTargetW = editorTab ? 380 : heroTab ? 340 : 276;
+    const panelTargetH = editorTab ? 820 : heroTab ? 360 : 464;
+    const panelW = Math.min(panelTargetW, Math.max(236, currentLayout.sw - 48));
+    const availablePanelH = Math.max(220, currentLayout.sh - DEBUG_PANEL_MARGIN * 2);
+    const panelH = Math.min(panelTargetH, Math.max(334, availablePanelH), availablePanelH);
+    const position = debugPanelPosition(currentLayout, panelW, panelH, editorTab ? 12 : 56);
+    const panelX = position.x;
+    const panelY = position.y;
+    const tabW = 30;
+    const tabH = 62;
+
+    if (!state.debugPanelOpen) {
+      const tabX = 0;
+      const tabY = DEBUG_PANEL_MINIMIZED_Y;
+      state.debugPanelBounds = null;
+      state.debugEditorTreeBounds = null;
+      state.debugEditorSceneBounds = null;
+      syncDebugHeroOverlay(null);
+      draw.roundRect(tabX - 8, tabY, tabW + 8, tabH, 0, 'rgba(7,8,7,0.92)', UI_THEME.border1);
+      draw.drawText('>', tabX + 10, tabY + 37, {
+        align: 'center',
+        font: '900 22px Inter, sans-serif',
+        color: UI_THEME.accent,
+      });
+      state.game.buttons.push({
+        x: tabX,
+        y: tabY,
+        w: tabW,
+        h: tabH,
+        onClick: () => {
+          state.debugPanelOpen = true;
+        },
+      });
+      return;
+    }
+
+    draw.roundRect(panelX, panelY, panelW, panelH, 8, 'rgba(7,8,7,0.92)', UI_THEME.border1);
+    state.debugPanelBounds = { x: panelX, y: panelY, w: panelW, h: panelH };
+    state.game.buttons.push({
+      x: panelX,
+      y: panelY,
+      w: panelW,
+      h: panelH,
+      onClick: () => {},
+    });
+
+    const dragHandleH = 38;
+    state.game.buttons.push({
+      x: panelX,
+      y: panelY,
+      w: panelW - 36,
+      h: dragHandleH,
+      onDragStart: (mouseX, mouseY) => {
+        state.debugPanelDragOffset = {
+          x: mouseX - panelX,
+          y: mouseY - panelY,
+        };
+      },
+      onDrag: (mouseX, mouseY) => {
+        moveDebugPanel(currentLayout, panelW, panelH, mouseX, mouseY);
+      },
+      onDragEnd: () => {
+        state.debugPanelDragOffset = null;
+      },
+    });
+
+    const tabX = panelX + panelW - 2;
+    const tabY = panelY + 18;
+    draw.roundRect(tabX, tabY, tabW, tabH, 0, 'rgba(7,8,7,0.92)', UI_THEME.border1);
+    draw.drawText('<', tabX + 14, tabY + 37, {
+      align: 'center',
+      font: '900 22px Inter, sans-serif',
+      color: UI_THEME.accent,
+    });
+    state.game.buttons.push({
+      x: tabX,
+      y: tabY,
+      w: tabW,
+      h: tabH,
+      onClick: () => {
+        state.debugPanelOpen = false;
+      },
+    });
+
+    let cy = panelY + 22;
+    draw.drawText('DEBUG', panelX + 16, cy, {
+      align: 'left',
+      font: '900 13px Inter, sans-serif',
+      color: UI_THEME.text,
+    });
+
+    cy += 18;
+    const stats = [
+      { label: 'FPS', value: String(currentFps), color: UI_THEME.success },
+      { label: 'Zoom', value: `${Math.round((state.debugZoom || 1.15) * 100)}%`, color: UI_THEME.accent },
+      { label: 'Memoria', value: getDebugMemoryLabel(), color: '#b8ac86' },
+    ];
+    const statW = (panelW - 40) / 3;
+    stats.forEach((stat, index) => {
+      const statX = panelX + 14 + index * (statW + 6);
+      draw.drawText(stat.label, statX, cy + 8, {
+        align: 'left',
+        font: '900 9px Inter, sans-serif',
+        color: UI_THEME.textDim,
+      });
+      draw.drawText(stat.value, statX, cy + 26, {
+        align: 'left',
+        font: 'bold 13px Inter, sans-serif',
+        color: stat.color,
+      });
+    });
+
+    cy += 50;
+    const tabGap = 8;
+    const tabButtonW = (panelW - 32 - tabGap * 3) / 4;
+    drawDebugTab({
+      x: panelX + 16,
+      y: cy,
+      w: tabButtonW,
+      label: 'Ajustes',
+      active: activeTab === 'settings',
+      onClick: () => {
+        state.debugPanelTab = 'settings';
+      },
+    });
+    drawDebugTab({
+      x: panelX + 16 + tabButtonW + tabGap,
+      y: cy,
+      w: tabButtonW,
+      label: 'Mapas',
+      active: activeTab === 'maps',
+      onClick: () => {
+        state.debugPanelTab = 'maps';
+      },
+    });
+    drawDebugTab({
+      x: panelX + 16 + (tabButtonW + tabGap) * 2,
+      y: cy,
+      w: tabButtonW,
+      label: 'Editor',
+      active: activeTab === 'editor',
+      onClick: () => {
+        state.debugPanelTab = 'editor';
+      },
+    });
+    drawDebugTab({
+      x: panelX + 16 + (tabButtonW + tabGap) * 3,
+      y: cy,
+      w: tabButtonW,
+      label: 'Hero',
+      active: activeTab === 'hero',
+      onClick: () => {
+        state.debugPanelTab = 'hero';
+      },
+    });
+
+    cy += 38;
+
+    if (activeTab === 'maps') {
+      syncDebugHeroOverlay(null);
+      const mapEntries = Object.values(WORLD_MAPS);
+      const columns = 2;
+      const tileGap = 8;
+      const tileW = (panelW - 32 - tileGap) / columns;
+      const tileH = 58;
+
+      mapEntries.forEach((map, index) => {
+        const col = index % columns;
+        const row = Math.floor(index / columns);
+        const tileX = panelX + 16 + col * (tileW + tileGap);
+        const tileY = cy + row * (tileH + tileGap);
+        const activeMap = state.game.overworld?.currentMapId === map.id;
+
+        draw.roundRect(
+          tileX,
+          tileY,
+          tileW,
+          tileH,
+          6,
+          activeMap ? 'rgba(63,111,69,0.82)' : UI_THEME.surface1,
+          activeMap ? UI_THEME.success : UI_THEME.border1,
+        );
+        draw.drawText(map.name, tileX + 8, tileY + 20, {
+          align: 'left',
+          font: '900 11px Inter, sans-serif',
+          color: UI_THEME.text,
+          maxWidth: tileW - 16,
+        });
+        draw.drawText(`${map.size.width}x${map.size.height}`, tileX + 8, tileY + 42, {
+          align: 'left',
+          font: 'bold 10px Inter, sans-serif',
+          color: activeMap ? '#d8f3dc' : UI_THEME.textDim,
+        });
+
+        state.game.buttons.push({
+          x: tileX,
+          y: tileY,
+          w: tileW,
+          h: tileH,
+          onClick: () => debugJumpToMap(map.id),
+        });
+      });
+      return;
+    }
+
+    if (activeTab === 'editor') {
+      syncDebugHeroOverlay(null);
+      const editor = ensureDebugEditor();
+      const selectedPlacementForLayout = selectedDebugPlacement();
+      const textureEditorActive = editor.editorAssetTab === 'textures';
+      const assetTabGap = 8;
+      const assetTabW = (panelW - 32 - assetTabGap) / 2;
+      drawDebugTab({
+        x: panelX + 16,
+        y: cy,
+        w: assetTabW,
+        label: 'Modelos',
+        active: !textureEditorActive,
+        onClick: () => {
+          editor.editorAssetTab = 'models';
+          editor.treeScroll = 0;
+        },
+      });
+      drawDebugTab({
+        x: panelX + 16 + assetTabW + assetTabGap,
+        y: cy,
+        w: assetTabW,
+        label: 'Texturas',
+        active: textureEditorActive,
+        onClick: () => {
+          editor.editorAssetTab = 'textures';
+          editor.treeScroll = 0;
+        },
+      });
+      cy += 36;
+
+      const treeX = panelX + 16;
+      const treeY = cy;
+      const treeW = panelW - 32;
+      const sliderRowH = 36;
+      const actionRowH = 28;
+      const sceneListH = selectedPlacementForLayout
+        ? (panelH >= 760 ? 120 : panelH >= 650 ? 96 : 70)
+        : (panelH >= 650 ? 144 : panelH >= 590 ? 112 : 70);
+      const sceneRowH = 24;
+      const sceneDeleteW = 50;
+      const editorTopUsed = cy - panelY;
+      const transformSliderCount = selectedPlacementForLayout ? 5 : 0;
+      const estimatedTransformH = selectedPlacementForLayout ? 14 + sliderRowH * transformSliderCount + 16 : 0;
+      const estimatedSceneH = 18 + sceneListH + 12;
+      const estimatedFooterH = actionRowH + 36;
+      const availableTreeH = panelH - editorTopUsed - estimatedTransformH - estimatedSceneH - estimatedFooterH - 10;
+      const treeH = Math.floor(clamp(availableTreeH, 64, 178));
+      const rowH = 24;
+      const rows = textureEditorActive ? visibleTextureTreeRows() : visibleModelTreeRows();
+      const expandedFolders = textureEditorActive ? editor.expandedTextureFolders : editor.expandedFolders;
+      const maxScroll = Math.max(0, rows.length * rowH - treeH);
+      editor.treeScroll = clamp(editor.treeScroll, 0, maxScroll);
+      state.debugPanelBounds = { x: panelX, y: panelY, w: panelW, h: panelH };
+      state.debugEditorTreeBounds = { x: treeX, y: treeY, w: treeW, h: treeH };
+
+      draw.roundRect(treeX, treeY, treeW, treeH, 6, 'rgba(17,19,13,0.82)', UI_THEME.border0);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(treeX + 1, treeY + 1, treeW - 2, treeH - 2);
+      ctx.clip();
+      rows.forEach((row, index) => {
+        const rowY = treeY + index * rowH - editor.treeScroll;
+        if (rowY < treeY - rowH || rowY > treeY + treeH) return;
+        const indent = row.depth * 13;
+        const rowX = treeX + 6 + indent;
+        const rowW = treeW - 12 - indent;
+
+        if (row.type === 'folder') {
+          draw.drawText(row.expanded ? 'v' : '>', rowX, rowY + 16, {
+            align: 'left',
+            font: '900 10px Inter, sans-serif',
+            color: UI_THEME.accent,
+          });
+          draw.drawText(row.label, rowX + 14, rowY + 16, {
+            align: 'left',
+            font: 'bold 11px Inter, sans-serif',
+            color: UI_THEME.textMuted,
+            maxWidth: rowW - 14,
+          });
+          if (rowY >= treeY && rowY + rowH <= treeY + treeH) {
+            state.game.buttons.push({
+              x: treeX,
+              y: rowY,
+              w: treeW,
+              h: rowH,
+              onClick: () => {
+                expandedFolders[row.key] = !expandedFolders[row.key];
+              },
+            });
+          }
+          return;
+        }
+
+        const selected = textureEditorActive
+          ? editor.selectedTextureId === row.item.id
+          : editor.selectedLibraryId === row.item.id;
+        draw.roundRect(
+          rowX,
+          rowY + 3,
+          rowW,
+          rowH - 5,
+          4,
+          selected ? 'rgba(143,103,36,0.55)' : 'rgba(32,34,25,0.75)',
+          selected ? UI_THEME.accent : null,
+        );
+        draw.drawText(row.label, rowX + 8, rowY + 16, {
+          align: 'left',
+          font: '10px Inter, sans-serif',
+          color: UI_THEME.text,
+          maxWidth: rowW - 16,
+        });
+        if (rowY >= treeY && rowY + rowH <= treeY + treeH) {
+          state.game.buttons.push({
+            x: rowX,
+            y: rowY + 2,
+            w: rowW,
+            h: rowH - 4,
+            onClick: () => {
+              if (textureEditorActive) editor.selectedTextureId = row.item.id;
+              else editor.selectedLibraryId = row.item.id;
+            },
+            onDragStart: () => {
+              if (textureEditorActive) editor.selectedTextureId = row.item.id;
+              else editor.selectedLibraryId = row.item.id;
+            },
+            onDragEnd: (mouseX, mouseY) => {
+              if (textureEditorActive) createDebugTexturePlacement(row.item, mouseX, mouseY);
+              else createDebugPlacement(row.item, mouseX, mouseY);
+            },
+          });
+        }
+      });
+      ctx.restore();
+
+      if (maxScroll > 0) {
+        const thumbH = Math.max(24, treeH * (treeH / (treeH + maxScroll)));
+        const thumbY = treeY + (treeH - thumbH) * (editor.treeScroll / maxScroll);
+        draw.roundRect(treeX + treeW - 5, thumbY, 3, thumbH, 2, UI_THEME.border1, null);
+      }
+
+      const currentMapId = currentEditorMapId();
+      const placements = editor.placements.filter((placement) => placement.mapId === currentMapId);
+      cy = treeY + treeH + 24;
+      draw.drawText('Na cena', treeX, cy - 6, {
+        align: 'left',
+        font: '900 10px Inter, sans-serif',
+        color: UI_THEME.textDim,
+      });
+      const sceneListY = cy;
+      const sceneMaxScroll = Math.max(0, placements.length * sceneRowH - sceneListH);
+      editor.sceneScroll = clamp(editor.sceneScroll, 0, sceneMaxScroll);
+      state.debugEditorSceneBounds = { x: treeX, y: sceneListY, w: treeW, h: sceneListH };
+      draw.roundRect(treeX, sceneListY, treeW, sceneListH, 6, 'rgba(17,19,13,0.82)', UI_THEME.border0);
+
+      if (placements.length === 0) {
+        draw.drawText('Arraste um asset para o mapa.', treeX + 8, sceneListY + 22, {
+          align: 'left',
+          font: '11px Inter, sans-serif',
+          color: UI_THEME.textMuted,
+          maxWidth: treeW - 16,
+        });
+      } else {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(treeX + 1, sceneListY + 1, treeW - 2, sceneListH - 2);
+        ctx.clip();
+
+        placements.forEach((placement, index) => {
+          const y = sceneListY + index * sceneRowH - editor.sceneScroll;
+          if (y < sceneListY - sceneRowH || y > sceneListY + sceneListH) return;
+          const selected = placement.id === editor.selectedPlacementId;
+          const rowX = treeX + 3;
+          const rowW = treeW - 6;
+          const deleteX = treeX + treeW - sceneDeleteW - 7;
+
+          draw.roundRect(
+            rowX,
+            y + 2,
+            rowW,
+            20,
+            4,
+            selected ? 'rgba(63,111,69,0.7)' : UI_THEME.surface1,
+            selected ? UI_THEME.success : UI_THEME.border0,
+          );
+          draw.drawText(placement.modelName, treeX + 10, y + 16, {
+            align: 'left',
+            font: '10px Inter, sans-serif',
+            color: UI_THEME.text,
+            maxWidth: treeW - sceneDeleteW - 22,
+          });
+          draw.roundRect(deleteX, y + 4, sceneDeleteW, 16, 4, UI_THEME.dangerDark, '#fca5a5');
+          draw.drawText('Excluir', deleteX + sceneDeleteW / 2, y + 15, {
+            align: 'center',
+            font: '900 8px Inter, sans-serif',
+            color: UI_THEME.text,
+          });
+
+          if (y >= sceneListY && y + sceneRowH <= sceneListY + sceneListH) {
+            state.game.buttons.push({
+              x: rowX,
+              y: y + 2,
+              w: rowW - sceneDeleteW - 6,
+              h: 20,
+              onClick: () => {
+                editor.selectedPlacementId = selected ? null : placement.id;
+              },
+            });
+            state.game.buttons.push({
+              x: deleteX,
+              y: y + 4,
+              w: sceneDeleteW,
+              h: 16,
+              onClick: () => {
+                removeDebugPlacement(placement.id);
+              },
+            });
+          }
+        });
+        ctx.restore();
+
+        if (sceneMaxScroll > 0) {
+          const thumbH = Math.max(18, sceneListH * (sceneListH / (sceneListH + sceneMaxScroll)));
+          const thumbY = sceneListY + (sceneListH - thumbH) * (editor.sceneScroll / sceneMaxScroll);
+          draw.roundRect(treeX + treeW - 5, thumbY, 3, thumbH, 2, UI_THEME.border1, null);
+        }
+      }
+      cy = sceneListY + sceneListH + 12;
+
+      const actionY = panelY + panelH - 40;
+      const actionGap = 8;
+      const actionW = (treeW - actionGap) / 2;
+      const placement = selectedDebugPlacement();
+      if (!placement) {
+        if (editor.placements.length > 0) {
+          draw.drawButton(treeX, actionY, treeW, actionRowH, 'Copiar tudo', () => {
+            copyAllDebugPlacementSummaries();
+          }, {
+            fill: UI_THEME.accentDark,
+            hoverFill: UI_THEME.accent,
+            stroke: '#e6c06f',
+            font: 'bold 11px Inter, sans-serif',
+          });
+          if (performance.now() - (editor.lastCopiedAt || 0) < 1800) {
+            draw.drawText('Copiado.', treeX + treeW / 2, actionY - 12, {
+              align: 'center',
+              font: 'bold 10px Inter, sans-serif',
+              color: UI_THEME.success,
+            });
+          }
+        }
+        return;
+      }
+
+      const bounds = currentEditorBounds();
+      const position = placement.position || { x: 0, y: 0, z: 0 };
+      const rotation = placement.rotation || { x: 0, y: 0, z: 0 };
+      placement.position = position;
+      placement.rotation = rotation;
+      if (!Number.isFinite(placement.scale)) placement.scale = placement.kind === 'texture' ? 1 : 0.5;
+
+      draw.drawText('Transform', treeX, cy + 4, {
+        align: 'left',
+        font: '900 10px Inter, sans-serif',
+        color: UI_THEME.textDim,
+      });
+      cy += 14;
+
+      const isTexturePlacement = placement.kind === 'texture';
+      const toDegrees = (radians) => (radians || 0) * 180 / Math.PI;
+      const fromSnappedDegrees = (degrees) => (snapDegrees(degrees) * Math.PI) / 180;
+      if (isTexturePlacement) {
+        position.y = clamp(Math.round(position.y || 1), 1, 6);
+      }
+
+      const transformSliders = isTexturePlacement
+        ? [
+          {
+            label: 'Altura',
+            value: position.y,
+            min: 1,
+            max: 6,
+            formatValue: (value) => String(Math.round(value)),
+            onChange: (value) => { position.y = clamp(Math.round(value), 1, 6); },
+          },
+          {
+            label: 'Rot X',
+            value: snapDegrees(toDegrees(rotation.x)),
+            min: -180,
+            max: 180,
+            formatValue: (value) => `${snapDegrees(value)}deg`,
+            onChange: (value) => { rotation.x = fromSnappedDegrees(value); },
+          },
+          {
+            label: 'Rot Y',
+            value: snapDegrees(toDegrees(rotation.y)),
+            min: -180,
+            max: 180,
+            formatValue: (value) => `${snapDegrees(value)}deg`,
+            onChange: (value) => { rotation.y = fromSnappedDegrees(value); },
+          },
+          {
+            label: 'Rot Z',
+            value: snapDegrees(toDegrees(rotation.z)),
+            min: -180,
+            max: 180,
+            formatValue: (value) => `${snapDegrees(value)}deg`,
+            onChange: (value) => { rotation.z = fromSnappedDegrees(value); },
+          },
+          {
+            label: 'Tamanho',
+            value: placement.scale,
+            min: 0.05,
+            max: 5,
+            formatValue: (value) => value.toFixed(2),
+            onChange: (value) => { placement.scale = value; },
+          },
+        ]
+        : [
+          {
+            label: 'X',
+            value: position.x,
+            min: -bounds.width / 2,
+            max: bounds.width / 2,
+            formatValue: (value) => value.toFixed(2),
+            onChange: (value) => { position.x = value; },
+          },
+          {
+            label: 'Y altura',
+            value: position.y,
+            min: 0,
+            max: 6,
+            formatValue: (value) => value.toFixed(2),
+            onChange: (value) => { position.y = value; },
+          },
+          {
+            label: 'Z',
+            value: position.z,
+            min: -bounds.height / 2,
+            max: bounds.height / 2,
+            formatValue: (value) => value.toFixed(2),
+            onChange: (value) => { position.z = value; },
+          },
+          {
+            label: 'Direcao',
+            value: ((rotation.y || 0) * 180) / Math.PI,
+            min: 0,
+            max: 360,
+            formatValue: (value) => `${Math.round(value)}deg`,
+            onChange: (value) => { rotation.y = (value * Math.PI) / 180; },
+          },
+          {
+            label: 'Tamanho',
+            value: placement.scale,
+            min: 0.05,
+            max: 3,
+            formatValue: (value) => value.toFixed(2),
+            onChange: (value) => { placement.scale = value; },
+          },
+        ];
+
+      transformSliders.forEach((slider) => {
+        drawDebugSlider({
+          x: treeX,
+          y: cy,
+          w: treeW,
+          label: slider.label,
+          value: slider.value,
+          min: slider.min,
+          max: slider.max,
+          formatValue: slider.formatValue,
+          onChange: slider.onChange,
+        });
+        cy += sliderRowH;
+      });
+
+      const summaryTile = tileForWorldPosition(position);
+      const summaryY = actionY - 10;
+      draw.drawText(`Mapa ${placement.mapId} | tile ${summaryTile.x},${summaryTile.y}`, treeX, summaryY, {
+        align: 'left',
+        font: 'bold 10px Inter, sans-serif',
+        color: UI_THEME.textMuted,
+        maxWidth: treeW,
+      });
+      draw.drawButton(treeX, actionY, actionW, actionRowH, 'Copiar info', () => {
+        copyDebugPlacementSummary(placement);
+      }, {
+        fill: UI_THEME.accentDark,
+        hoverFill: UI_THEME.accent,
+        stroke: '#e6c06f',
+        font: 'bold 11px Inter, sans-serif',
+      });
+      draw.drawButton(treeX + actionW + actionGap, actionY, actionW, actionRowH, 'Copiar tudo', () => {
+        copyAllDebugPlacementSummaries();
+      }, {
+        fill: UI_THEME.accentDark,
+        hoverFill: UI_THEME.accent,
+        stroke: '#e6c06f',
+        font: 'bold 11px Inter, sans-serif',
+      });
+      if (performance.now() - (editor.lastCopiedAt || 0) < 1800) {
+        draw.drawText('Copiado.', treeX + treeW / 2, summaryY - 12, {
+          align: 'center',
+          font: 'bold 10px Inter, sans-serif',
+          color: UI_THEME.success,
+        });
+      }
+      return;
+    }
+
+    if (activeTab === 'hero') {
+      const heroCardX = panelX + 16;
+      const heroCardY = cy + 8;
+      const heroCardW = panelW - 32;
+      const heroCardH = Math.max(178, panelH - (heroCardY - panelY) - 16);
+      draw.roundRect(heroCardX, heroCardY, heroCardW, heroCardH, 6, 'rgba(17,19,13,0.82)', UI_THEME.border0);
+      syncDebugHeroOverlay({
+        x: heroCardX + 12,
+        y: heroCardY + 12,
+        w: heroCardW - 24,
+      });
+      return;
+    }
+
+    syncDebugHeroOverlay(null);
+
+    const controls = [
+      { label: 'Exposicao', key: 'exposure', min: 0.1, max: 3.0, digits: 2 },
+      { label: 'Luz ambiente', key: 'ambientIntensity', min: 0, max: 3.0, digits: 2 },
+      { label: 'Luz direta', key: 'keyIntensity', min: 0, max: 5.0, digits: 2 },
+      { label: 'Nevoa', key: 'fogDensity', min: 0, max: 0.1, digits: 3 },
+    ];
+
+    controls.forEach((ctrl) => {
+      cy += 44;
+      drawDebugSlider({
+        x: panelX + 16,
+        y: cy - 28,
+        w: panelW - 32,
+        label: ctrl.label,
+        value: state.visuals[ctrl.key],
+        min: ctrl.min,
+        max: ctrl.max,
+        formatValue: (value) => value.toFixed(ctrl.digits),
+        onChange: (value) => {
+          state.visuals[ctrl.key] = clamp(value, ctrl.min, ctrl.max);
+        },
+      });
+    });
+
+    cy += 18;
+    drawDebugToggle({
+      x: panelX + 16,
+      y: cy,
+      w: panelW - 32,
+      label: 'Sombras',
+      checked: state.visuals.shadowMapEnabled,
+      onChange: () => {
+        state.visuals.shadowMapEnabled = !state.visuals.shadowMapEnabled;
+      },
+    });
+
+    cy += 34;
+    drawDebugToggle({
+      x: panelX + 16,
+      y: cy,
+      w: panelW - 32,
+      label: 'Bordas',
+      checked: state.visuals.showOutlines,
+      onChange: () => {
+        state.visuals.showOutlines = !state.visuals.showOutlines;
+      },
+    });
+
+    cy += 34;
+    drawDebugToggle({
+      x: panelX + 16,
+      y: cy,
+      w: panelW - 32,
+      label: 'Mostrar grade',
+      checked: !!state.visuals.showGrid,
+      onChange: () => {
+        state.visuals.showGrid = !state.visuals.showGrid;
+      },
+    });
+
+    cy += 34;
+    drawDebugToggle({
+      x: panelX + 16,
+      y: cy,
+      w: panelW - 32,
+      label: 'Camera ortografica',
+      checked: !!state.visuals.overworldOrthographicCamera,
+      onChange: () => {
+        state.visuals.overworldOrthographicCamera = !state.visuals.overworldOrthographicCamera;
+      },
+    });
   }
 
   function drawDebugPanel(x, y, w) {

@@ -19,6 +19,19 @@ export const TERRAIN_TYPES = {
     texture: WORLD_ASSETS.terrain.chao3,
     color: '#6f7f62',
   },
+  debugBlue: {
+    id: 'debugBlue',
+    name: 'Azul claro',
+    texture: null,
+    color: '#8fd3ff',
+    tileColors: ['#8fd3ff', '#8fd3ff'],
+  },
+  debugGrass: {
+    id: 'debugGrass',
+    name: 'Grama teste',
+    texture: WORLD_ASSETS.terrain.debugGrassTile,
+    color: '#7dbf55',
+  },
   dirt: {
     id: 'dirt',
     name: 'Terra',

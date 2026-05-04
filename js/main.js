@@ -1,5 +1,6 @@
 import { createGameActions } from './game/game-actions.js';
 import { createGame, loadCardImages } from './game/game-factories.js';
+import { DEBUG_CONFIG } from './config/game-data.js';
 import { registerCanvasInput } from './ui/input.js';
 import { createLayoutTools } from './ui/layout.js';
 import { createMenuFlow } from './ui/menu-flow.js';
@@ -20,6 +21,21 @@ const state = {
   mouse: { x: 0, y: 0 },
   suppressClick: false,
   debugZoom: 1.15,
+  debugPanelOpen: DEBUG_CONFIG.SHOW_STATS,
+  debugPanelPosition: { x: 12, y: 56 },
+  debugPanelDragOffset: null,
+  debugPanelTab: 'settings',
+  debugHero: {
+    selectedAnimationId: null,
+  },
+  debugEditor: {
+    expandedFolders: {},
+    placements: [],
+    selectedPlacementId: null,
+    selectedLibraryId: null,
+    treeScroll: 0,
+    lastCopiedAt: 0,
+  },
   visuals: {
     exposure: 1.0,
     ambientIntensity: 1.05,
@@ -27,6 +43,8 @@ const state = {
     fogDensity: 0.0,
     shadowMapEnabled: true,
     showOutlines: false,
+    showGrid: false,
+    overworldOrthographicCamera: false,
   },
 };
 
@@ -51,5 +69,6 @@ if (['localhost', '127.0.0.1'].includes(window.location.hostname)) {
 window.addEventListener('resize', layout.resize);
 layout.resize();
 registerCanvasInput({ canvas, state, actions, layout });
-menuFlow.show();
+if (DEBUG_CONFIG.SHOW_STATS) menuFlow.showDebugEntry();
+else menuFlow.show();
 renderer.start();

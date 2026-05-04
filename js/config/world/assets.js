@@ -3,6 +3,7 @@ export const WORLD_ASSETS = {
     grass: './assets/textures/chao1.png',
     stone: './assets/textures/chao2.png',
     chao3: './assets/textures/chao3.png',
+    debugGrassTile: './assets/textures/debug-grass-tile.png',
   },
   objects: {
     grassTop: './assets/textures/grama-topo.webp',

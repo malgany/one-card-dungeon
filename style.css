@@ -276,7 +276,19 @@
       height: 42px;
       border: 1px solid rgba(242, 234, 215, 0.34);
       border-radius: 4px;
-      background: var(--character-color);
+      background:
+        linear-gradient(
+          to bottom,
+          transparent calc(50% - 0.5px),
+          rgba(20, 21, 15, 0.72) calc(50% - 0.5px),
+          rgba(20, 21, 15, 0.72) calc(50% + 0.5px),
+          transparent calc(50% + 0.5px)
+        ),
+        linear-gradient(
+          to bottom,
+          var(--character-primary-color, var(--character-color)) 0 50%,
+          var(--character-secondary-color, var(--character-color)) 50% 100%
+        );
     }
 
     .menu-delete-button {
@@ -396,6 +408,12 @@
       z-index: 2;
       display: grid;
       width: min(430px, 100%);
+      gap: 12px;
+    }
+
+    .menu-create-actions {
+      display: grid;
+      grid-template-columns: minmax(112px, 0.75fr) minmax(140px, 1fr);
       gap: 12px;
     }
 
@@ -621,6 +639,71 @@
       inset: 0;
       z-index: 1;
       pointer-events: none;
+    }
+
+    .debug-hero-overlay {
+      position: fixed;
+      z-index: 5;
+      display: grid;
+      gap: 12px;
+      padding: 0;
+      color: #f2ead7;
+      pointer-events: auto;
+    }
+
+    .debug-hero-overlay[hidden] {
+      display: none;
+    }
+
+    .debug-hero-title {
+      display: block;
+      color: #f2ead7;
+      font-size: 14px;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .debug-hero-help,
+    .debug-hero-status {
+      margin: 0;
+      color: #c9bea5;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .debug-hero-status {
+      color: #d39b32;
+      font-weight: 700;
+    }
+
+    .debug-hero-field {
+      display: grid;
+      gap: 6px;
+      color: #c9bea5;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .debug-hero-select {
+      width: 100%;
+      min-height: 40px;
+      border: 1px solid #6f6342;
+      border-radius: 6px;
+      background: rgba(32, 34, 25, 0.92);
+      color: #f2ead7;
+      padding: 0 12px;
+      font: 600 13px 'Inter', system-ui, -apple-system, sans-serif;
+      outline: none;
+      cursor: pointer;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    }
+
+    .debug-hero-select:hover,
+    .debug-hero-select:focus {
+      border-color: #d39b32;
     }
 
     .modal-overlay {

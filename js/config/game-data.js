@@ -141,5 +141,5 @@ export const TIMING = {
 };
 
 export const DEBUG_CONFIG = {
-  SHOW_STATS: false,
+  SHOW_STATS: true,
 };

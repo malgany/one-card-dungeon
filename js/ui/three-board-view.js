@@ -12,6 +12,7 @@ const CARD_ROTATION_Y = Math.PI / 4;
 const ISO_AZIMUTH = Math.PI / 4;
 const ISO_ELEVATION = Math.atan(1 / Math.sqrt(2));
 const ISO_CAMERA_DISTANCE = 12;
+const PERSPECTIVE_CAMERA_FOV = 42;
 const ORTHO_VIEW_HEIGHT = 7.48;
 const COMPACT_ORTHO_VIEW_HEIGHT = 8.16;
 const COMBAT_ORTHO_VIEW_HEIGHT = 8.26;
@@ -20,6 +21,7 @@ const OVERWORLD_ORTHO_VIEW_HEIGHT = 9.18;
 const COMPACT_OVERWORLD_ORTHO_VIEW_HEIGHT = 8.16;
 const FLOOR_COLORS = ['#353124', '#252217'];
 const SPECULAR_GLOSSINESS_EXTENSION = 'KHR_materials_pbrSpecularGlossiness';
+const DEBUG_MODEL_DEFAULT_SCALE = 0.5;
 const HIGHLIGHT_ORDER = [
   'hover',
   'playerAttack',
@@ -45,7 +47,7 @@ const CHARACTER_TEXTURE_OVERRIDES = {
 };
 const PLAYER_MODEL_BASE = {
   idleAnimation: 'Idle_A',
-  walkAnimation: 'Walking_A',
+  walkAnimation: 'Running_B',
   attackAnimation: 'Hit_A',
   damageAnimation: 'Hit_B',
   walkTimeScale: 1.65,
@@ -112,6 +114,36 @@ const UNIT_MODELS = {
     modelUrl: WORLD_ASSETS.characters.skeletonWarrior,
   },
 };
+export const HERO_DEBUG_ANIMATION_OPTIONS = [
+  { id: 'Idle_A', label: 'Idle_A', loop: true },
+  { id: 'Idle_B', label: 'Idle_B', loop: true },
+  { id: 'Walking_A', label: 'Walking_A', loop: true },
+  { id: 'Walking_B', label: 'Walking_B', loop: true },
+  { id: 'Walking_C', label: 'Walking_C', loop: true },
+  { id: 'Running_A', label: 'Running_A', loop: true },
+  { id: 'Running_B', label: 'Running_B', loop: true },
+  { id: 'Jump_Idle', label: 'Jump_Idle', loop: true },
+  { id: 'Jump_Start', label: 'Jump_Start', loop: false },
+  { id: 'Jump_Land', label: 'Jump_Land', loop: false },
+  { id: 'Jump_Full_Short', label: 'Jump_Full_Short', loop: false },
+  { id: 'Jump_Full_Long', label: 'Jump_Full_Long', loop: false },
+  { id: 'Hit_A', label: 'Hit_A', loop: false },
+  { id: 'Hit_B', label: 'Hit_B', loop: false },
+  { id: 'Interact', label: 'Interact', loop: false },
+  { id: 'PickUp', label: 'PickUp', loop: false },
+  { id: 'Throw', label: 'Throw', loop: false },
+  { id: 'Use_Item', label: 'Use_Item', loop: false },
+  { id: 'Spawn_Ground', label: 'Spawn_Ground', loop: false },
+  { id: 'Spawn_Air', label: 'Spawn_Air', loop: false },
+  { id: 'Death_A', label: 'Death_A', loop: false },
+  { id: 'Death_A_Pose', label: 'Death_A_Pose', loop: false },
+  { id: 'Death_B', label: 'Death_B', loop: false },
+  { id: 'Death_B_Pose', label: 'Death_B_Pose', loop: false },
+  { id: 'T-Pose', label: 'T-Pose', loop: true },
+];
+const HERO_DEBUG_ANIMATION_BY_ID = new Map(
+  HERO_DEBUG_ANIMATION_OPTIONS.map((option) => [option.id, option]),
+);
 
 function colorFromHex(hex, fallback = '#6f6342') {
   return new THREE.Color(hex || fallback);
@@ -128,12 +160,12 @@ function tileCenter(x, y, boardWidth = BOARD_SIZE, boardHeight = BOARD_SIZE) {
   };
 }
 
-function setIsometricCameraPosition(camera, target = { x: 0, z: 0 }) {
-  const horizontalDistance = ISO_CAMERA_DISTANCE * Math.cos(ISO_ELEVATION);
+function setIsometricCameraPosition(camera, target = { x: 0, z: 0 }, distance = ISO_CAMERA_DISTANCE) {
+  const horizontalDistance = distance * Math.cos(ISO_ELEVATION);
 
   camera.position.set(
     target.x + horizontalDistance * Math.sin(ISO_AZIMUTH),
-    ISO_CAMERA_DISTANCE * Math.sin(ISO_ELEVATION),
+    distance * Math.sin(ISO_ELEVATION),
     target.z + horizontalDistance * Math.cos(ISO_AZIMUTH),
   );
   camera.lookAt(target.x, 0, target.z);
@@ -352,6 +384,8 @@ export function createThreeBoardView({ state }) {
   const currentBoard = {
     width: BOARD_SIZE,
     height: BOARD_SIZE,
+    terrainId: null,
+    showGrid: null,
   };
   const scene = new THREE.Scene();
   scene.background = colorFromHex('#070807');
@@ -359,8 +393,11 @@ export function createThreeBoardView({ state }) {
     scene.fog = new THREE.FogExp2('#070807', state.visuals.fogDensity);
   }
 
-  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 40);
-  setIsometricCameraPosition(camera);
+  const orthographicCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 40);
+  const perspectiveCamera = new THREE.PerspectiveCamera(PERSPECTIVE_CAMERA_FOV, 1, 0.1, 80);
+  let activeCamera = orthographicCamera;
+  setIsometricCameraPosition(orthographicCamera);
+  setIsometricCameraPosition(perspectiveCamera);
 
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
@@ -616,7 +653,9 @@ export function createThreeBoardView({ state }) {
   const wallMeshes = new Map();
   const objectMeshes = new Map();
   const unitMeshes = new Map();
+  const debugEditorMeshes = new Map();
   const wallGeometry = new THREE.BoxGeometry(0.9, 0.54, 0.9);
+  const debugTextureGeometry = new THREE.PlaneGeometry(1, 1);
   
   const base = new THREE.Mesh(new THREE.BoxGeometry(1, 0.18, 1), baseMaterial);
   base.position.y = -0.13;
@@ -631,13 +670,43 @@ export function createThreeBoardView({ state }) {
   groundPlane.receiveShadow = true;
   boardGroup.add(groundPlane);
 
+  const debugEditorGroup = new THREE.Group();
+  boardGroup.add(debugEditorGroup);
+
+  const debugSelectionMarker = new THREE.Mesh(
+    new THREE.RingGeometry(0.42, 0.5, 36),
+    new THREE.MeshBasicMaterial({
+      color: colorFromHex('#facc15'),
+      transparent: true,
+      opacity: 0.95,
+      depthTest: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  debugSelectionMarker.rotation.x = -Math.PI / 2;
+  debugSelectionMarker.position.y = 0.075;
+  debugSelectionMarker.renderOrder = 45;
+  debugSelectionMarker.visible = false;
+  boardGroup.add(debugSelectionMarker);
+
   const MAX_TILES = 5000;
-  const tileGeometry = new THREE.BoxGeometry(0.94, 0.08, 0.94);
+  const tileGeometry = new THREE.BoxGeometry(1.01, 0.08, 1.01);
   const tileMaterial = new THREE.MeshStandardMaterial({ roughness: 0.92, metalness: 0.02 });
   const tileInstance = new THREE.InstancedMesh(tileGeometry, tileMaterial, MAX_TILES);
   tileInstance.receiveShadow = true;
   tileInstance.frustumCulled = true;
   boardGroup.add(tileInstance);
+
+  const gridMaterial = new THREE.LineBasicMaterial({
+    color: colorFromHex('#e0f2fe'),
+    transparent: true,
+    opacity: 0.62,
+    depthWrite: false,
+  });
+  const gridLines = new THREE.LineSegments(new THREE.BufferGeometry(), gridMaterial);
+  gridLines.position.y = 0.085;
+  gridLines.renderOrder = 42;
+  boardGroup.add(gridLines);
 
   const highlightGeometry = new THREE.PlaneGeometry(0.86, 0.86);
   highlightGeometry.rotateX(-Math.PI / 2);
@@ -699,11 +768,21 @@ export function createThreeBoardView({ state }) {
     }
   }
 
+  function currentOverworldTerrain() {
+    const map = getCurrentWorldMap(state.game.overworld);
+    return TERRAIN_TYPES[map?.defaultTerrain] || TERRAIN_TYPES.grass;
+  }
+
+  function tileFloorColor(terrain, x, y) {
+    if (!terrain) return FLOOR_COLORS[(x + y) % FLOOR_COLORS.length];
+    const colors = terrain?.tileColors || (terrain?.texture ? FLOOR_COLORS : [terrain?.color || FLOOR_COLORS[0]]);
+    return colors[(x + y) % colors.length];
+  }
+
   function syncGroundMaterial() {
     if (state.game.mode !== GAME_MODES.OVERWORLD) return false;
 
-    const map = getCurrentWorldMap(state.game.overworld);
-    const terrain = TERRAIN_TYPES[map?.defaultTerrain] || TERRAIN_TYPES.grass;
+    const terrain = currentOverworldTerrain();
     if (groundMaterial.userData.terrainId === terrain.id) return !!groundMaterial.map;
 
     const groundTexture = textureFor(terrain.texture);
@@ -718,6 +797,32 @@ export function createThreeBoardView({ state }) {
     groundMaterial.userData.terrainId = terrain.id;
     groundMaterial.needsUpdate = true;
     return !!groundMaterial.map;
+  }
+
+  function syncGridLines(width, height) {
+    const showGrid = !!state.visuals?.showGrid;
+    gridLines.visible = showGrid;
+    if (!showGrid) return;
+
+    const points = [];
+    const minX = -width / 2;
+    const maxX = width / 2;
+    const minZ = -height / 2;
+    const maxZ = height / 2;
+
+    for (let x = 0; x <= width; x += 1) {
+      const lineX = minX + x;
+      points.push(lineX, 0, minZ, lineX, 0, maxZ);
+    }
+
+    for (let y = 0; y <= height; y += 1) {
+      const lineZ = minZ + y;
+      points.push(minX, 0, lineZ, maxX, 0, lineZ);
+    }
+
+    gridLines.geometry.dispose();
+    gridLines.geometry = new THREE.BufferGeometry();
+    gridLines.geometry.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
   }
 
   function syncCamera(layout, now) {
@@ -744,23 +849,39 @@ export function createThreeBoardView({ state }) {
       target = tileCenter(drawX, drawY, currentBoard.width, currentBoard.height);
     }
 
-    camera.left = -viewWidth / 2;
-    camera.right = viewWidth / 2;
-    camera.top = viewHeight / 2;
-    camera.bottom = -viewHeight / 2;
-    setIsometricCameraPosition(camera, target);
-    camera.updateProjectionMatrix();
+    const usePerspective = isOverworld && !state.visuals?.overworldOrthographicCamera;
+    if (usePerspective) {
+      activeCamera = perspectiveCamera;
+      const fovRadians = THREE.MathUtils.degToRad(perspectiveCamera.fov);
+      const distance = Math.max(7, (viewHeight / 2) / Math.tan(fovRadians / 2));
+      perspectiveCamera.aspect = aspect;
+      setIsometricCameraPosition(perspectiveCamera, target, distance);
+      perspectiveCamera.updateProjectionMatrix();
+    } else {
+      activeCamera = orthographicCamera;
+      orthographicCamera.left = -viewWidth / 2;
+      orthographicCamera.right = viewWidth / 2;
+      orthographicCamera.top = viewHeight / 2;
+      orthographicCamera.bottom = -viewHeight / 2;
+      setIsometricCameraPosition(orthographicCamera, target);
+      orthographicCamera.updateProjectionMatrix();
+    }
     return viewport;
   }
 
   function syncBoardGeometry(width = BOARD_SIZE, height = BOARD_SIZE) {
     const isOverworld = state.game.mode === GAME_MODES.OVERWORLD;
     const hasGround = isOverworld && syncGroundMaterial();
+    const terrain = isOverworld ? currentOverworldTerrain() : null;
+    const terrainId = terrain?.id || null;
+    const showGrid = !!state.visuals?.showGrid;
 
     if (
       currentBoard.width === width &&
       currentBoard.height === height &&
-      currentBoard.hasGround === hasGround
+      currentBoard.hasGround === hasGround &&
+      currentBoard.terrainId === terrainId &&
+      currentBoard.showGrid === showGrid
     ) {
       return;
     }
@@ -768,13 +889,20 @@ export function createThreeBoardView({ state }) {
     currentBoard.width = width;
     currentBoard.height = height;
     currentBoard.hasGround = hasGround;
+    currentBoard.terrainId = terrainId;
+    currentBoard.showGrid = showGrid;
 
     base.scale.set(width + 0.55, 1, height + 0.55);
+    syncGridLines(width, height);
 
     // Update ground plane
     groundPlane.scale.set(width, height, 1);
     groundPlane.position.set(0, 0.01, 0);
     groundPlane.visible = hasGround;
+    if (groundMaterial.map) {
+      groundMaterial.map.repeat.set(width, height);
+      groundMaterial.map.needsUpdate = true;
+    }
 
     // Toggle tiles
     tileInstance.visible = !hasGround;
@@ -790,7 +918,7 @@ export function createThreeBoardView({ state }) {
           dummy.scale.set(1, 1, 1);
           dummy.updateMatrix();
           tileInstance.setMatrixAt(count, dummy.matrix);
-          tileInstance.setColorAt(count, colorFromHex(FLOOR_COLORS[(x + y) % FLOOR_COLORS.length]));
+          tileInstance.setColorAt(count, colorFromHex(tileFloorColor(terrain, x, y)));
 
           count += 1;
         }
@@ -821,28 +949,70 @@ export function createThreeBoardView({ state }) {
 
 
 
-  function playModelUnitAnimation(group, clipName) {
+  function playModelUnitAnimation(group, clipName, { restart = false } = {}) {
     const actions = group.userData.actions;
     const next = actions?.[clipName];
-    if (!next || group.userData.activeAnimation === clipName) return;
+    if (!next || (!restart && group.userData.activeAnimation === clipName)) return;
 
     const previous = actions[group.userData.activeAnimation];
     next.enabled = true;
+    next.paused = false;
     next.reset().fadeIn(0.12).play();
     if (previous && previous !== next) previous.fadeOut(0.12);
 
     group.userData.activeAnimation = clipName;
   }
 
+  function heroDebugAnimationId() {
+    return state.debugHero?.selectedAnimationId || null;
+  }
+
+  function shouldLoopModelAnimation(clipName, modelConfig) {
+    if (clipName === modelConfig.idleAnimation || clipName === modelConfig.walkAnimation) return true;
+    return HERO_DEBUG_ANIMATION_BY_ID.get(clipName)?.loop ?? false;
+  }
+
+  function applySelectedHeroDebugAnimation(group) {
+    if (!group.userData.isPlayer) return false;
+
+    const clipName = heroDebugAnimationId();
+    const debugState = group.userData.heroDebug || (group.userData.heroDebug = {
+      clipName: null,
+      finished: false,
+    });
+
+    if (!clipName) {
+      debugState.clipName = null;
+      debugState.finished = false;
+      return false;
+    }
+
+    const action = group.userData.actions?.[clipName];
+    if (!action) return true;
+
+    if (debugState.clipName !== clipName) {
+      debugState.clipName = clipName;
+      debugState.finished = false;
+      playModelUnitAnimation(group, clipName, { restart: true });
+      return true;
+    }
+
+    if (debugState.finished) return true;
+
+    playModelUnitAnimation(group, clipName);
+    return true;
+  }
+
   function updateModelUnitState(group, movement, action, now) {
     const modelConfig = group.userData.modelConfig || DEFAULT_PLAYER_MODEL;
+    if (applySelectedHeroDebugAnimation(group)) return;
 
     if (action) {
       faceDirection(group, {
         x: action.targetX - action.sourceX,
         y: action.targetY - action.sourceY,
       });
-      playModelUnitAnimation(group, action.animation || modelConfig.attackAnimation);
+      playModelUnitAnimation(group, action.animation || modelConfig.attackAnimation, { restart: true });
       return;
     }
 
@@ -904,6 +1074,10 @@ export function createThreeBoardView({ state }) {
       unitType: unitTypeKey(unit, isPlayer),
       modelConfig,
       activeAnimation: null,
+      heroDebug: {
+        clipName: null,
+        finished: false,
+      },
       actions: {},
     };
     scene.add(group);
@@ -931,23 +1105,14 @@ export function createThreeBoardView({ state }) {
         }
       }
 
-      for (const clipName of [
-        modelConfig.idleAnimation,
-        modelConfig.walkAnimation,
-        modelConfig.attackAnimation,
-        modelConfig.damageAnimation,
-      ]) {
-        const clip = clips.get(clipName);
-        if (!clip) continue;
+      for (const [clipName, clip] of clips.entries()) {
         const action = mixer.clipAction(clip);
-        if (clipName === modelConfig.attackAnimation) {
-          action.setLoop(THREE.LoopOnce, 1);
-          action.clampWhenFinished = true;
-        } else if (clipName === modelConfig.damageAnimation) {
-          action.setLoop(THREE.LoopOnce, 1);
-          action.clampWhenFinished = true;
-        } else {
+        if (shouldLoopModelAnimation(clipName, modelConfig)) {
           action.setLoop(THREE.LoopRepeat, Infinity);
+          action.clampWhenFinished = false;
+        } else {
+          action.setLoop(THREE.LoopOnce, 1);
+          action.clampWhenFinished = true;
         }
         if (clipName === modelConfig.walkAnimation) {
           action.timeScale = modelConfig.walkTimeScale;
@@ -955,8 +1120,23 @@ export function createThreeBoardView({ state }) {
         group.userData.actions[clipName] = action;
       }
 
+      mixer.addEventListener('finished', (event) => {
+        const clipName = event.action?._clip?.name || null;
+        const debugState = group.userData.heroDebug;
+        if (
+          group.userData.isPlayer &&
+          debugState?.clipName &&
+          debugState.clipName === clipName &&
+          !shouldLoopModelAnimation(clipName, modelConfig)
+        ) {
+          debugState.finished = true;
+        }
+      });
+
       mixers.set(`unit:${entityId}`, mixer);
-      playModelUnitAnimation(group, modelConfig.idleAnimation);
+      if (!applySelectedHeroDebugAnimation(group)) {
+        playModelUnitAnimation(group, modelConfig.idleAnimation);
+      }
     }).catch((error) => {
       console.error('Erro ao carregar modelo da unidade:', error);
     });
@@ -1124,6 +1304,147 @@ export function createThreeBoardView({ state }) {
       boardGroup.remove(mesh);
       objectMeshes.delete(objectId);
       mixers.delete(objectId); // Limpar mixer associado
+    }
+  }
+
+  function currentDebugMapId() {
+    if (state.game.mode === GAME_MODES.OVERWORLD) {
+      return state.game.overworld?.currentMapId || null;
+    }
+
+    return `combat:${state.game.levelIndex ?? 0}`;
+  }
+
+  function createDebugEditorMesh(placement) {
+    const group = new THREE.Group();
+    group.userData.placementId = placement.id;
+    group.userData.kind = 'model';
+    group.userData.modelUrl = placement.modelUrl;
+    group.userData.loading = true;
+    debugEditorGroup.add(group);
+
+    loadGltfAsset(placement.modelUrl).then(async (gltf) => {
+      if (!debugEditorMeshes.has(placement.id)) return;
+      const model = cloneSkeleton(gltf.scene);
+      centerModelOnGround(model);
+      await prepareGltfModel(gltf, model, { url: placement.modelUrl });
+      group.add(model);
+      group.userData.loading = false;
+    }).catch((error) => {
+      console.error('Erro ao carregar modelo de debug:', placement.modelUrl, error);
+      group.userData.loading = false;
+    });
+
+    return group;
+  }
+
+  function createDebugEditorTextureMesh(placement) {
+    const textureUrl = placement.textureUrl || placement.modelUrl;
+    const group = new THREE.Group();
+    group.userData.placementId = placement.id;
+    group.userData.kind = 'texture';
+    group.userData.modelUrl = textureUrl;
+    debugEditorGroup.add(group);
+
+    const textureMap = textureFor(textureUrl);
+    const material = new THREE.MeshBasicMaterial({
+      map: textureMap,
+      transparent: true,
+      alphaTest: 0.01,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const plane = new THREE.Mesh(debugTextureGeometry, material);
+    plane.renderOrder = 44;
+    group.add(plane);
+
+    function applyAspectRatio() {
+      const image = textureMap?.image;
+      if (!image?.width || !image?.height) return;
+      const aspect = image.width / image.height;
+      if (aspect >= 1) {
+        plane.scale.set(aspect, 1, 1);
+      } else {
+        plane.scale.set(1, 1 / aspect, 1);
+      }
+    }
+
+    applyAspectRatio();
+    if (textureMap) {
+      const previousOnUpdate = textureMap.onUpdate;
+      textureMap.onUpdate = (texture) => {
+        previousOnUpdate?.(texture);
+        applyAspectRatio();
+        textureMap.onUpdate = previousOnUpdate || null;
+      };
+    }
+
+    return group;
+  }
+
+  function updateDebugEditorModels() {
+    const editor = state.debugEditor;
+    const mapId = currentDebugMapId();
+    const activeIds = new Set();
+
+    if (!editor || !mapId) {
+      debugSelectionMarker.visible = false;
+      for (const [id, mesh] of debugEditorMeshes.entries()) {
+        debugEditorGroup.remove(mesh);
+        debugEditorMeshes.delete(id);
+      }
+      return;
+    }
+
+    for (const placement of editor.placements || []) {
+      if (placement.mapId !== mapId) continue;
+      activeIds.add(placement.id);
+      const kind = placement.kind === 'texture' ? 'texture' : 'model';
+      const assetUrl = kind === 'texture' ? (placement.textureUrl || placement.modelUrl) : placement.modelUrl;
+
+      let mesh = debugEditorMeshes.get(placement.id);
+      if (mesh && (mesh.userData.kind !== kind || mesh.userData.modelUrl !== assetUrl)) {
+        debugEditorGroup.remove(mesh);
+        debugEditorMeshes.delete(placement.id);
+        mesh = null;
+      }
+
+      if (!mesh) {
+        mesh = kind === 'texture'
+          ? createDebugEditorTextureMesh(placement)
+          : createDebugEditorMesh(placement);
+        debugEditorMeshes.set(placement.id, mesh);
+      }
+
+      const position = placement.position || { x: 0, y: 0, z: 0 };
+      const rotation = placement.rotation || { x: 0, y: 0, z: 0 };
+      const scale = Number.isFinite(placement.scale)
+        ? placement.scale
+        : kind === 'texture' ? 1 : DEBUG_MODEL_DEFAULT_SCALE;
+
+      mesh.position.set(position.x || 0, position.y || 0, position.z || 0);
+      mesh.rotation.set(rotation.x || 0, rotation.y || 0, rotation.z || 0);
+      mesh.scale.setScalar(scale);
+    }
+
+    for (const [id, mesh] of debugEditorMeshes.entries()) {
+      if (activeIds.has(id)) continue;
+      debugEditorGroup.remove(mesh);
+      debugEditorMeshes.delete(id);
+    }
+
+    const selected = (editor.placements || []).find((placement) => {
+      return placement.id === editor.selectedPlacementId && placement.mapId === mapId;
+    });
+    if (selected) {
+      const position = selected.position || { x: 0, y: 0, z: 0 };
+      const scale = Number.isFinite(selected.scale) ? selected.scale : DEBUG_MODEL_DEFAULT_SCALE;
+      debugSelectionMarker.position.set(position.x || 0, 0.075, position.z || 0);
+      debugSelectionMarker.scale.setScalar(Math.max(0.6, scale));
+      debugSelectionMarker.visible = true;
+    } else {
+      debugSelectionMarker.visible = false;
     }
   }
 
@@ -1300,7 +1621,7 @@ export function createThreeBoardView({ state }) {
     }
   }
 
-  function tileAt(layout, px, py) {
+  function worldPointAtAny(layout, px, py) {
     const viewport = syncCamera(layout, performance.now());
 
     if (
@@ -1314,19 +1635,38 @@ export function createThreeBoardView({ state }) {
 
     pointer.x = ((px - viewport.x) / viewport.w) * 2 - 1;
     pointer.y = -(((py - viewport.y) / viewport.h) * 2 - 1);
-    raycaster.setFromCamera(pointer, camera);
+    raycaster.setFromCamera(pointer, activeCamera);
 
     if (!raycaster.ray.intersectPlane(boardPlane, rayHit)) return null;
 
     const x = Math.floor(rayHit.x + currentBoard.width / 2);
     const y = Math.floor(rayHit.z + currentBoard.height / 2);
 
-    if (x < 0 || y < 0 || x >= currentBoard.width || y >= currentBoard.height) return null;
-    return { x, y };
+    return {
+      x,
+      y,
+      worldX: rayHit.x,
+      worldZ: rayHit.z,
+    };
+  }
+
+  function worldPointAt(layout, px, py) {
+    const point = worldPointAtAny(layout, px, py);
+    if (!point) return null;
+    if (point.x < 0 || point.y < 0 || point.x >= currentBoard.width || point.y >= currentBoard.height) return null;
+    return point;
+  }
+
+  function tileAt(layout, px, py) {
+    const point = worldPointAt(layout, px, py);
+    if (!point) return null;
+    return { x: point.x, y: point.y };
   }
 
   state.boardInteraction = {
     tileAt,
+    worldPointAt,
+    worldPointAtAny,
   };
 
   return {
@@ -1339,7 +1679,7 @@ export function createThreeBoardView({ state }) {
     screenPositionForTile(layout, x, y, height = 0.95) {
       const viewport = syncCamera(layout, performance.now());
       const center = tileCenter(x, y, currentBoard.width, currentBoard.height);
-      const projected = new THREE.Vector3(center.x, height, center.z).project(camera);
+      const projected = new THREE.Vector3(center.x, height, center.z).project(activeCamera);
 
       return {
         x: viewport.x + ((projected.x + 1) / 2) * viewport.w,
@@ -1382,6 +1722,7 @@ export function createThreeBoardView({ state }) {
 
       updateWalls(walls);
       updateWorldObjects(objects);
+      updateDebugEditorModels();
       updateHighlights({
         hoverTile,
         reachable,
@@ -1405,7 +1746,7 @@ export function createThreeBoardView({ state }) {
       renderer.setViewport(viewport.x, y, viewport.w, viewport.h);
       renderer.setScissor(viewport.x, y, viewport.w, viewport.h);
       renderer.setScissorTest(true);
-      renderer.render(scene, camera);
+      renderer.render(scene, activeCamera);
       renderer.setScissorTest(false);
     },
   };

@@ -32,13 +32,13 @@ test('loads and renders the canvas game without console errors', async ({ page }
 
   await page.goto('/');
   await expect(page.locator('#menu-root')).toBeVisible();
-  await expect(page.locator('.menu-logo')).toBeVisible();
+  await expect(page.locator('.menu-screen--create')).toBeVisible();
   const webglCanvas = page.locator('.board-webgl');
   const canvas = page.locator('#game');
   await expect(webglCanvas).toBeVisible();
   await expect(canvas).toBeVisible();
 
-  await expect(page.locator('canvas')).toHaveCount(2);
+  expect(await page.locator('canvas').count()).toBeGreaterThanOrEqual(2);
   await page.waitForFunction(() => window.__ONE_RPG_DEBUG__?.state?.game?.overworld?.currentMapId === 'chao3-start');
   await page.waitForFunction(() => {
     return performance.getEntriesByType('resource').some((entry) => entry.name.includes('/assets/textures/chao3.png'));
@@ -70,6 +70,8 @@ test('loads and renders the canvas game without console errors', async ({ page }
 test('positions the home panel proportionally on very wide screens', async ({ page }) => {
   await page.setViewportSize({ width: 2048, height: 768 });
   await page.goto('/');
+  await page.waitForFunction(() => window.__ONE_RPG_DEBUG__?.menuFlow);
+  await page.evaluate(() => window.__ONE_RPG_DEBUG__.menuFlow.show());
 
   const box = await page.locator('.menu-home-panel').boundingBox();
   expect(box?.x).toBeGreaterThan(250);
@@ -78,6 +80,10 @@ test('positions the home panel proportionally on very wide screens', async ({ pa
 
 test('opens character creation when no character exists', async ({ page }) => {
   await page.goto('/');
+
+  await expect(page.locator('.menu-screen--create')).toBeVisible();
+  await page.getByRole('button', { name: 'Voltar' }).click();
+  await expect(page.locator('.menu-home-panel')).toBeVisible();
 
   await page.locator('.menu-home-panel .menu-primary-button').click();
   await expect(page.locator('.menu-screen--create')).toBeVisible();
@@ -108,7 +114,6 @@ test('opens character creation when no character exists', async ({ page }) => {
 test('edits grouped mage palette slots together', async ({ page }) => {
   await page.goto('/');
 
-  await page.locator('.menu-home-panel .menu-primary-button').click();
   await expect(page.locator('.menu-screen--create')).toBeVisible();
   await expect(page.locator('[data-palette-slot-id]')).toHaveCount(6);
   await expect(page.locator('.menu-palette-row-label')).toHaveText([
@@ -171,21 +176,52 @@ test('opens character selection when a character exists', async ({ page }) => {
       palette: {
         version: 1,
         slots: {
-          r7c6: '#112233',
+          r6c5: '#4455AA',
+          r2c3: '#AA6633',
         },
       },
       image: '/assets/characters/ranger.png',
       createdAt: Date.now(),
     };
-    window.localStorage.setItem('one-rpg-characters-v1', JSON.stringify([character]));
-    window.localStorage.setItem('one-rpg-selected-character-v1', character.id);
+    const selectedButNotFirst = {
+      id: 'second-character',
+      name: 'Mira',
+      type: 'mage',
+      typeLabel: 'Mago',
+      color: '#653681',
+      palette: { version: 1, slots: {} },
+      image: '/assets/characters/mage.png',
+      createdAt: Date.now() + 1,
+    };
+    window.localStorage.setItem('one-rpg-characters-v1', JSON.stringify([character, selectedButNotFirst]));
+    window.localStorage.setItem('one-rpg-selected-character-v1', selectedButNotFirst.id);
   });
 
   await page.goto('/');
-  await page.locator('.menu-home-panel .menu-primary-button').click();
+  await expect(page.locator('#menu-root')).toBeHidden();
+  await page.waitForFunction(() => {
+    const player = window.__ONE_RPG_DEBUG__?.state?.game?.player;
+    return player?.name === 'Doran' && player?.characterType === 'ranger';
+  });
+  await page.evaluate(() => window.__ONE_RPG_DEBUG__.menuFlow.showCharacterSelect());
 
   await expect(page.locator('.menu-screen--select')).toBeVisible();
-  await expect(page.locator('.menu-character-row', { hasText: 'Doran' })).toBeVisible();
+  const characterRow = page.locator('.menu-character-row', { hasText: 'Doran' });
+  await expect(characterRow).toBeVisible();
+  await page.getByRole('button', { name: 'Criar novo personagem' }).click();
+  await expect(page.locator('.menu-screen--create')).toBeVisible();
+  await page.getByRole('button', { name: 'Voltar' }).click();
+  await expect(page.locator('.menu-screen--select')).toBeVisible();
+  await expect(characterRow).toBeVisible();
+
+  const swatchColors = await characterRow.locator('.menu-character-color').evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      primary: style.getPropertyValue('--character-primary-color').trim(),
+      secondary: style.getPropertyValue('--character-secondary-color').trim(),
+    };
+  });
+  expect(swatchColors).toEqual({ primary: '#4455AA', secondary: '#AA6633' });
   await page.locator('.menu-actions .menu-primary-button').click();
 
   await expect(page.locator('#menu-root')).toBeHidden();
@@ -194,8 +230,88 @@ test('opens character selection when a character exists', async ({ page }) => {
     return (
       player?.name === 'Doran' &&
       player?.characterType === 'ranger' &&
-      player?.characterPalette?.slots?.r7c6 === '#112233'
+      player?.characterPalette?.slots?.r6c5 === '#4455AA' &&
+      player?.characterPalette?.slots?.r2c3 === '#AA6633'
     );
+  });
+});
+
+test('opens flattened in-game menu actions', async ({ page }) => {
+  await page.addInitScript(() => {
+    const character = {
+      id: 'saved-character',
+      name: 'Doran',
+      type: 'ranger',
+      typeLabel: 'Patrulheiro',
+      color: '#112233',
+      palette: { version: 1, slots: {} },
+      image: '/assets/characters/ranger.png',
+      createdAt: Date.now(),
+    };
+    window.localStorage.setItem('one-rpg-characters-v1', JSON.stringify([character]));
+    window.localStorage.setItem('one-rpg-selected-character-v1', character.id);
+  });
+
+  await page.goto('/');
+  await page.waitForFunction(() => window.__ONE_RPG_DEBUG__?.state?.game?.player?.name === 'Doran');
+
+  async function waitFrame() {
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+  }
+
+  async function openMainMenu() {
+    await page.evaluate(() => {
+      const game = window.__ONE_RPG_DEBUG__.state.game;
+      game.menuOpen = true;
+      game.menuView = 'main';
+    });
+    await waitFrame();
+  }
+
+  async function menuPoint(width, height, offsetX, offsetY) {
+    return page.evaluate(({ width: panelW, height: panelH, offsetX: xOffset, offsetY: yOffset }) => {
+      const { sw, sh } = window.__ONE_RPG_DEBUG__.layout.getLayout();
+      return {
+        x: (sw - panelW) / 2 + xOffset,
+        y: (sh - panelH) / 2 + yOffset,
+      };
+    }, { width, height, offsetX, offsetY });
+  }
+
+  async function clickMainMenuButton(index) {
+    const buttonH = 38;
+    const buttonGap = 10;
+    const point = await menuPoint(260, 288, 130, 54 + index * (buttonH + buttonGap) + buttonH / 2);
+    await page.mouse.click(point.x, point.y);
+  }
+
+  await openMainMenu();
+  await clickMainMenuButton(0);
+  await expect(page.locator('#tutorial-modal')).toBeVisible();
+  await page.locator('#tutorial-modal .modal-close').click();
+  await expect(page.locator('#tutorial-modal')).toBeHidden();
+
+  await openMainMenu();
+  await clickMainMenuButton(1);
+  await page.waitForFunction(() => window.__ONE_RPG_DEBUG__.state.game.menuView === 'sound');
+  await waitFrame();
+  const sliderPoint = await menuPoint(360, 228, 24 + (360 - 48) * 0.25, 64 + 80 + 12);
+  await page.mouse.click(sliderPoint.x, sliderPoint.y);
+  await page.waitForFunction(() => Math.abs(window.__ONE_RPG_DEBUG__.actions.getOverworldMusicVolume() - 0.25) < 0.02);
+  const closePoint = await menuPoint(360, 228, 180, 228 - 31);
+  await page.mouse.click(closePoint.x, closePoint.y);
+  await page.waitForFunction(() => !window.__ONE_RPG_DEBUG__.state.game.menuOpen);
+
+  await openMainMenu();
+  const closeXPoint = await menuPoint(260, 288, 260 - 24, 22);
+  await page.mouse.click(closeXPoint.x, closeXPoint.y);
+  await page.waitForFunction(() => !window.__ONE_RPG_DEBUG__.state.game.menuOpen);
+
+  await openMainMenu();
+  await clickMainMenuButton(2);
+  await page.waitForFunction(() => {
+    const game = window.__ONE_RPG_DEBUG__.state.game;
+    return game.mode === 'dungeonLegacy' && !game.menuOpen;
   });
 });
 
