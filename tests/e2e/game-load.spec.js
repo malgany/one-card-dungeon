@@ -372,3 +372,87 @@ test('moves between connected overworld chunks', async ({ page }) => {
     );
   });
 });
+
+test('clicks any visible bridge part to enter its overworld connection', async ({ page }) => {
+  await page.addInitScript(() => {
+    const character = {
+      id: 'bridge-click-character',
+      name: 'Doran',
+      type: 'ranger',
+      typeLabel: 'Patrulheiro',
+      color: '#112233',
+      palette: { version: 1, slots: {} },
+      image: '/assets/characters/ranger.png',
+      createdAt: Date.now(),
+    };
+    window.localStorage.setItem('one-rpg-characters-v1', JSON.stringify([character]));
+    window.localStorage.setItem('one-rpg-selected-character-v1', character.id);
+  });
+  await page.goto('/');
+  await expect(page.locator('#menu-root')).toBeHidden();
+  await page.waitForFunction(() => window.__ONE_RPG_DEBUG__?.state?.game?.mode === 'overworld');
+  await switchDebugGameToMap(page, 'chao3-start');
+
+  await page.evaluate(async () => {
+    const { PHASES } = await import('/js/config/game-data.js');
+    const { state } = window.__ONE_RPG_DEBUG__;
+    state.game.phase = PHASES.HERO;
+    state.game.player.x = 4;
+    state.game.player.y = 5;
+    state.game.player.facing = { x: 0, y: -1 };
+    state.game.busy = false;
+    state.game.animations = [];
+    state.debugZoom = 0.98;
+    state.visuals.overworldOrthographicCamera = true;
+    state.visuals.overworldWater = true;
+  });
+
+  async function waitFrames(count = 8) {
+    for (let frame = 0; frame < count; frame += 1) {
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+    }
+  }
+
+  async function findBridgePoint() {
+    return page.evaluate(() => {
+      const debug = window.__ONE_RPG_DEBUG__;
+      const currentLayout = debug.layout.getLayout();
+
+      for (let y = 0; y < currentLayout.sh; y += 6) {
+        for (let x = 0; x < currentLayout.sw; x += 6) {
+          const point = debug.state.boardInteraction?.worldPointAt?.(currentLayout, x, y);
+          if (point?.kind === 'connectionBridge') {
+            return { screenX: x, screenY: y, tile: { x: point.x, y: point.y } };
+          }
+        }
+      }
+
+      return null;
+    });
+  }
+
+  await waitFrames();
+  expect(await findBridgePoint()).not.toBeNull();
+
+  await page.evaluate(() => {
+    window.__ONE_RPG_DEBUG__.state.visuals.overworldWater = false;
+  });
+  await waitFrames();
+  expect(await findBridgePoint()).toBeNull();
+
+  await page.evaluate(() => {
+    window.__ONE_RPG_DEBUG__.state.visuals.overworldWater = true;
+  });
+  await waitFrames();
+  const bridgePoint = await findBridgePoint();
+
+  expect(bridgePoint).not.toBeNull();
+  await page.mouse.click(bridgePoint.screenX, bridgePoint.screenY);
+
+  await page.waitForFunction(() => {
+    const game = window.__ONE_RPG_DEBUG__.state.game;
+    return game.mode === 'overworld' && game.overworld.currentMapId !== 'chao3-start' && !game.busy;
+  });
+
+  expect(await page.evaluate(() => window.__ONE_RPG_DEBUG__.state.game.overworld.currentMapId)).not.toBe('chao3-start');
+});

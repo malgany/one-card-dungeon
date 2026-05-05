@@ -33,10 +33,28 @@ const MAX_DEBUG_CUBES = 2000;
 const ISLAND_WATER_LEVEL = -TERRAIN_CUBE_HEIGHT / 2;
 const ISLAND_WATER_PADDING = 18;
 const ISLAND_DRY_GROUND_PADDING = Math.ceil(ISLAND_WATER_PADDING / 2);
+const ISLAND_DRY_GROUND_TINT = '#a5a5a5';
 const ISLAND_WATER_BOB_AMOUNT = 0.04;
 const ISLAND_WATER_BOB_SPEED = 1.18;
 const ISLAND_WATER_LIGHT_BAND = 0.12;
 const ISLAND_WATER_DARK_BAND = 0.48;
+const CONNECTION_BRIDGE_LENGTH = 2.35;
+const CONNECTION_BRIDGE_WIDTH = 0.78;
+const CONNECTION_BRIDGE_DECK_HEIGHT = 0.12;
+const CONNECTION_BRIDGE_RAIL_HEIGHT = 0.18;
+const CONNECTION_BRIDGE_RAIL_WIDTH = 0.08;
+const CONNECTION_BRIDGE_POST_ABOVE_DECK_HEIGHT = 0.36;
+const CONNECTION_BRIDGE_POST_HEIGHT = TERRAIN_CUBE_HEIGHT + CONNECTION_BRIDGE_POST_ABOVE_DECK_HEIGHT;
+const CONNECTION_BRIDGE_POST_SIZE = 0.1;
+const CONNECTION_BRIDGE_PLANK_COUNT = 5;
+const CONNECTION_BRIDGE_BOARD_EDGE_OFFSET = 0.5;
+const CONNECTION_BRIDGE_WATER_SHADOW_WIDTH = CONNECTION_BRIDGE_WIDTH + 0.38;
+const CONNECTION_BRIDGE_WATER_SHADOW_LENGTH = CONNECTION_BRIDGE_LENGTH + 0.18;
+const CONNECTION_BRIDGE_POST_WATER_OUTLINE_GAP = 0.02;
+const CONNECTION_BRIDGE_POST_WATER_OUTLINE_THICKNESS = 0.055;
+const CONNECTION_BRIDGE_POST_WATER_OUTLINE_LENGTH = CONNECTION_BRIDGE_POST_SIZE
+  + CONNECTION_BRIDGE_POST_WATER_OUTLINE_GAP * 2
+  + CONNECTION_BRIDGE_POST_WATER_OUTLINE_THICKNESS * 2;
 const KEY_LIGHT_DEFAULT_DIRECTION_DEG = 84;
 const KEY_LIGHT_RADIUS = Math.hypot(5, 5);
 const KEY_LIGHT_HEIGHT = 10;
@@ -177,6 +195,53 @@ function tileCenter(x, y, boardWidth = BOARD_SIZE, boardHeight = BOARD_SIZE) {
     x: x - boardWidth / 2 + 0.5,
     z: y - boardHeight / 2 + 0.5,
   };
+}
+
+function createConnectionRampGeometry() {
+  const half = 0.505;
+  const lowY = -TERRAIN_CUBE_HEIGHT;
+  const vertices = {
+    innerLeftTop: [-half, 0, -half],
+    innerRightTop: [half, 0, -half],
+    outerRightLow: [half, lowY, half],
+    outerLeftLow: [-half, lowY, half],
+    innerLeftBottom: [-half, lowY, -half],
+    innerRightBottom: [half, lowY, -half],
+  };
+  const positions = [];
+  const uvs = [];
+  const geometry = new THREE.BufferGeometry();
+
+  function pushTriangle(a, b, c, uvA, uvB, uvC) {
+    positions.push(...a, ...b, ...c);
+    uvs.push(...uvA, ...uvB, ...uvC);
+  }
+
+  function addGroup(materialIndex, addTriangles) {
+    const start = positions.length / 3;
+    addTriangles();
+    geometry.addGroup(start, positions.length / 3 - start, materialIndex);
+  }
+
+  addGroup(2, () => {
+    pushTriangle(vertices.innerLeftTop, vertices.outerLeftLow, vertices.innerRightTop, [0, 0], [0, 1], [1, 0]);
+    pushTriangle(vertices.outerLeftLow, vertices.outerRightLow, vertices.innerRightTop, [0, 1], [1, 1], [1, 0]);
+  });
+  addGroup(3, () => {
+    pushTriangle(vertices.innerLeftBottom, vertices.innerRightBottom, vertices.outerRightLow, [0, 0], [1, 0], [1, 1]);
+    pushTriangle(vertices.innerLeftBottom, vertices.outerRightLow, vertices.outerLeftLow, [0, 0], [1, 1], [0, 1]);
+  });
+  addGroup(0, () => {
+    pushTriangle(vertices.innerLeftTop, vertices.innerRightTop, vertices.innerRightBottom, [0, 0], [1, 0], [1, 1]);
+    pushTriangle(vertices.innerLeftTop, vertices.innerRightBottom, vertices.innerLeftBottom, [0, 0], [1, 1], [0, 1]);
+    pushTriangle(vertices.innerLeftTop, vertices.innerLeftBottom, vertices.outerLeftLow, [0, 0], [0, 1], [1, 1]);
+    pushTriangle(vertices.innerRightTop, vertices.outerRightLow, vertices.innerRightBottom, [0, 0], [1, 1], [0, 1]);
+  });
+
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 function setIsometricCameraPosition(camera, target = { x: 0, z: 0 }, distance = ISO_CAMERA_DISTANCE) {
@@ -1007,6 +1072,18 @@ export function createThreeBoardView({ state }) {
     terrainCubeSideMaterial,
     terrainCubeSideMaterial,
   ];
+  const connectionBridgeDeckMaterial = new THREE.MeshStandardMaterial({
+    color: colorFromHex('#8b4f2f'),
+    roughness: 0.84,
+    metalness: 0.02,
+    flatShading: true,
+  });
+  const connectionBridgeDetailMaterial = new THREE.MeshStandardMaterial({
+    color: colorFromHex('#4a2c1e'),
+    roughness: 0.9,
+    metalness: 0.01,
+    flatShading: true,
+  });
   
   const base = new THREE.Mesh(new THREE.BoxGeometry(1, 0.18, 1), baseMaterial);
   base.position.y = -0.13;
@@ -1052,6 +1129,9 @@ export function createThreeBoardView({ state }) {
     createWaterStrip(waterDarkBandMaterial),
     createWaterStrip(waterDarkBandMaterial),
   ];
+  const connectionBridgeWaterAccentGroup = new THREE.Group();
+  connectionBridgeWaterAccentGroup.visible = false;
+  boardGroup.add(connectionBridgeWaterAccentGroup);
 
   const debugEditorGroup = new THREE.Group();
   boardGroup.add(debugEditorGroup);
@@ -1102,6 +1182,94 @@ export function createThreeBoardView({ state }) {
   const debugCubeHitTargets = [];
   const debugCubeTopHeights = new Map();
 
+  const connectionRampGeometry = createConnectionRampGeometry();
+  const connectionRampInstance = new THREE.InstancedMesh(connectionRampGeometry, terrainCubeMaterials, MAX_TILES);
+  connectionRampInstance.castShadow = true;
+  connectionRampInstance.receiveShadow = true;
+  connectionRampInstance.frustumCulled = true;
+  connectionRampInstance.count = 0;
+  boardGroup.add(connectionRampInstance);
+
+  const connectionBridgeDeckInstance = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(CONNECTION_BRIDGE_WIDTH, CONNECTION_BRIDGE_DECK_HEIGHT, CONNECTION_BRIDGE_LENGTH),
+    connectionBridgeDeckMaterial,
+    MAX_TILES,
+  );
+  connectionBridgeDeckInstance.castShadow = true;
+  connectionBridgeDeckInstance.receiveShadow = true;
+  connectionBridgeDeckInstance.frustumCulled = true;
+  connectionBridgeDeckInstance.count = 0;
+  boardGroup.add(connectionBridgeDeckInstance);
+  const connectionBridgeDeckTargets = [];
+  connectionBridgeDeckInstance.userData.connectionTargets = connectionBridgeDeckTargets;
+
+  const connectionBridgeRailInstance = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(CONNECTION_BRIDGE_RAIL_WIDTH, CONNECTION_BRIDGE_RAIL_HEIGHT, CONNECTION_BRIDGE_LENGTH * 0.86),
+    connectionBridgeDetailMaterial,
+    MAX_TILES * 2,
+  );
+  connectionBridgeRailInstance.castShadow = true;
+  connectionBridgeRailInstance.receiveShadow = true;
+  connectionBridgeRailInstance.frustumCulled = true;
+  connectionBridgeRailInstance.count = 0;
+  boardGroup.add(connectionBridgeRailInstance);
+  const connectionBridgeRailTargets = [];
+  connectionBridgeRailInstance.userData.connectionTargets = connectionBridgeRailTargets;
+
+  const connectionBridgePostInstance = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(CONNECTION_BRIDGE_POST_SIZE, CONNECTION_BRIDGE_POST_HEIGHT, CONNECTION_BRIDGE_POST_SIZE),
+    connectionBridgeDetailMaterial,
+    MAX_TILES * 4,
+  );
+  connectionBridgePostInstance.castShadow = true;
+  connectionBridgePostInstance.receiveShadow = true;
+  connectionBridgePostInstance.frustumCulled = true;
+  connectionBridgePostInstance.count = 0;
+  boardGroup.add(connectionBridgePostInstance);
+  const connectionBridgePostTargets = [];
+  connectionBridgePostInstance.userData.connectionTargets = connectionBridgePostTargets;
+
+  const connectionBridgePlankInstance = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(CONNECTION_BRIDGE_WIDTH * 0.9, 0.018, 0.035),
+    connectionBridgeDetailMaterial,
+    MAX_TILES * CONNECTION_BRIDGE_PLANK_COUNT,
+  );
+  connectionBridgePlankInstance.castShadow = true;
+  connectionBridgePlankInstance.receiveShadow = true;
+  connectionBridgePlankInstance.frustumCulled = true;
+  connectionBridgePlankInstance.count = 0;
+  boardGroup.add(connectionBridgePlankInstance);
+  const connectionBridgePlankTargets = [];
+  connectionBridgePlankInstance.userData.connectionTargets = connectionBridgePlankTargets;
+  const connectionBridgeHitMeshes = [
+    connectionBridgeDeckInstance,
+    connectionBridgeRailInstance,
+    connectionBridgePostInstance,
+    connectionBridgePlankInstance,
+  ];
+
+  const connectionBridgeWaterShadowGeometry = new THREE.PlaneGeometry(1, 1);
+  connectionBridgeWaterShadowGeometry.rotateX(-Math.PI / 2);
+  const connectionBridgeWaterShadowInstance = new THREE.InstancedMesh(
+    connectionBridgeWaterShadowGeometry,
+    waterDarkBandMaterial,
+    MAX_TILES,
+  );
+  connectionBridgeWaterShadowInstance.frustumCulled = true;
+  connectionBridgeWaterShadowInstance.count = 0;
+  connectionBridgeWaterAccentGroup.add(connectionBridgeWaterShadowInstance);
+
+  const connectionBridgePostWaterOutlineGeometry = new THREE.PlaneGeometry(1, 1);
+  connectionBridgePostWaterOutlineGeometry.rotateX(-Math.PI / 2);
+  const connectionBridgePostWaterOutlineInstance = new THREE.InstancedMesh(
+    connectionBridgePostWaterOutlineGeometry,
+    waterLightBandMaterial,
+    MAX_TILES * 16,
+  );
+  connectionBridgePostWaterOutlineInstance.frustumCulled = true;
+  connectionBridgePostWaterOutlineInstance.count = 0;
+  connectionBridgeWaterAccentGroup.add(connectionBridgePostWaterOutlineInstance);
+
   const debugCubeSelectionMarker = new THREE.Mesh(
     new THREE.RingGeometry(0.44, 0.52, 36),
     new THREE.MeshBasicMaterial({
@@ -1131,14 +1299,6 @@ export function createThreeBoardView({ state }) {
   const highlightGeometry = new THREE.PlaneGeometry(0.86, 0.86);
   highlightGeometry.rotateX(-Math.PI / 2);
 
-  const portalMeshes = new Map();
-  const portalGeometry = new THREE.PlaneGeometry(0.85, 0.85);
-  portalGeometry.rotateX(-Math.PI / 2);
-  const portalMaterial = new THREE.MeshBasicMaterial({
-    map: textureFor(WORLD_ASSETS.objects.portal),
-    transparent: true,
-    alphaTest: 0.5,
-  });
   const highlightMaterial = new THREE.MeshBasicMaterial({
     color: 0xffffff,
     transparent: true,
@@ -1309,7 +1469,7 @@ export function createThreeBoardView({ state }) {
     return viewport;
   }
 
-  function syncBoardGeometry(width = BOARD_SIZE, height = BOARD_SIZE) {
+  function syncBoardGeometry(width = BOARD_SIZE, height = BOARD_SIZE, connections = []) {
     const isOverworld = state.game.mode === GAME_MODES.OVERWORLD;
     const hasGround = isOverworld && syncGroundMaterial();
     const useCubeTerrain = isOverworld;
@@ -1318,6 +1478,12 @@ export function createThreeBoardView({ state }) {
     const terrain = isOverworld ? currentOverworldTerrain() : null;
     const terrainId = terrain?.id || null;
     const showGrid = !!state.visuals?.showGrid;
+    const connectionSignature = useCubeTerrain && !waterEnabled
+      ? (connections || []).map((conn) => `${conn.id}:${conn.x},${conn.y}`).join('|')
+      : '';
+    const connectionTileKeys = useCubeTerrain && !waterEnabled
+      ? new Set((connections || []).map((conn) => keyFor(conn.x, conn.y)))
+      : new Set();
 
     if (
       currentBoard.width === width &&
@@ -1325,7 +1491,8 @@ export function createThreeBoardView({ state }) {
       currentBoard.hasGround === hasGround &&
       currentBoard.terrainId === terrainId &&
       currentBoard.showGrid === showGrid &&
-      currentBoard.waterEnabled === waterEnabled
+      currentBoard.waterEnabled === waterEnabled &&
+      currentBoard.connectionSignature === connectionSignature
     ) {
       return;
     }
@@ -1336,6 +1503,7 @@ export function createThreeBoardView({ state }) {
     currentBoard.terrainId = terrainId;
     currentBoard.showGrid = showGrid;
     currentBoard.waterEnabled = waterEnabled;
+    currentBoard.connectionSignature = connectionSignature;
 
     base.scale.set(width + 0.55, 1, height + 0.55);
     base.visible = !useCubeTerrain;
@@ -1388,6 +1556,7 @@ export function createThreeBoardView({ state }) {
       for (let y = 0; y < height; y += 1) {
         for (let x = 0; x < width; x += 1) {
           if (count >= MAX_TILES) break;
+          if (connectionTileKeys.has(keyFor(x, y))) continue;
           const center = tileCenter(x, y, width, height);
 
           dummy.position.set(center.x, -TERRAIN_CUBE_HEIGHT / 2, center.z);
@@ -1419,7 +1588,7 @@ export function createThreeBoardView({ state }) {
           dummy.scale.set(1, 1, 1);
           dummy.updateMatrix();
           dryGroundCubeInstance.setMatrixAt(count, dummy.matrix);
-          dryGroundCubeInstance.setColorAt(count, colorFromHex('#ffffff'));
+          dryGroundCubeInstance.setColorAt(count, colorFromHex(ISLAND_DRY_GROUND_TINT));
 
           count += 1;
         }
@@ -1531,7 +1700,7 @@ export function createThreeBoardView({ state }) {
     return true;
   }
 
-  function updateModelUnitState(group, movement, action, now) {
+  function updateModelUnitState(group, unit, movement, action, now) {
     const modelConfig = group.userData.modelConfig || DEFAULT_PLAYER_MODEL;
     if (applySelectedHeroDebugAnimation(group)) return;
 
@@ -1558,7 +1727,10 @@ export function createThreeBoardView({ state }) {
       isMoving ? modelConfig.walkAnimation : modelConfig.idleAnimation,
     );
 
-    if (!isMoving) return;
+    if (!isMoving) {
+      faceDirection(group, unit?.facing);
+      return;
+    }
 
     const direction = movementDirection(movement, now);
     faceDirection(group, direction);
@@ -2163,7 +2335,7 @@ export function createThreeBoardView({ state }) {
     group.userData.drawY = drawY;
 
     if (group.userData.isModelUnit) {
-      updateModelUnitState(group, movement, modelAction, now);
+      updateModelUnitState(group, unit, movement, modelAction, now);
       return;
     }
 
@@ -2201,25 +2373,274 @@ export function createThreeBoardView({ state }) {
     }
   }
 
+  function connectionBridgeDirection(conn) {
+    if (conn.x <= 0) return { x: -1, y: 0 };
+    if (conn.x >= currentBoard.width - 1) return { x: 1, y: 0 };
+    if (conn.y <= 0) return { x: 0, y: -1 };
+    if (conn.y >= currentBoard.height - 1) return { x: 0, y: 1 };
+    return { x: 0, y: 1 };
+  }
+
+  function setConnectionBridgeMatrix(
+    instance,
+    index,
+    center,
+    direction,
+    angle,
+    rightOffset,
+    forwardOffset,
+    y,
+    scaleX = 1,
+    scaleZ = 1,
+  ) {
+    dummy.position.set(
+      center.x + direction.x * forwardOffset + direction.y * rightOffset,
+      y,
+      center.z + direction.y * forwardOffset - direction.x * rightOffset,
+    );
+    dummy.rotation.set(0, angle, 0);
+    dummy.scale.set(scaleX, 1, scaleZ);
+    dummy.updateMatrix();
+    instance.setMatrixAt(index, dummy.matrix);
+  }
+
+  function syncConnectionBridgeInstance(instance, count) {
+    instance.count = count;
+    instance.visible = count > 0;
+    instance.instanceMatrix.needsUpdate = true;
+    if (count > 0) {
+      instance.computeBoundingBox();
+      instance.computeBoundingSphere();
+    }
+  }
+
+  function syncConnectionRampInstance(count) {
+    connectionRampInstance.count = count;
+    connectionRampInstance.visible = count > 0;
+    connectionRampInstance.instanceMatrix.needsUpdate = true;
+    if (connectionRampInstance.instanceColor) connectionRampInstance.instanceColor.needsUpdate = true;
+    if (count > 0) {
+      connectionRampInstance.computeBoundingBox();
+      connectionRampInstance.computeBoundingSphere();
+    }
+  }
+
+  function syncConnectionBridgeWaterAccentInstances(shadowCount, outlineCount) {
+    connectionBridgeWaterShadowInstance.count = shadowCount;
+    connectionBridgeWaterShadowInstance.visible = shadowCount > 0;
+    connectionBridgeWaterShadowInstance.instanceMatrix.needsUpdate = true;
+    if (shadowCount > 0) {
+      connectionBridgeWaterShadowInstance.computeBoundingBox();
+      connectionBridgeWaterShadowInstance.computeBoundingSphere();
+    }
+
+    connectionBridgePostWaterOutlineInstance.count = outlineCount;
+    connectionBridgePostWaterOutlineInstance.visible = outlineCount > 0;
+    connectionBridgePostWaterOutlineInstance.instanceMatrix.needsUpdate = true;
+    if (outlineCount > 0) {
+      connectionBridgePostWaterOutlineInstance.computeBoundingBox();
+      connectionBridgePostWaterOutlineInstance.computeBoundingSphere();
+    }
+
+    connectionBridgeWaterAccentGroup.visible = shadowCount > 0 || outlineCount > 0;
+  }
+
+  function clearConnectionBridgeInstances() {
+    connectionBridgeDeckTargets.length = 0;
+    connectionBridgeRailTargets.length = 0;
+    connectionBridgePostTargets.length = 0;
+    connectionBridgePlankTargets.length = 0;
+    syncConnectionBridgeInstance(connectionBridgeDeckInstance, 0);
+    syncConnectionBridgeInstance(connectionBridgeRailInstance, 0);
+    syncConnectionBridgeInstance(connectionBridgePostInstance, 0);
+    syncConnectionBridgeInstance(connectionBridgePlankInstance, 0);
+    syncConnectionBridgeWaterAccentInstances(0, 0);
+  }
+
   function updateConnections(connections) {
-    const active = new Set();
+    let deckCount = 0;
+    let railCount = 0;
+    let postCount = 0;
+    let plankCount = 0;
+    let rampCount = 0;
+    let shadowCount = 0;
+    let outlineCount = 0;
+    const waterEnabled = currentBoard.waterEnabled !== false;
+
+    if (!waterEnabled) {
+      clearConnectionBridgeInstances();
+
+      for (const conn of connections || []) {
+        if (rampCount >= MAX_TILES) break;
+        const direction = connectionBridgeDirection(conn);
+        const center = tileCenter(conn.x, conn.y, currentBoard.width, currentBoard.height);
+
+        dummy.position.set(center.x, 0.006, center.z);
+        dummy.rotation.set(0, Math.atan2(direction.x, direction.y), 0);
+        dummy.scale.set(1, 1, 1);
+        dummy.updateMatrix();
+        connectionRampInstance.setMatrixAt(rampCount, dummy.matrix);
+        connectionRampInstance.setColorAt(rampCount, colorFromHex('#ffffff'));
+        rampCount += 1;
+      }
+
+      dummy.rotation.set(0, 0, 0);
+      dummy.scale.set(1, 1, 1);
+      syncConnectionRampInstance(rampCount);
+      return;
+    }
+
+    syncConnectionRampInstance(0);
+
+    const deckY = CONNECTION_BRIDGE_DECK_HEIGHT / 2 + 0.022;
+    const railY = deckY + CONNECTION_BRIDGE_DECK_HEIGHT / 2 + CONNECTION_BRIDGE_RAIL_HEIGHT / 2 - 0.012;
+    const postTopY = deckY + CONNECTION_BRIDGE_DECK_HEIGHT / 2 + CONNECTION_BRIDGE_POST_ABOVE_DECK_HEIGHT - 0.018;
+    const postY = postTopY - CONNECTION_BRIDGE_POST_HEIGHT / 2;
+    const plankY = deckY + CONNECTION_BRIDGE_DECK_HEIGHT / 2 + 0.012;
+    const shadowY = ISLAND_WATER_LEVEL + 0.004;
+    const outlineY = ISLAND_WATER_LEVEL + 0.012;
+    const bridgeCenterOffset = CONNECTION_BRIDGE_BOARD_EDGE_OFFSET + CONNECTION_BRIDGE_LENGTH / 2;
+    const shadowCenterOffset = CONNECTION_BRIDGE_BOARD_EDGE_OFFSET
+      + ISLAND_WATER_LIGHT_BAND
+      + CONNECTION_BRIDGE_WATER_SHADOW_LENGTH / 2;
+    const railOffset = CONNECTION_BRIDGE_WIDTH / 2 - CONNECTION_BRIDGE_RAIL_WIDTH / 2;
+    const postOffset = CONNECTION_BRIDGE_WIDTH / 2 - CONNECTION_BRIDGE_POST_SIZE / 2;
+    const innerPostForward = CONNECTION_BRIDGE_BOARD_EDGE_OFFSET + 0.16;
+    const outerPostForward = CONNECTION_BRIDGE_BOARD_EDGE_OFFSET + CONNECTION_BRIDGE_LENGTH - 0.36;
+    const plankSpacing = (CONNECTION_BRIDGE_LENGTH - 0.45) / (CONNECTION_BRIDGE_PLANK_COUNT - 1);
+    const postOutlineOffset = CONNECTION_BRIDGE_POST_SIZE / 2
+      + CONNECTION_BRIDGE_POST_WATER_OUTLINE_GAP
+      + CONNECTION_BRIDGE_POST_WATER_OUTLINE_THICKNESS / 2;
+    connectionBridgeDeckTargets.length = 0;
+    connectionBridgeRailTargets.length = 0;
+    connectionBridgePostTargets.length = 0;
+    connectionBridgePlankTargets.length = 0;
+
     for (const conn of connections || []) {
-      active.add(conn.id);
-      let mesh = portalMeshes.get(conn.id);
-      if (!mesh) {
-        mesh = new THREE.Mesh(portalGeometry, portalMaterial);
-        portalMeshes.set(conn.id, mesh);
-        boardGroup.add(mesh);
-      }
+      if (deckCount >= MAX_TILES) break;
+      const direction = connectionBridgeDirection(conn);
       const center = tileCenter(conn.x, conn.y, currentBoard.width, currentBoard.height);
-      mesh.position.set(center.x, 0.045, center.z);
-    }
-    for (const [id, mesh] of portalMeshes.entries()) {
-      if (!active.has(id)) {
-        boardGroup.remove(mesh);
-        portalMeshes.delete(id);
+      const angle = Math.atan2(direction.x, direction.y);
+      const target = { x: conn.x, y: conn.y };
+
+      setConnectionBridgeMatrix(
+        connectionBridgeDeckInstance,
+        deckCount,
+        center,
+        direction,
+        angle,
+        0,
+        bridgeCenterOffset,
+        deckY,
+      );
+      connectionBridgeDeckTargets[deckCount] = target;
+      deckCount += 1;
+
+      setConnectionBridgeMatrix(
+        connectionBridgeWaterShadowInstance,
+        shadowCount,
+        center,
+        direction,
+        angle,
+        0,
+        shadowCenterOffset,
+        shadowY,
+        CONNECTION_BRIDGE_WATER_SHADOW_WIDTH,
+        CONNECTION_BRIDGE_WATER_SHADOW_LENGTH,
+      );
+      shadowCount += 1;
+
+      for (const rightOffset of [-railOffset, railOffset]) {
+        setConnectionBridgeMatrix(
+          connectionBridgeRailInstance,
+          railCount,
+          center,
+          direction,
+          angle,
+          rightOffset,
+          bridgeCenterOffset,
+          railY,
+        );
+        connectionBridgeRailTargets[railCount] = target;
+        railCount += 1;
+      }
+
+      for (const forwardOffset of [innerPostForward, outerPostForward]) {
+        for (const rightOffset of [-postOffset, postOffset]) {
+          setConnectionBridgeMatrix(
+            connectionBridgePostInstance,
+            postCount,
+            center,
+            direction,
+            angle,
+            rightOffset,
+            forwardOffset,
+            postY,
+          );
+          connectionBridgePostTargets[postCount] = target;
+          postCount += 1;
+
+          for (const outlineRightOffset of [-postOutlineOffset, postOutlineOffset]) {
+            setConnectionBridgeMatrix(
+              connectionBridgePostWaterOutlineInstance,
+              outlineCount,
+              center,
+              direction,
+              angle,
+              rightOffset + outlineRightOffset,
+              forwardOffset,
+              outlineY,
+              CONNECTION_BRIDGE_POST_WATER_OUTLINE_THICKNESS,
+              CONNECTION_BRIDGE_POST_WATER_OUTLINE_LENGTH,
+            );
+            outlineCount += 1;
+          }
+
+          for (const outlineForwardOffset of [-postOutlineOffset, postOutlineOffset]) {
+            setConnectionBridgeMatrix(
+              connectionBridgePostWaterOutlineInstance,
+              outlineCount,
+              center,
+              direction,
+              angle,
+              rightOffset,
+              forwardOffset + outlineForwardOffset,
+              outlineY,
+              CONNECTION_BRIDGE_POST_WATER_OUTLINE_LENGTH,
+              CONNECTION_BRIDGE_POST_WATER_OUTLINE_THICKNESS,
+            );
+            outlineCount += 1;
+          }
+        }
+      }
+
+      for (let plankIndex = 0; plankIndex < CONNECTION_BRIDGE_PLANK_COUNT; plankIndex += 1) {
+        setConnectionBridgeMatrix(
+          connectionBridgePlankInstance,
+          plankCount,
+          center,
+          direction,
+          angle,
+          0,
+          CONNECTION_BRIDGE_BOARD_EDGE_OFFSET + 0.22 + plankIndex * plankSpacing,
+          plankY,
+        );
+        connectionBridgePlankTargets[plankCount] = target;
+        plankCount += 1;
       }
     }
+    dummy.rotation.set(0, 0, 0);
+    connectionBridgeDeckTargets.length = deckCount;
+    connectionBridgeRailTargets.length = railCount;
+    connectionBridgePostTargets.length = postCount;
+    connectionBridgePlankTargets.length = plankCount;
+    dummy.scale.set(1, 1, 1);
+
+    syncConnectionBridgeInstance(connectionBridgeDeckInstance, deckCount);
+    syncConnectionBridgeInstance(connectionBridgeRailInstance, railCount);
+    syncConnectionBridgeInstance(connectionBridgePostInstance, postCount);
+    syncConnectionBridgeInstance(connectionBridgePlankInstance, plankCount);
+    syncConnectionBridgeWaterAccentInstances(shadowCount, outlineCount);
   }
 
   function unitGroupForHitObject(object) {
@@ -2229,6 +2650,25 @@ export function createThreeBoardView({ state }) {
       if (entityId && unitMeshes.has(entityId)) return unitMeshes.get(entityId);
       current = current.parent;
     }
+    return null;
+  }
+
+  function connectionBridgePointAt() {
+    const hits = raycaster.intersectObjects(connectionBridgeHitMeshes, false);
+    for (const hit of hits) {
+      if (!Number.isInteger(hit.instanceId)) continue;
+      const target = hit.object.userData.connectionTargets?.[hit.instanceId];
+      if (!target) continue;
+
+      return {
+        x: target.x,
+        y: target.y,
+        worldX: hit.point.x,
+        worldZ: hit.point.z,
+        kind: 'connectionBridge',
+      };
+    }
+
     return null;
   }
 
@@ -2307,6 +2747,9 @@ export function createThreeBoardView({ state }) {
       }
     }
 
+    const bridgePoint = connectionBridgePointAt();
+    if (bridgePoint) return bridgePoint;
+
     const unitPoint = unitPointAt(layout, px, py);
     if (unitPoint) return unitPoint;
 
@@ -2347,6 +2790,7 @@ export function createThreeBoardView({ state }) {
     waterDarkStrips.forEach((strip) => {
       strip.position.y = ISLAND_WATER_LEVEL + 0.006 + bob;
     });
+    connectionBridgeWaterAccentGroup.position.y = bob;
   }
 
   function disposeMaterial(material) {
@@ -2421,7 +2865,7 @@ export function createThreeBoardView({ state }) {
       now,
     }) {
       syncDebugColorMaterials();
-      syncBoardGeometry(boardWidth, boardHeight);
+      syncBoardGeometry(boardWidth, boardHeight, connections);
       syncRendererSize(currentLayout);
       const viewport = syncCamera(currentLayout, now);
       
