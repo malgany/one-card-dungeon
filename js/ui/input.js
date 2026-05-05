@@ -175,6 +175,8 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
       return;
     }
 
+    if (state.game.activeModal) return;
+
     if (
       DEBUG_CONFIG.SHOW_STATS &&
       state.debugPanelOpen &&
@@ -272,6 +274,8 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
       button.onClick();
       return;
     }
+
+    if (state.game.activeModal) return;
 
     if (state.game.menuOpen) {
       state.game.menuOpen = false;

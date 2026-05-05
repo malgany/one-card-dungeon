@@ -1,12 +1,17 @@
 import {
   ACTION_RULES,
+  ATTACK_PATTERNS,
   BOARD_SIZE,
+  CHARACTERISTIC_DEFINITIONS,
   GAME_MODES,
   LEVELS,
   MONSTER_TEMPLATES,
   PHASES,
   SAVE_KEY,
+  SPELL_DEFINITIONS,
+  SPELL_ELEMENTS,
   TIMING,
+  XP_RULES,
   getWorldMap,
   normalizeEncounterGroupId,
   normalizeMonsterId,
@@ -46,6 +51,144 @@ import {
 } from './audio.js';
 
 let heroTurnTimeoutId = null;
+
+function mapBounds(map) {
+  return {
+    width: map?.size?.width || BOARD_SIZE,
+    height: map?.size?.height || BOARD_SIZE,
+  };
+}
+
+function clampToBoard(value, max) {
+  return Math.max(0, Math.min(max - 1, value));
+}
+
+function directionIntoMapFromSpawn(spawn, map) {
+  const { width, height } = mapBounds(map);
+
+  if (spawn.x <= 0) return { x: 1, y: 0 };
+  if (spawn.x >= width - 1) return { x: -1, y: 0 };
+  if (spawn.y <= 0) return { x: 0, y: 1 };
+  if (spawn.y >= height - 1) return { x: 0, y: -1 };
+
+  return { x: 0, y: 0 };
+}
+
+function entryFromConnectionSpawn(spawn, map) {
+  const { width, height } = mapBounds(map);
+  const facing = directionIntoMapFromSpawn(spawn, map);
+
+  return {
+    x: clampToBoard(spawn.x + facing.x, width),
+    y: clampToBoard(spawn.y + facing.y, height),
+    facing,
+  };
+}
+
+function finalDirectionFromPath(path) {
+  if (!Array.isArray(path) || path.length < 2) return null;
+
+  const from = path[path.length - 2];
+  const to = path[path.length - 1];
+
+  return {
+    x: to.x - from.x,
+    y: to.y - from.y,
+  };
+}
+
+function overworldMapTransitionDuration() {
+  return TIMING.OVERWORLD_MAP_FADE_IN + TIMING.OVERWORLD_MAP_FADE_HOLD + TIMING.OVERWORLD_MAP_FADE_OUT;
+}
+
+function characteristicKeys() {
+  return Object.keys(CHARACTERISTIC_DEFINITIONS);
+}
+
+function createDefaultCharacteristics() {
+  return Object.fromEntries(characteristicKeys().map((key) => [key, 0]));
+}
+
+function toNonNegativeInteger(value, fallback = 0) {
+  return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : fallback;
+}
+
+function playerLevel(player) {
+  return Math.max(1, Math.floor(player?.level || 1));
+}
+
+function playerCharacterType(player) {
+  return player?.characterType || player?.type || 'mage';
+}
+
+function basicAttackForPlayer(player) {
+  const equipped = {
+    ...ACTION_RULES.BASIC_ATTACK,
+    ...(player?.attackSlot || {}),
+  };
+
+  if (equipped.id === ACTION_RULES.BASIC_ATTACK.id) {
+    equipped.element = ACTION_RULES.BASIC_ATTACK.element;
+    equipped.lifeSteal = ACTION_RULES.BASIC_ATTACK.lifeSteal;
+    equipped.iconKey = ACTION_RULES.BASIC_ATTACK.iconKey;
+    equipped.pattern = ACTION_RULES.BASIC_ATTACK.pattern;
+    equipped.minRange = ACTION_RULES.BASIC_ATTACK.minRange;
+  }
+
+  return equipped;
+}
+
+function spellBookForPlayer(player) {
+  const level = playerLevel(player);
+  const characterType = playerCharacterType(player);
+  const classSpells = SPELL_DEFINITIONS[characterType] || [];
+
+  return [
+    {
+      ...basicAttackForPlayer(player),
+      unlockLevel: 1,
+      locked: false,
+      source: 'basic',
+    },
+    ...classSpells.map((spell) => ({
+      ...spell,
+      unlockLevel: toNonNegativeInteger(spell.unlockLevel, 1) || 1,
+      locked: level < (toNonNegativeInteger(spell.unlockLevel, 1) || 1),
+      source: characterType,
+    })),
+  ];
+}
+
+function levelXpRequirement(level) {
+  const normalizedLevel = Math.max(1, Math.floor(level || 1));
+  return XP_RULES.BASE_LEVEL_XP + (normalizedLevel - 1) * XP_RULES.LEVEL_XP_STEP;
+}
+
+function totalXpForLevel(level) {
+  const normalizedLevel = Math.max(1, Math.floor(level || 1));
+  let total = 0;
+
+  for (let currentLevel = 1; currentLevel < normalizedLevel; currentLevel += 1) {
+    total += levelXpRequirement(currentLevel);
+  }
+
+  return total;
+}
+
+function levelFromExperience(experience) {
+  const totalExperience = toNonNegativeInteger(experience);
+  let level = 1;
+  let threshold = levelXpRequirement(level);
+  let spentExperience = 0;
+
+  while (totalExperience >= spentExperience + threshold) {
+    spentExperience += threshold;
+    level += 1;
+    threshold = levelXpRequirement(level);
+  }
+
+  return level;
+}
 
 export function createGameActions(state) {
 
@@ -124,20 +267,202 @@ export function createGameActions(state) {
   }
 
   function getEquippedAttack(game = getGame()) {
-    const equipped = {
-      ...ACTION_RULES.BASIC_ATTACK,
-      ...(game.player.attackSlot || {}),
+    return basicAttackForPlayer(game.player);
+  }
+
+  function getPlayerSpellbook(player = getGame().player) {
+    return spellBookForPlayer(player);
+  }
+
+  function getAvailableAttacks(game = getGame()) {
+    return getPlayerSpellbook(game.player).filter((attack) => !attack.locked);
+  }
+
+  function getAttackById(attackId, game = getGame()) {
+    return getAvailableAttacks(game).find((attack) => attack.id === attackId) || null;
+  }
+
+  function getSelectedAttack(game = getGame()) {
+    if (!game.selectedAttackId) return null;
+    return getAttackById(game.selectedAttackId, game);
+  }
+
+  function getXpProgress(player = getGame().player) {
+    const experience = toNonNegativeInteger(player?.experience);
+    const level = Math.max(
+      Math.max(1, Math.floor(player?.level || 1)),
+      levelFromExperience(experience)
+    );
+    const currentLevelXp = totalXpForLevel(level);
+    const nextLevelXp = currentLevelXp + levelXpRequirement(level);
+
+    return {
+      level,
+      experience,
+      currentLevelXp,
+      nextLevelXp,
+      progressXp: Math.max(0, experience - currentLevelXp),
+      requiredXp: nextLevelXp - currentLevelXp,
+      progress: nextLevelXp > currentLevelXp
+        ? Math.max(0, Math.min(1, (experience - currentLevelXp) / (nextLevelXp - currentLevelXp)))
+        : 1,
     };
+  }
 
-    if (equipped.id === ACTION_RULES.BASIC_ATTACK.id) {
-      equipped.lifeSteal = ACTION_RULES.BASIC_ATTACK.lifeSteal;
-    }
+  function getElementalDamageBonus(element, player = getGame().player) {
+    if (!element || element === SPELL_ELEMENTS.NEUTRAL) return 0;
 
-    return equipped;
+    const definition = Object.values(CHARACTERISTIC_DEFINITIONS).find((item) => item.element === element);
+    if (!definition) return 0;
+
+    const points = toNonNegativeInteger(player?.characteristics?.[definition.key]);
+    return points * XP_RULES.ELEMENT_DAMAGE_PER_POINT;
+  }
+
+  function getAttackDamage(attack, player = getGame().player) {
+    const baseDamage = toNonNegativeInteger(attack?.damage);
+    return baseDamage + getElementalDamageBonus(attack?.element, player);
   }
 
   function getMitigatedDamage(rawDamage, defense) {
     return Math.max(0, rawDamage - Math.max(0, defense));
+  }
+
+  function getAttackRangeBounds(attack, player = getGame().player) {
+    const minRange = Math.max(0, toNonNegativeInteger(attack?.minRange, 1));
+    const maxRange = Number.isFinite(attack?.maxRange)
+      ? Math.max(minRange, Math.floor(attack.maxRange))
+      : Math.max(minRange, toNonNegativeInteger(player?.rangeBase, 1));
+
+    return { minRange, maxRange };
+  }
+
+  function getAttackRangeLabel(attack, player = getGame().player) {
+    const { minRange, maxRange } = getAttackRangeBounds(attack, player);
+    return minRange === maxRange ? String(maxRange) : `${minRange}~${maxRange}`;
+  }
+
+  function canAttackCellWith(attack, targetCell, walls, blockers, blocked) {
+    const game = getGame();
+    const { minRange, maxRange } = getAttackRangeBounds(attack, game.player);
+    const dx = Math.abs(targetCell.x - game.player.x);
+    const dy = Math.abs(targetCell.y - game.player.y);
+
+    if (attack?.pattern === ATTACK_PATTERNS.CROSS) {
+      const rangeCost = dx + dy;
+      if (dx !== 0 && dy !== 0) return false;
+      if (rangeCost < minRange || rangeCost > maxRange) return false;
+      return hasLineOfSight(game.player, targetCell, walls, blockers);
+    }
+
+    const rangeCost = distanceBetween(game.player, targetCell, blocked, true);
+    return rangeCost >= minRange
+      && rangeCost <= maxRange
+      && hasLineOfSight(game.player, targetCell, walls, blockers);
+  }
+
+  function normalizePlayerProgress(player) {
+    if (!player || typeof player !== 'object') return player;
+
+    const characteristics = createDefaultCharacteristics();
+    for (const key of characteristicKeys()) {
+      characteristics[key] = toNonNegativeInteger(player.characteristics?.[key]);
+    }
+
+    player.characteristics = characteristics;
+    player.experience = toNonNegativeInteger(player.experience);
+    player.level = Math.max(
+      Number.isFinite(player.level) ? Math.max(1, Math.floor(player.level)) : 1,
+      levelFromExperience(player.experience)
+    );
+    player.characteristicPoints = toNonNegativeInteger(player.characteristicPoints);
+
+    const lifeFloor = 60 + characteristics.life * XP_RULES.LIFE_PER_POINT;
+    player.maxHealth = Math.max(lifeFloor, Number.isFinite(player.maxHealth) ? player.maxHealth : lifeFloor);
+    player.health = Number.isFinite(player.health)
+      ? Math.max(0, Math.min(player.maxHealth, player.health))
+      : player.maxHealth;
+
+    return player;
+  }
+
+  function openCharacteristicsModal() {
+    const game = getGame();
+    game.menuOpen = false;
+    game.activeModal = 'characteristics';
+  }
+
+  function openSpellsModal() {
+    const game = getGame();
+    game.menuOpen = false;
+    game.activeModal = 'spells';
+  }
+
+  function closeActiveModal() {
+    const game = getGame();
+    if (game.activeModal === 'levelUp') game.levelUpNotice = null;
+    game.activeModal = null;
+  }
+
+  function allocateCharacteristic(kind) {
+    const game = getGame();
+    const definition = CHARACTERISTIC_DEFINITIONS[kind];
+    if (!definition || game.player.characteristicPoints <= 0) return false;
+
+    normalizePlayerProgress(game.player);
+    if (game.player.characteristicPoints <= 0) return false;
+
+    game.player.characteristics[kind] += 1;
+    game.player.characteristicPoints -= 1;
+
+    if (kind === 'life') {
+      game.player.maxHealth += XP_RULES.LIFE_PER_POINT;
+      game.player.health = Math.min(game.player.maxHealth, game.player.health + XP_RULES.LIFE_PER_POINT);
+    }
+
+    setEvent(`${definition.label}: +1 característica.`);
+    return true;
+  }
+
+  function shouldOpenLevelUpModal(game) {
+    return game.mode === GAME_MODES.COMBAT && game.combatContext?.origin === GAME_MODES.OVERWORLD;
+  }
+
+  function grantMonsterExperience(monster) {
+    const game = getGame();
+    if (!monster || monster.xpGranted) return { xp: 0, levelsGained: 0, pointsGained: 0 };
+
+    const template = MONSTER_TEMPLATES[normalizeMonsterType(monster.type)] || {};
+    const xp = toNonNegativeInteger(monster.xp, toNonNegativeInteger(template.xp));
+    monster.xpGranted = true;
+    if (xp <= 0) return { xp: 0, levelsGained: 0, pointsGained: 0 };
+
+    normalizePlayerProgress(game.player);
+    const previousLevel = game.player.level;
+    game.player.experience += xp;
+    const nextLevel = levelFromExperience(game.player.experience);
+    const levelsGained = Math.max(0, nextLevel - previousLevel);
+    const pointsGained = levelsGained * XP_RULES.POINTS_PER_LEVEL;
+
+    if (levelsGained > 0) {
+      game.player.level = nextLevel;
+      game.player.characteristicPoints += pointsGained;
+      game.levelUpNotice = {
+        levelsGained,
+        pointsGained,
+      };
+
+      if (shouldOpenLevelUpModal(game)) {
+        game.activeModal = 'levelUp';
+      } else {
+        showBanner('Você passou de nível', `+${pointsGained} pontos de característica.`, 2200, null, {
+          cardKey: 'player',
+          accent: '#e6c06f',
+        });
+      }
+    }
+
+    return { xp, levelsGained, pointsGained };
   }
 
   function primeHeroTurnClock(game = getGame(), now = performance.now()) {
@@ -373,8 +698,8 @@ export function createGameActions(state) {
     const attackTiles = new Set();
     if (!isCombatMode(game) || game.phase !== PHASES.HERO || game.busy) return attackTiles;
 
-    const attack = getEquippedAttack(game);
-    if (game.selectedAttackId !== attack.id || game.apRemaining < attack.apCost) return attackTiles;
+    const attack = getSelectedAttack(game);
+    if (!attack || game.apRemaining < attack.apCost) return attackTiles;
 
     const walls = levelWallsSet(game.levelIndex);
 
@@ -388,9 +713,8 @@ export function createGameActions(state) {
         const targetMonster = game.monsters.find((monster) => samePos(monster, cell));
         const blockers = monsterOccupiedKeys(game.monsters, targetMonster?.id);
         const blocked = new Set([...walls, ...blockers]);
-        const rangeCost = distanceBetween(game.player, cell, blocked, true);
 
-        if (rangeCost <= game.player.rangeBase && hasLineOfSight(game.player, cell, walls, blockers)) {
+        if (canAttackCellWith(attack, cell, walls, blockers, blocked)) {
           attackTiles.add(key);
         }
       }
@@ -500,6 +824,7 @@ export function createGameActions(state) {
     }
 
     const movementPath = data.path;
+    const finalDirection = finalDirectionFromPath(movementPath);
 
     let totalDist = 0;
     for (let i = 0; i < movementPath.length - 1; i += 1) {
@@ -511,6 +836,7 @@ export function createGameActions(state) {
     const duration = totalDist * TIMING.OVERWORLD_PLAYER_MOVE_SPEED;
     game.player.x = target.x;
     game.player.y = target.y;
+    if (finalDirection) game.player.facing = finalDirection;
     game.busy = true;
 
     game.animations.push({
@@ -523,23 +849,53 @@ export function createGameActions(state) {
     });
 
     window.setTimeout(() => {
-      if (isOverworldMode(game)) {
-        const connection = getWorldConnectionAt(game.overworld, target);
-        if (connection) {
-          const targetMap = getWorldMap(connection.targetMapId);
-          const targetState = ensureOverworldMapState(game.overworld, connection.targetMapId);
-
-          if (targetMap && targetState) {
-            game.overworld.currentMapId = targetMap.id;
-            game.player.x = connection.spawn.x;
-            game.player.y = connection.spawn.y;
-            game.animations = [];
-            setEvent(`Entrou em ${targetMap.name}.`);
-          }
-        }
+      if (!isOverworldMode(game)) {
+        game.busy = false;
+        return;
       }
 
-      game.busy = false;
+      const connection = getWorldConnectionAt(game.overworld, target);
+      if (!connection) {
+        game.busy = false;
+        return;
+      }
+
+      const targetMap = getWorldMap(connection.targetMapId);
+      const targetState = ensureOverworldMapState(game.overworld, connection.targetMapId);
+      if (!targetMap || !targetState) {
+        game.busy = false;
+        return;
+      }
+
+      const transition = {
+        type: 'overworldMap',
+        fromMapId: game.overworld.currentMapId,
+        toMapId: targetMap.id,
+        startTime: performance.now(),
+        fadeInDuration: TIMING.OVERWORLD_MAP_FADE_IN,
+        holdDuration: TIMING.OVERWORLD_MAP_FADE_HOLD,
+        fadeOutDuration: TIMING.OVERWORLD_MAP_FADE_OUT,
+      };
+      game.mapTransition = transition;
+
+      window.setTimeout(() => {
+        if (getGame() !== game || game.mapTransition !== transition || !isOverworldMode(game)) return;
+
+        const entry = entryFromConnectionSpawn(connection.spawn, targetMap);
+        game.overworld.currentMapId = targetMap.id;
+        game.player.x = entry.x;
+        game.player.y = entry.y;
+        game.player.facing = entry.facing;
+        game.animations = [];
+        setEvent(`Entrou em ${targetMap.name}.`);
+      }, TIMING.OVERWORLD_MAP_FADE_IN);
+
+      window.setTimeout(() => {
+        if (getGame() !== game || game.mapTransition !== transition) return;
+
+        game.mapTransition = null;
+        game.busy = false;
+      }, overworldMapTransitionDuration());
     }, duration);
     setEvent(`Movendo pelo mapa: ${data.cost} passos.`);
     return true;
@@ -659,9 +1015,11 @@ export function createGameActions(state) {
     const reachable = getReachableTiles();
     const data = reachable.get(posKey(target));
     if (!data) return;
+    const finalDirection = finalDirectionFromPath(data.path);
 
     game.player.x = target.x;
     game.player.y = target.y;
+    if (finalDirection) game.player.facing = finalDirection;
     game.speedRemaining -= data.cost;
 
     game.busy = true;
@@ -695,9 +1053,14 @@ export function createGameActions(state) {
     if (!isCombatMode(game)) return false;
     if (game.busy) return false;
 
-    const attack = getEquippedAttack(game);
-    if (game.selectedAttackId !== attack.id) {
+    const attack = getSelectedAttack(game);
+    if (!attack) {
       setEvent('Selecione um ataque antes de atacar.');
+      return false;
+    }
+
+    if (game.apRemaining < attack.apCost) {
+      setEvent(`AP insuficiente para ${attack.name}.`);
       return false;
     }
 
@@ -715,6 +1078,10 @@ export function createGameActions(state) {
     const cost = attack.apCost;
     game.apRemaining -= cost;
     game.selectedAttackId = null;
+    game.player.facing = {
+      x: targetCell.x - game.player.x,
+      y: targetCell.y - game.player.y,
+    };
     const attackStartTime = performance.now();
 
     game.animations.push({
@@ -741,9 +1108,15 @@ export function createGameActions(state) {
 
     let damage = 0;
     let healed = 0;
+    let experienceResult = { xp: 0, levelsGained: 0, pointsGained: 0 };
+    const attackDamage = getAttackDamage(attack, game.player);
     if (target) {
-      damage = getMitigatedDamage(attack.damage, target.defense);
+      const previousHp = target.hp;
+      damage = getMitigatedDamage(attackDamage, target.defense);
       target.hp = Math.max(0, target.hp - damage);
+      if (previousHp > 0 && target.hp <= 0) {
+        experienceResult = grantMonsterExperience(target);
+      }
 
       const lifeSteal = Math.max(0, Number(attack.lifeSteal) || 0);
       healed = damage > 0
@@ -787,10 +1160,14 @@ export function createGameActions(state) {
     game.busy = true;
 
     if (target.hp <= 0) {
-      setEvent(`${target.name} derrotado.`);
+      const xpText = experienceResult.xp > 0 ? ` +${experienceResult.xp} XP.` : '';
+      const levelText = experienceResult.levelsGained > 0
+          ? ` Nível ${game.player.level}! +${experienceResult.pointsGained} pontos.`
+        : '';
+      setEvent(`${target.name} derrotado.${xpText}${levelText}`);
     } else {
       const healText = healed > 0 ? ` Suga ${healed} vida.` : '';
-      setEvent(`${attack.name}: ${attack.damage} - DEF ${target.defense} = ${damage} dano. Gasto: ${cost} AP.${healText}`);
+      setEvent(`${attack.name}: ${attackDamage} - DEF ${target.defense} = ${damage} dano. Gasto: ${cost} AP.${healText}`);
     }
 
     const targetDefeated = target.hp <= 0;
@@ -1050,12 +1427,17 @@ export function createGameActions(state) {
 
 
 
-  function toggleAttackSelection() {
+  function toggleAttackSelection(attackId = ACTION_RULES.BASIC_ATTACK.id) {
     const game = getGame();
     if (!isCombatMode(game)) return;
     if (game.busy || game.phase !== PHASES.HERO) return;
 
-    const attack = getEquippedAttack(game);
+    const attack = getAttackById(attackId, game);
+    if (!attack) {
+      setEvent('Poder bloqueado.');
+      return;
+    }
+
     if (game.apRemaining < attack.apCost) {
       setEvent(`AP insuficiente para ${attack.name}.`);
       return;
@@ -1105,12 +1487,16 @@ export function createGameActions(state) {
         draggingDie: null,
         draggingControl: null,
         selectedAttackId: null,
+        mapTransition: null,
         menuOpen: false,
         menuView: 'main',
+        activeModal: null,
+        levelUpNotice: null,
       };
 
       localStorage.setItem(SAVE_KEY, JSON.stringify(safeGame));
       game.menuOpen = false;
+      game.activeModal = null;
       showBanner('Jogo salvo', 'Progresso salvo neste navegador.', 2000);
     } catch {
       showBanner('Erro', 'Não foi possível salvar.', 2000);
@@ -1138,6 +1524,8 @@ export function createGameActions(state) {
       defense: Number.isFinite(unit.defense) ? unit.defense : template.defense,
       range: Number.isFinite(unit.range) ? unit.range : template.range,
       speed: Number.isFinite(unit.speed) ? unit.speed : template.speed,
+      xp: Number.isFinite(unit.xp) ? unit.xp : template.xp,
+      xpGranted: unit.xpGranted === true,
       name: template.name,
       emoji: template.emoji,
       tint: template.tint,
@@ -1255,11 +1643,15 @@ export function createGameActions(state) {
       },
     };
 
+    normalizePlayerProgress(normalized.player);
     normalized.buttons = [];
     normalized.diceRects = [];
     normalized.dropZones = [];
     normalized.draggingDie = null;
     normalized.selectedAttackId = null;
+    normalized.activeModal = null;
+    normalized.levelUpNotice = null;
+    normalized.mapTransition = null;
     normalized.menuOpen = false;
     normalized.busy = false;
     normalized.animations = [];
@@ -1335,7 +1727,7 @@ export function createGameActions(state) {
 
     return {
       speed: game.player.speedBase + game.assignment.speed,
-      attack: attack.damage,
+      attack: getAttackDamage(attack, game.player),
       attackCost: attack.apCost,
       attackLifeSteal: Math.max(0, Number(attack.lifeSteal) || 0),
       attackName: attack.name,
@@ -1347,13 +1739,19 @@ export function createGameActions(state) {
 
   return {
     allDiceAssigned,
+    allocateCharacteristic,
     applyReward,
     assignedStatForDie,
     attackMonster,
     attackTile,
+    closeActiveModal,
     confirmEnergy,
     endHeroPhase,
+    getAttackRangeLabel,
+    getAttackDamage,
     getAttackableMonsters,
+    getAvailableAttacks,
+    getElementalDamageBonus,
     getGame,
     getMonsterAttackTiles,
     getMonsterReachableTiles,
@@ -1365,6 +1763,10 @@ export function createGameActions(state) {
     getReachableTiles,
     getTotals,
     getEquippedAttack,
+    getPlayerSpellbook,
+    getSelectedAttack,
+    getXpProgress,
+    grantMonsterExperience,
     loadGame,
     moveOverworldPlayer,
     movePlayer,
@@ -1374,6 +1776,8 @@ export function createGameActions(state) {
     setOverworldMusicVolume: updateOverworldMusicVolume,
     setEvent,
     showBanner,
+    openCharacteristicsModal,
+    openSpellsModal,
     startHeroTurn,
     startEnergyTurn,
     startOverworldEncounter,

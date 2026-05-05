@@ -1,4 +1,16 @@
-import { BOARD_SIZE, DEBUG_CONFIG, GAME_MODES, LEVELS, PHASES, STAT_META, WORLD_MAPS, WORLD_OBJECT_TYPES } from '../config/game-data.js';
+import {
+  ATTACK_PATTERNS,
+  BOARD_SIZE,
+  CHARACTERISTIC_DEFINITIONS,
+  DEBUG_CONFIG,
+  GAME_MODES,
+  LEVELS,
+  PHASES,
+  STAT_META,
+  WORLD_MAPS,
+  WORLD_OBJECT_TYPES,
+  XP_RULES,
+} from '../config/game-data.js';
 import { levelWallsSet, posKey, samePos } from '../game/board-logic.js';
 import { ensureOverworldMapState } from '../game/game-factories.js';
 import {
@@ -37,15 +49,22 @@ const UI_THEME = {
   textDim: '#8f8773',
   overlay: 'rgba(7,8,7,0.94)',
 };
+const SPELL_ELEMENT_META = {
+  neutral: { label: 'Neutro', color: UI_THEME.accent },
+  earth: { label: 'Terra', color: '#9b6a3f' },
+  fire: { label: 'Fogo', color: '#d9572b' },
+  air: { label: 'Ar', color: '#6cab4f' },
+  water: { label: 'Água', color: '#3b8fd9' },
+};
 const TEXTURE_OUTSIDE_BOARD_MULTIPLIER = 2;
 const DEBUG_PANEL_MARGIN = 12;
 const DEBUG_PANEL_MINIMIZED_Y = 12;
 const DEBUG_PANEL_OPEN_TAB_OVERHANG = 28;
 const DEBUG_CUBE_HEIGHT = 0.62;
 const DEBUG_COLOR_FIELDS = [
-  { key: 'water1', group: 'Agua', label: 'Agua 1', description: 'cor principal', codeUse: 'waterMaterial.color e scene.background, agua base e fundo do mapa' },
-  { key: 'water2', group: 'Agua', label: 'Agua 2', description: 'faixa grossa', codeUse: 'waterDarkBandMaterial.color, contorno azul mais escuro na superficie' },
-  { key: 'water3', group: 'Agua', label: 'Agua 3', description: 'faixa perto da borda', codeUse: 'waterLightBandMaterial.color, contorno claro junto ao barranco' },
+  { key: 'water1', group: 'Água', label: 'Água 1', description: 'cor principal', codeUse: 'waterMaterial.color e scene.background, água base e fundo do mapa' },
+  { key: 'water2', group: 'Água', label: 'Água 2', description: 'faixa grossa', codeUse: 'waterDarkBandMaterial.color, contorno azul mais escuro na superfície' },
+  { key: 'water3', group: 'Água', label: 'Água 3', description: 'faixa perto da borda', codeUse: 'waterLightBandMaterial.color, contorno claro junto ao barranco' },
   { key: 'top1', group: 'Cor do topo', label: 'Cor 1', description: 'base', codeUse: 'paintProceduralGrassTexture, preenchimento principal do topo do chao/cubo' },
   { key: 'top2', group: 'Cor do topo', label: 'Cor 2', description: 'manchas claras', codeUse: 'paintProceduralGrassTexture, manchas grandes claras do topo' },
   { key: 'top3', group: 'Cor do topo', label: 'Cor 3', description: 'manchas escuras', codeUse: 'paintProceduralGrassTexture, manchas grandes escuras do topo' },
@@ -58,6 +77,14 @@ const DEBUG_COLOR_FIELDS = [
   { key: 'side5', group: 'Cor da lateral', label: 'Cor 5', description: 'pontos escuros', codeUse: 'paintProceduralDirtSideTexture, pontos pequenos escuros da lateral' },
 ];
 const DEBUG_COLOR_DEFAULTS = DEFAULT_MAP_COLOR_VALUES;
+const DEBUG_COLOR_MODEL_STORAGE_KEY = 'one-rpg-debug-color-models';
+const DEBUG_COLOR_MODEL_GRID_POSITIONS = [
+  { x: 0, y: 0 },
+  { x: 0, y: 1 },
+  { x: 0, y: -1 },
+  { x: 1, y: 0 },
+  { x: -1, y: 0 },
+];
 
 export function getAnimationEndTime(anim) {
   const startTime = Number.isFinite(anim.startTime) ? anim.startTime : 0;
@@ -252,6 +279,158 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     return debugColors;
   }
 
+  function normalizeDebugColorValues(values) {
+    const normalized = normalizeMapColorValues(values);
+    for (const field of DEBUG_COLOR_FIELDS) {
+      normalized[field.key] = normalizeDebugHexColor(normalized[field.key], DEBUG_COLOR_DEFAULTS[field.key]);
+    }
+    return normalized;
+  }
+
+  function debugColorModelStorage() {
+    try {
+      return typeof window !== 'undefined' ? window.localStorage : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function defaultDebugColorModels() {
+    const maps = Object.values(WORLD_MAPS);
+    return DEBUG_COLOR_MODEL_GRID_POSITIONS.map((position) => {
+      const map = maps.find((entry) => entry?.gridPosition?.x === position.x && entry?.gridPosition?.y === position.y);
+      if (!map) return null;
+      const label = `${position.x},${position.y}`;
+      return {
+        id: `map:${map.id}`,
+        source: 'map',
+        label,
+        values: normalizeDebugColorValues(getMapColorValuesForMap(map.id)),
+      };
+    }).filter(Boolean);
+  }
+
+  function readDebugColorModelStore() {
+    const storage = debugColorModelStorage();
+    if (!storage) return { userModels: [], deletedDefaultModelIds: [] };
+
+    try {
+      const parsed = JSON.parse(storage.getItem(DEBUG_COLOR_MODEL_STORAGE_KEY) || '{}');
+      const userModels = Array.isArray(parsed.userModels)
+        ? parsed.userModels.map((model, index) => {
+          if (!model || typeof model !== 'object') return null;
+          const id = typeof model.id === 'string' && model.id ? model.id : `custom:stored-${index}`;
+          const label = typeof model.label === 'string' && model.label.trim()
+            ? model.label.trim().slice(0, 18)
+            : `Salvo ${index + 1}`;
+          return {
+            id,
+            source: 'custom',
+            label,
+            values: normalizeDebugColorValues(model.values),
+          };
+        }).filter(Boolean)
+        : [];
+      const deletedDefaultModelIds = Array.isArray(parsed.deletedDefaultModelIds)
+        ? parsed.deletedDefaultModelIds.filter((id) => typeof id === 'string')
+        : [];
+      return { userModels, deletedDefaultModelIds };
+    } catch {
+      return { userModels: [], deletedDefaultModelIds: [] };
+    }
+  }
+
+  function writeDebugColorModelStore(debugColors) {
+    const storage = debugColorModelStorage();
+    if (!storage) return;
+
+    storage.setItem(DEBUG_COLOR_MODEL_STORAGE_KEY, JSON.stringify({
+      userModels: Array.isArray(debugColors.userColorModels) ? debugColors.userColorModels : [],
+      deletedDefaultModelIds: Array.isArray(debugColors.deletedDefaultColorModelIds)
+        ? debugColors.deletedDefaultColorModelIds
+        : [],
+    }));
+  }
+
+  function ensureDebugColorModels(debugColors = ensureDebugColors()) {
+    if (!debugColors.colorModelsLoaded) {
+      const stored = readDebugColorModelStore();
+      debugColors.userColorModels = stored.userModels;
+      debugColors.deletedDefaultColorModelIds = stored.deletedDefaultModelIds;
+      debugColors.colorModelsLoaded = true;
+    }
+    if (!Array.isArray(debugColors.userColorModels)) debugColors.userColorModels = [];
+    if (!Array.isArray(debugColors.deletedDefaultColorModelIds)) debugColors.deletedDefaultColorModelIds = [];
+    if (!Number.isFinite(debugColors.modelScroll)) debugColors.modelScroll = 0;
+    return debugColors;
+  }
+
+  function debugColorModels(debugColors = ensureDebugColors()) {
+    ensureDebugColorModels(debugColors);
+    const deleted = new Set(debugColors.deletedDefaultColorModelIds);
+    const models = [
+      ...defaultDebugColorModels().filter((model) => !deleted.has(model.id)),
+      ...debugColors.userColorModels,
+    ];
+    if (!models.some((model) => model.id === debugColors.selectedColorModelId)) {
+      debugColors.selectedColorModelId = models[0]?.id || null;
+    }
+    return models;
+  }
+
+  function selectedDebugColorModel(debugColors = ensureDebugColors()) {
+    return debugColorModels(debugColors).find((model) => model.id === debugColors.selectedColorModelId) || null;
+  }
+
+  function saveCurrentDebugColorModel() {
+    const debugColors = ensureDebugColorModels();
+    const values = Object.fromEntries(DEBUG_COLOR_FIELDS.map((field) => {
+      return [field.key, normalizeDebugHexColor(debugColors.values[field.key], DEBUG_COLOR_DEFAULTS[field.key])];
+    }));
+    const model = {
+      id: `custom:${Date.now()}`,
+      source: 'custom',
+      label: `Salvo ${debugColors.userColorModels.length + 1}`,
+      values: normalizeDebugColorValues(values),
+    };
+
+    debugColors.userColorModels.push(model);
+    debugColors.selectedColorModelId = model.id;
+    debugColors.lastModelSavedAt = performance.now();
+    writeDebugColorModelStore(debugColors);
+  }
+
+  function useSelectedDebugColorModel() {
+    const debugColors = ensureDebugColorModels();
+    const model = selectedDebugColorModel(debugColors);
+    if (!model) return;
+
+    debugColors.values = normalizeDebugColorValues(model.values);
+    debugColors.applyStatus = null;
+    debugColors.applyError = '';
+    debugColors.lastModelUsedAt = performance.now();
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  }
+
+  function deleteSelectedDebugColorModel() {
+    const debugColors = ensureDebugColorModels();
+    const model = selectedDebugColorModel(debugColors);
+    if (!model) return;
+
+    if (model.source === 'map') {
+      if (!debugColors.deletedDefaultColorModelIds.includes(model.id)) {
+        debugColors.deletedDefaultColorModelIds.push(model.id);
+      }
+    } else {
+      debugColors.userColorModels = debugColors.userColorModels.filter((entry) => entry.id !== model.id);
+    }
+
+    debugColors.selectedColorModelId = null;
+    debugColors.lastModelDeletedAt = performance.now();
+    writeDebugColorModelStore(debugColors);
+    debugColorModels(debugColors);
+  }
+
   function openDebugColorPicker(key) {
     const debugColors = ensureDebugColors();
     const input = debugColorInputs.get(key);
@@ -336,6 +515,35 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
   function clamp(value, min, max) {
     return Math.min(max, Math.max(min, value));
+  }
+
+  function mapTransitionOpacity(now) {
+    const transition = state.game.mapTransition;
+    if (!transition || transition.type !== 'overworldMap' || !Number.isFinite(transition.startTime)) return 0;
+
+    const fadeIn = Math.max(0, transition.fadeInDuration || 0);
+    const hold = Math.max(0, transition.holdDuration || 0);
+    const fadeOut = Math.max(0, transition.fadeOutDuration || 0);
+    const elapsed = Math.max(0, now - transition.startTime);
+
+    if (fadeIn > 0 && elapsed < fadeIn) return elapsed / fadeIn;
+    if (elapsed < fadeIn + hold) return 1;
+    if (fadeOut > 0 && elapsed < fadeIn + hold + fadeOut) {
+      return 1 - ((elapsed - fadeIn - hold) / fadeOut);
+    }
+
+    return 0;
+  }
+
+  function drawMapTransitionOverlay(currentLayout, now) {
+    const alpha = clamp(mapTransitionOpacity(now), 0, 1);
+    if (alpha <= 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, currentLayout.sw, currentLayout.sh);
+    ctx.restore();
   }
 
   function getPlayerName(game) {
@@ -1458,10 +1666,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
   function drawSpellBar(x, y, availableW, slotSize, maxSlots, showLabel = true) {
     const game = state.game;
-    const attack = actions.getEquippedAttack(game);
-    const attackSelected = game.selectedAttackId === attack.id;
-    const attackDisabled = game.phase !== PHASES.HERO || game.busy || game.apRemaining < attack.apCost;
-    const lacksAp = game.phase === PHASES.HERO && !game.busy && game.apRemaining < attack.apCost;
+    const attacks = actions.getAvailableAttacks(game);
     const slotGap = Math.max(8, Math.floor(slotSize * 0.18));
     const slotCount = clamp(Math.floor((availableW + slotGap) / (slotSize + slotGap)), 3, maxSlots);
     const slotsY = y + (showLabel ? 22 : 0);
@@ -1481,8 +1686,11 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       const sx = x + index * (slotSize + slotGap);
       const slot = { x: sx, y: slotsY, w: slotSize, h: slotSize };
       const hovered = layout.pointInRect(state.mouse.x, state.mouse.y, slot);
-      const filled = index === 0;
-      const selected = filled && attackSelected;
+      const attack = attacks[index];
+      const filled = !!attack;
+      const selected = filled && game.selectedAttackId === attack.id;
+      const attackDisabled = filled && (game.phase !== PHASES.HERO || game.busy || game.apRemaining < attack.apCost);
+      const lacksAp = filled && game.phase === PHASES.HERO && !game.busy && game.apRemaining < attack.apCost;
       const fill = !filled
         ? 'rgba(23,25,18,0.48)'
         : selected
@@ -1505,13 +1713,14 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       draw.roundRect(sx, slotsY, slotSize, slotSize, Math.min(6, slotSize * 0.18), fill, stroke);
 
       if (filled) {
-        if (hovered) hoveredAttackSlot = slot;
+        const attackDamage = actions.getAttackDamage(attack, game.player);
+        if (hovered) hoveredAttackSlot = { ...slot, attack, attackDamage, lacksAp };
 
         const iconPad = Math.max(2, Math.floor(slotSize * 0.06));
         ctx.save();
         ctx.globalAlpha = attackDisabled ? 0.68 : 1;
         const drewIcon = draw.drawImageCover(
-          cardImages.actionStrike,
+          cardImages[attack.iconKey] || cardImages.actionStrike,
           sx + iconPad,
           slotsY + iconPad,
           slotSize - iconPad * 2,
@@ -1528,7 +1737,9 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
           ctx.restore();
         }
 
-        state.game.buttons.push({ ...slot, onClick: actions.toggleAttackSelection });
+        if (!attackDisabled) {
+          state.game.buttons.push({ ...slot, onClick: () => actions.toggleAttackSelection(attack.id) });
+        }
       } else {
         ctx.save();
         ctx.globalAlpha = 0.7;
@@ -1541,12 +1752,13 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     }
 
     if (hoveredAttackSlot) {
+      const { attack, attackDamage, lacksAp } = hoveredAttackSlot;
       const waiting = game.phase !== PHASES.HERO || game.busy;
       const text = waiting
         ? 'Aguarde sua vez.'
         : lacksAp
           ? `${attack.name}: precisa de ${attack.apCost} AP.`
-          : `${attack.name}: ${attack.apCost} AP, ${attack.damage} dano.`;
+          : `${attack.name}: ${attack.apCost} AP, ${attackDamage} dano.`;
       ctx.save();
       ctx.font = '800 11px Inter, sans-serif';
       const tipW = Math.min(220, Math.max(132, ctx.measureText(text).width + 18));
@@ -1561,6 +1773,492 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         color: UI_THEME.text,
       });
       ctx.restore();
+    }
+  }
+
+  function drawIconImage(iconKey, x, y, size, fallback, tint = UI_THEME.accent) {
+    ctx.save();
+    draw.roundRect(x, y, size, size, Math.min(6, size * 0.14), 'rgba(7,8,7,0.32)', null);
+    ctx.clip();
+    const drew = draw.drawImageCover(cardImages[iconKey], x, y, size, size);
+    ctx.restore();
+
+    if (!drew) {
+      draw.drawText(fallback, x + size / 2, y + size / 2 + size * 0.16, {
+        align: 'center',
+        font: `900 ${Math.floor(size * 0.46)}px Inter, sans-serif`,
+        color: tint,
+      });
+    }
+  }
+
+  function drawSmallTooltip(text, anchor, accent = UI_THEME.accent) {
+    ctx.save();
+    ctx.font = '800 11px Inter, sans-serif';
+    const tipW = Math.min(240, Math.max(132, ctx.measureText(text).width + 18));
+    const tipH = 24;
+    const screenW = layout.getLayout?.().sw || window.innerWidth || 9999;
+    const xPos = clamp(anchor.x + anchor.w / 2 - tipW / 2, 8, screenW - tipW - 8);
+    const yPos = Math.max(8, anchor.y - tipH - 8);
+
+    draw.roundRect(xPos, yPos, tipW, tipH, 5, 'rgba(7,8,7,0.94)', accent);
+    draw.drawText(text, xPos + tipW / 2, yPos + 16, {
+      align: 'center',
+      font: '800 11px Inter, sans-serif',
+      color: UI_THEME.text,
+    });
+    ctx.restore();
+  }
+
+  function drawOverworldMenuBar(x, y, availableW, slotSize, maxSlots, showLabel = true) {
+    const slotGap = Math.max(8, Math.floor(slotSize * 0.18));
+    const slotCount = clamp(Math.floor((availableW + slotGap) / (slotSize + slotGap)), 3, maxSlots);
+    const slotsY = y + (showLabel ? 22 : 0);
+    const menuItems = [
+      {
+        label: 'Características',
+        iconKey: 'characteristics',
+        fallback: 'C',
+        onClick: actions.openCharacteristicsModal,
+      },
+      {
+        label: 'Feitiços',
+        iconKey: 'spells',
+        fallback: 'F',
+        onClick: actions.openSpellsModal,
+      },
+    ];
+    let hoveredMenuSlot = null;
+
+    if (showLabel) {
+      beginStarPath(x + 8, y + 8, 6, 3);
+      ctx.fillStyle = UI_THEME.textMuted;
+      ctx.fill();
+      draw.drawText('MENU', x + 20, y + 13, {
+        font: '800 12px Inter, sans-serif',
+        color: UI_THEME.textMuted,
+      });
+    }
+
+    for (let index = 0; index < slotCount; index += 1) {
+      const sx = x + index * (slotSize + slotGap);
+      const slot = { x: sx, y: slotsY, w: slotSize, h: slotSize };
+      const item = menuItems[index] || null;
+      const hovered = layout.pointInRect(state.mouse.x, state.mouse.y, slot);
+      const filled = !!item;
+      const fill = !filled
+        ? 'rgba(23,25,18,0.48)'
+        : hovered
+          ? '#73501d'
+          : UI_THEME.surface1;
+      const stroke = filled ? UI_THEME.accent : UI_THEME.border0;
+
+      draw.roundRect(sx, slotsY, slotSize, slotSize, Math.min(6, slotSize * 0.18), fill, stroke);
+
+      if (filled) {
+        if (hovered) hoveredMenuSlot = { ...slot, label: item.label };
+        const iconPad = Math.max(2, Math.floor(slotSize * 0.06));
+        drawIconImage(
+          item.iconKey,
+          sx + iconPad,
+          slotsY + iconPad,
+          slotSize - iconPad * 2,
+          item.fallback,
+          UI_THEME.accent
+        );
+        state.game.buttons.push({ ...slot, onClick: item.onClick });
+      } else {
+        ctx.save();
+        ctx.globalAlpha = 0.7;
+        ctx.beginPath();
+        ctx.arc(sx + slotSize / 2, slotsY + slotSize / 2, Math.max(2, slotSize * 0.06), 0, Math.PI * 2);
+        ctx.fillStyle = UI_THEME.border0;
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    if (hoveredMenuSlot && !state.game.activeModal) {
+      drawSmallTooltip(hoveredMenuSlot.label, hoveredMenuSlot, UI_THEME.accent);
+    }
+  }
+
+  function drawOverworldBottomUI(currentLayout) {
+    const slotWidth = (slotSize, slotCount) => {
+      const gap = Math.max(8, Math.floor(slotSize * 0.18));
+      return slotCount * slotSize + Math.max(0, slotCount - 1) * gap;
+    };
+
+    const margin = currentLayout.compact ? 8 : 18;
+    const panelPad = currentLayout.compact ? 10 : 18;
+    const panelMaxW = Math.min(currentLayout.sw - margin * 2, currentLayout.compact ? 520 : 620);
+    const panelH = currentLayout.compact ? 82 : 96;
+    const panelY = currentLayout.sh - panelH - margin;
+    const centerY = panelY + panelH / 2;
+    const hudScale = currentLayout.compact ? 0.72 : 0.88;
+    const hudW = 166 * hudScale;
+    const hudH = 76 * hudScale;
+    const slotSize = currentLayout.compact ? 42 : 50;
+    const hudGap = currentLayout.compact ? 10 : 22;
+    let slotCount = currentLayout.compact ? 4 : 5;
+    let menuW = slotWidth(slotSize, slotCount);
+    let contentW = hudW + hudGap + menuW;
+
+    while (slotCount > 3 && contentW + panelPad * 2 > panelMaxW) {
+      slotCount -= 1;
+      menuW = slotWidth(slotSize, slotCount);
+      contentW = hudW + hudGap + menuW;
+    }
+
+    const panelW = Math.min(panelMaxW, contentW + panelPad * 2);
+    const panelX = Math.round((currentLayout.sw - panelW) / 2);
+    const contentX = panelX + Math.max(panelPad, Math.floor((panelW - contentW) / 2));
+    const hudX = contentX;
+    const menuX = hudX + hudW + hudGap;
+
+    draw.roundRect(panelX, panelY, panelW, panelH, 10, UI_THEME.surface0, UI_THEME.border0);
+    drawPlayerResourceHud(hudX, centerY - hudH / 2, hudScale);
+    drawOverworldMenuBar(menuX, centerY - slotSize / 2 - (currentLayout.compact ? 0 : 22), menuW, slotSize, slotCount, !currentLayout.compact);
+
+    return { x: panelX, y: panelY, w: panelW, h: panelH };
+  }
+
+  function characteristicValueText(definition, points, player) {
+    if (definition.key === 'life') {
+      const lifeBonus = points * XP_RULES.LIFE_PER_POINT;
+      return `${player.maxHealth} PV | +${lifeBonus}`;
+    }
+
+    const damageBonus = points * XP_RULES.ELEMENT_DAMAGE_PER_POINT;
+    return `${points} pts | dano +${damageBonus}`;
+  }
+
+  function drawModalBackdrop(currentLayout) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.48)';
+    ctx.fillRect(0, 0, currentLayout.sw, currentLayout.sh);
+    ctx.restore();
+  }
+
+  function drawCharacteristicsModal(currentLayout) {
+    const game = state.game;
+    const player = game.player;
+    const xp = actions.getXpProgress(player);
+    const compact = currentLayout.compact;
+    const modalW = Math.min(currentLayout.sw - 24, compact ? 430 : 620);
+    const modalH = Math.min(currentLayout.sh - 24, compact ? 566 : 540);
+    const x = Math.round((currentLayout.sw - modalW) / 2);
+    const y = Math.round((currentLayout.sh - modalH) / 2);
+    const pad = compact ? 16 : 22;
+    const portraitSize = compact ? 82 : 112;
+    const headerX = x + pad + portraitSize + 18;
+    const headerW = modalW - pad * 2 - portraitSize - 18;
+    const xpBarW = Math.max(120, headerW);
+    const xpBarH = 12;
+    const rowTop = y + (compact ? 172 : 196);
+    const rowH = compact ? 56 : 58;
+    const rowGap = compact ? 8 : 10;
+    const rowW = modalW - pad * 2;
+
+    drawModalBackdrop(currentLayout);
+    draw.roundRect(x, y, modalW, modalH, 10, UI_THEME.overlay, UI_THEME.border1);
+    draw.drawText('Características', x + pad, y + 32, {
+      font: '900 20px Inter, sans-serif',
+      color: UI_THEME.text,
+    });
+    draw.drawButton(x + modalW - pad - 30, y + 12, 30, 28, 'X', actions.closeActiveModal, {
+      fill: UI_THEME.surface1,
+      hoverFill: UI_THEME.surface2,
+      stroke: UI_THEME.border1,
+      font: '900 13px Inter, sans-serif',
+    });
+
+    draw.roundRect(x + pad, y + 56, portraitSize, portraitSize, 8, UI_THEME.surface0, UI_THEME.accent);
+    ctx.save();
+    draw.roundRect(x + pad + 4, y + 60, portraitSize - 8, portraitSize - 8, 6, null, null);
+    ctx.clip();
+    const drewPortrait = draw.drawImageCover(getPlayerCardImage(game), x + pad + 4, y + 60, portraitSize - 8, portraitSize - 8);
+    ctx.restore();
+    if (!drewPortrait) {
+      draw.drawText('P', x + pad + portraitSize / 2, y + 56 + portraitSize / 2 + 14, {
+        align: 'center',
+        font: '900 44px Inter, sans-serif',
+        color: UI_THEME.accent,
+      });
+    }
+
+    draw.drawText(getPlayerName(game), headerX, y + 76, {
+      font: '900 18px Inter, sans-serif',
+      color: UI_THEME.text,
+      maxWidth: headerW,
+    });
+    draw.drawText(`Nível ${xp.level} | Pontos ${player.characteristicPoints}`, headerX, y + 102, {
+      font: '800 13px Inter, sans-serif',
+      color: UI_THEME.accent,
+      maxWidth: headerW,
+    });
+    draw.drawText(`Vida ${player.health}/${player.maxHealth}`, headerX, y + 126, {
+      font: '800 13px Inter, sans-serif',
+      color: UI_THEME.textMuted,
+      maxWidth: headerW,
+    });
+
+    const xpY = y + 148;
+    draw.roundRect(headerX, xpY, xpBarW, xpBarH, xpBarH / 2, 'rgba(7,8,7,0.72)', UI_THEME.border0);
+    draw.roundRect(headerX + 2, xpY + 2, Math.max(0, (xpBarW - 4) * xp.progress), xpBarH - 4, (xpBarH - 4) / 2, UI_THEME.accent, null);
+    draw.drawText(`XP ${xp.progressXp}/${xp.requiredXp}`, headerX, xpY + 30, {
+      font: '800 12px Inter, sans-serif',
+      color: UI_THEME.textMuted,
+      maxWidth: headerW,
+    });
+
+    Object.values(CHARACTERISTIC_DEFINITIONS).forEach((definition, index) => {
+      const rowY = rowTop + index * (rowH + rowGap);
+      const points = player.characteristics?.[definition.key] || 0;
+      const canSpend = player.characteristicPoints > 0;
+      const iconSize = rowH - 14;
+      const iconX = x + pad + 8;
+      const textX = iconX + iconSize + 14;
+      const buttonSize = 34;
+      const buttonX = x + pad + rowW - buttonSize - 10;
+
+      draw.roundRect(x + pad, rowY, rowW, rowH, 8, 'rgba(23,25,18,0.84)', UI_THEME.border0);
+      draw.roundRect(x + pad + 3, rowY + 3, 5, rowH - 6, 3, definition.color, null);
+      drawIconImage(definition.iconKey, iconX, rowY + 7, iconSize, definition.label[0], definition.color);
+      draw.drawText(definition.label, textX, rowY + 24, {
+        font: '900 14px Inter, sans-serif',
+        color: UI_THEME.text,
+      });
+      draw.drawText(characteristicValueText(definition, points, player), textX, rowY + 45, {
+        font: '800 12px Inter, sans-serif',
+        color: UI_THEME.textMuted,
+        maxWidth: buttonX - textX - 12,
+      });
+      draw.drawButton(buttonX, rowY + (rowH - buttonSize) / 2, buttonSize, buttonSize, '+', () => {
+        actions.allocateCharacteristic(definition.key);
+      }, {
+        fill: definition.color,
+        hoverFill: UI_THEME.accent,
+        stroke: '#e6c06f',
+        disabled: !canSpend,
+        font: '900 20px Inter, sans-serif',
+      });
+    });
+  }
+
+  function drawCrossRangeIcon(x, y, size, color, disabled = false) {
+    const cell = Math.max(3, Math.floor(size / 3));
+    const gap = Math.max(1, Math.floor(size * 0.08));
+    const startX = x + Math.round((size - cell * 3 - gap * 2) / 2);
+    const startY = y + Math.round((size - cell * 3 - gap * 2) / 2);
+    const squares = [
+      [1, 0],
+      [0, 1],
+      [1, 1],
+      [2, 1],
+      [1, 2],
+    ];
+
+    ctx.save();
+    ctx.globalAlpha = disabled ? 0.62 : 1;
+    ctx.fillStyle = disabled ? UI_THEME.textDim : color;
+    squares.forEach(([col, row]) => {
+      draw.roundRect(
+        startX + col * (cell + gap),
+        startY + row * (cell + gap),
+        cell,
+        cell,
+        Math.max(1, Math.floor(cell * 0.22)),
+        ctx.fillStyle,
+        null,
+      );
+    });
+    ctx.restore();
+  }
+
+  function drawSpellsModal(currentLayout) {
+    const game = state.game;
+    const compact = currentLayout.compact;
+    const selectedAttack = actions.getSelectedAttack(game) || actions.getEquippedAttack(game);
+    const spellRows = actions.getPlayerSpellbook(game.player).map((spell) => {
+      const elementMeta = SPELL_ELEMENT_META[spell.element] || SPELL_ELEMENT_META.neutral;
+      const damage = actions.getAttackDamage(spell, game.player);
+      const range = actions.getAttackRangeLabel(spell, game.player);
+      const cross = spell.pattern === ATTACK_PATTERNS.CROSS;
+
+      return {
+        ...spell,
+        color: elementMeta.color,
+        elementLabel: elementMeta.label,
+        damage,
+        range,
+        cross,
+        value: `${elementMeta.label} | ${spell.apCost} AP | ${damage} dano`,
+        detail: cross ? `Alcance ${range} | em cruz` : `Alcance ${range}`,
+      };
+    });
+    const modalW = Math.min(currentLayout.sw - 24, compact ? 430 : 620);
+    const pad = compact ? 16 : 22;
+    const iconSize = compact ? 82 : 112;
+    const rowTopOffset = compact ? 170 : 186;
+    const preferredRowH = compact ? 68 : 72;
+    const preferredRowGap = compact ? 8 : 10;
+    const preferredRowsH = spellRows.length * preferredRowH + (spellRows.length - 1) * preferredRowGap;
+    const modalH = Math.min(
+      currentLayout.sh - 24,
+      Math.max(compact ? 380 : 420, rowTopOffset + preferredRowsH + pad),
+    );
+    const x = Math.round((currentLayout.sw - modalW) / 2);
+    const y = Math.round((currentLayout.sh - modalH) / 2);
+    const headerX = x + pad + iconSize + 18;
+    const headerW = modalW - pad * 2 - iconSize - 18;
+    const rowTop = y + rowTopOffset;
+    const availableRowsH = modalH - rowTopOffset - pad;
+    const rowGap = availableRowsH < preferredRowsH ? (compact ? 6 : 8) : preferredRowGap;
+    const rowH = Math.floor((availableRowsH - (spellRows.length - 1) * rowGap) / spellRows.length);
+    const rowW = modalW - pad * 2;
+
+    drawModalBackdrop(currentLayout);
+    draw.roundRect(x, y, modalW, modalH, 10, UI_THEME.overlay, UI_THEME.border1);
+    draw.drawText('Feitiços', x + pad, y + 32, {
+      font: '900 20px Inter, sans-serif',
+      color: UI_THEME.text,
+    });
+    draw.drawButton(x + modalW - pad - 30, y + 12, 30, 28, 'X', actions.closeActiveModal, {
+      fill: UI_THEME.surface1,
+      hoverFill: UI_THEME.surface2,
+      stroke: UI_THEME.border1,
+      font: '900 13px Inter, sans-serif',
+    });
+
+    draw.roundRect(x + pad, y + 56, iconSize, iconSize, 8, UI_THEME.surface0, UI_THEME.accent);
+    drawIconImage('spells', x + pad + 4, y + 60, iconSize - 8, 'F', UI_THEME.accent);
+
+    draw.drawText(getPlayerName(game), headerX, y + 78, {
+      font: '900 18px Inter, sans-serif',
+      color: UI_THEME.text,
+      maxWidth: headerW,
+    });
+    draw.drawText('Grimório', headerX, y + 106, {
+      font: '800 13px Inter, sans-serif',
+      color: UI_THEME.accent,
+      maxWidth: headerW,
+    });
+    draw.drawText(`Feitiço equipado: ${selectedAttack.name}`, headerX, y + 132, {
+      font: '800 13px Inter, sans-serif',
+      color: UI_THEME.textMuted,
+      maxWidth: headerW,
+    });
+
+    spellRows.forEach((spell, index) => {
+      const rowY = rowTop + index * (rowH + rowGap);
+      const rowAlpha = spell.locked ? 0.62 : index === 0 ? 0.88 : 0.76;
+      const smallIcon = Math.min(rowH - 14, 56);
+      const iconX = x + pad + 8;
+      const textX = iconX + smallIcon + 14;
+      const rangeChipW = spell.cross ? 78 : 0;
+      const rangeChipX = x + pad + rowW - rangeChipW - 12;
+      const textMaxW = rowW - smallIcon - 34 - rangeChipW;
+      const titleColor = spell.locked ? UI_THEME.textDim : UI_THEME.text;
+      const valueColor = spell.locked ? UI_THEME.textDim : UI_THEME.textMuted;
+      const rowFill = spell.locked ? `rgba(18,18,17,${rowAlpha})` : `rgba(23,25,18,${rowAlpha})`;
+      const rowStroke = spell.locked ? 'rgba(143,135,115,0.38)' : UI_THEME.border0;
+      const stripeColor = spell.locked ? 'rgba(143,135,115,0.82)' : spell.color;
+
+      draw.roundRect(x + pad, rowY, rowW, rowH, 8, rowFill, rowStroke);
+      draw.roundRect(x + pad + 3, rowY + 3, 5, rowH - 6, 3, stripeColor, null);
+      ctx.save();
+      if (spell.locked) {
+        ctx.filter = 'grayscale(1)';
+        ctx.globalAlpha = 0.62;
+      }
+      drawIconImage(spell.iconKey, iconX, rowY + (rowH - smallIcon) / 2, smallIcon, spell.name[0], spell.color);
+      ctx.restore();
+      draw.drawText(spell.name, textX, rowY + 24, {
+        font: '900 14px Inter, sans-serif',
+        color: titleColor,
+      });
+      draw.drawText(spell.locked ? `Bloqueado | libera no nível ${spell.unlockLevel}` : spell.value, textX, rowY + 45, {
+        font: '800 12px Inter, sans-serif',
+        color: valueColor,
+        maxWidth: textMaxW,
+      });
+      draw.drawText(spell.locked ? spell.value : spell.detail, textX, rowY + 63, {
+        font: '800 11px Inter, sans-serif',
+        color: spell.locked ? 'rgba(143,135,115,0.76)' : UI_THEME.textDim,
+        maxWidth: textMaxW,
+      });
+
+      if (spell.cross) {
+        draw.roundRect(rangeChipX, rowY + (rowH - 34) / 2, rangeChipW, 34, 7, 'rgba(7,8,7,0.36)', spell.locked ? 'rgba(143,135,115,0.32)' : 'rgba(108,171,79,0.45)');
+        drawCrossRangeIcon(rangeChipX + 8, rowY + (rowH - 22) / 2, 22, spell.color, spell.locked);
+        draw.drawText(spell.range, rangeChipX + 53, rowY + rowH / 2 + 4, {
+          align: 'center',
+          font: '900 12px Inter, sans-serif',
+          color: spell.locked ? UI_THEME.textDim : UI_THEME.text,
+        });
+      }
+    });
+  }
+
+  function drawLevelUpModal(currentLayout) {
+    const notice = state.game.levelUpNotice || { levelsGained: 1, pointsGained: XP_RULES.POINTS_PER_LEVEL };
+    const modalW = Math.min(currentLayout.sw - 24, 420);
+    const modalH = 230;
+    const x = Math.round((currentLayout.sw - modalW) / 2);
+    const y = Math.round((currentLayout.sh - modalH) / 2);
+    const pad = 24;
+
+    drawModalBackdrop(currentLayout);
+    draw.roundRect(x, y, modalW, modalH, 10, UI_THEME.overlay, UI_THEME.accent);
+    draw.drawText('Você passou de nível', x + modalW / 2, y + 46, {
+      align: 'center',
+      font: '900 22px Inter, sans-serif',
+      color: UI_THEME.text,
+    });
+    draw.drawText(`Nível ${state.game.player.level}`, x + modalW / 2, y + 82, {
+      align: 'center',
+      font: '900 28px Inter, sans-serif',
+      color: UI_THEME.accent,
+    });
+    draw.drawText(`+${notice.pointsGained} pontos de característica`, x + modalW / 2, y + 114, {
+      align: 'center',
+      font: '800 14px Inter, sans-serif',
+      color: UI_THEME.textMuted,
+    });
+
+    const buttonW = (modalW - pad * 2 - 12) / 2;
+    const buttonY = y + modalH - 66;
+    draw.drawButton(x + pad, buttonY, buttonW, 42, 'Características', actions.openCharacteristicsModal, {
+      fill: UI_THEME.accentDark,
+      hoverFill: UI_THEME.accent,
+      stroke: '#e6c06f',
+      font: '900 13px Inter, sans-serif',
+    });
+    draw.drawButton(x + pad + buttonW + 12, buttonY, buttonW, 42, 'Continuar', actions.closeActiveModal, {
+      fill: UI_THEME.surface1,
+      hoverFill: UI_THEME.surface2,
+      stroke: UI_THEME.border1,
+      font: '900 13px Inter, sans-serif',
+    });
+  }
+
+  function drawActiveModal(currentLayout) {
+    if (!state.game.activeModal) return;
+    state.game.buttons = [];
+
+    if (state.game.activeModal === 'characteristics') {
+      drawCharacteristicsModal(currentLayout);
+      return;
+    }
+
+    if (state.game.activeModal === 'spells') {
+      drawSpellsModal(currentLayout);
+      return;
+    }
+
+    if (state.game.activeModal === 'levelUp') {
+      drawLevelUpModal(currentLayout);
     }
   }
 
@@ -2075,7 +2773,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     ctx.restore();
   }
 
-  function drawOverworldChat(currentLayout) {
+  function drawOverworldChat(currentLayout, bottomInset = 0) {
     const game = state.game;
     const log = (game.eventLog || []).slice(-4);
     if (!log || log.length === 0) return;
@@ -2087,7 +2785,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const padH = 10;
     const chatH = log.length * lineH + padV * 2;
     const chatX = viewport.x + 8;
-    const chatY = viewport.y + viewport.h - chatH - 10;
+    const chatY = viewport.y + viewport.h - chatH - 10 - bottomInset;
 
     ctx.save();
     ctx.globalAlpha = 0.9;
@@ -2181,15 +2879,19 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     }, {
       fill: UI_THEME.surface0, hoverFill: UI_THEME.surface1, stroke: UI_THEME.border1, font: '16px Inter, sans-serif',
     });
-    drawOverworldChat(currentLayout);
+    const overworldBottomUi = drawOverworldBottomUI(currentLayout);
+    const compactBottomInset = currentLayout.compact ? overworldBottomUi.h + 16 : 0;
+    drawOverworldChat(currentLayout, compactBottomInset);
     drawBanner(currentLayout);
  
     drawDebugOverlay(currentLayout);
-    drawDebugMinimap(currentLayout);
+    drawDebugMinimap(currentLayout, compactBottomInset);
+    drawActiveModal(currentLayout);
  
     ctx.restore();
+    drawMapTransitionOverlay(currentLayout, now);
 
-    canvas.style.cursor = game.busy
+    canvas.style.cursor = game.activeModal || game.busy
       ? 'default'
       : (
           layout.hoveredButton() ||
@@ -2477,10 +3179,13 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     drawBanner(currentLayout);
     
     drawDebugOverlay(currentLayout);
+    drawActiveModal(currentLayout);
     
     ctx.restore();
 
-    canvas.style.cursor = state.game.draggingDie
+    canvas.style.cursor = state.game.activeModal
+      ? 'default'
+      : state.game.draggingDie
       ? 'grabbing'
       : (
           layout.hoveredButton() ||
@@ -2909,7 +3614,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       `Mapa: ${cube.mapId}`,
       'Tipo: Cubo',
       `Tile: ${cube.x},${cube.y}`,
-      `Nivel: ${cube.level ?? 0}`,
+      `Nível: ${cube.level ?? 0}`,
     ].join('\n');
   }
 
@@ -3175,7 +3880,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     }
   }
 
-  function drawDebugMinimap(currentLayout) {
+  function drawDebugMinimap(currentLayout, bottomInset = 0) {
     if (!DEBUG_CONFIG.SHOW_STATS || state.game.mode !== GAME_MODES.OVERWORLD) return;
 
     const activeMap = getCurrentWorldMap(state.game.overworld);
@@ -3186,7 +3891,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     const radius = currentLayout.compact ? 78 : 94;
     const cx = currentLayout.sw - radius - 18;
-    const cy = currentLayout.sh - radius - 18;
+    const cy = currentLayout.sh - radius - 18 - bottomInset;
     const stepX = currentLayout.compact ? 26 : 32;
     const stepY = currentLayout.compact ? 18 : 22;
     const halfW = currentLayout.compact ? 20 : 24;
@@ -3857,6 +4562,102 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       const debugColors = ensureDebugColors();
       const contentX = panelX + 16;
       const contentW = panelW - 32;
+      const models = debugColorModels(debugColors);
+      const selectedModel = selectedDebugColorModel(debugColors);
+
+      draw.drawText('Modelos', contentX, cy + 4, {
+        align: 'left',
+        font: '900 11px Inter, sans-serif',
+        color: UI_THEME.text,
+      });
+
+      const modelTileW = 36;
+      const modelTileGap = 10;
+      const modelSquare = 30;
+      const carouselY = cy + 16;
+      const carouselH = 36;
+      const totalModelW = Math.max(0, models.length * modelTileW + Math.max(0, models.length - 1) * modelTileGap);
+      const maxModelScroll = Math.max(0, totalModelW - contentW);
+      debugColors.modelScroll = clamp(debugColors.modelScroll || 0, 0, maxModelScroll);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(contentX, carouselY, contentW, carouselH);
+      ctx.clip();
+      models.forEach((model, index) => {
+        const itemX = contentX + index * (modelTileW + modelTileGap) - debugColors.modelScroll;
+        if (itemX + modelTileW < contentX || itemX > contentX + contentW) return;
+
+        const selected = model.id === debugColors.selectedColorModelId;
+        const squareX = itemX + (modelTileW - modelSquare) / 2;
+        const squareY = carouselY + 2;
+        draw.roundRect(squareX, squareY, modelSquare, modelSquare, 5, model.values.water1, selected ? '#f2ead7' : 'rgba(242,234,215,0.72)');
+        draw.roundRect(squareX + 8, squareY + 8, modelSquare - 16, modelSquare - 16, 3, model.values.top1, null);
+      });
+      ctx.restore();
+
+      state.game.buttons.push({
+        x: contentX,
+        y: carouselY,
+        w: contentW,
+        h: carouselH,
+        onDragStart: (mouseX) => {
+          debugColors.modelDrag = {
+            startX: mouseX,
+            startScroll: debugColors.modelScroll || 0,
+            moved: false,
+          };
+        },
+        onDrag: (mouseX) => {
+          const drag = debugColors.modelDrag;
+          if (!drag) return;
+          const delta = mouseX - drag.startX;
+          if (Math.abs(delta) > 3) drag.moved = true;
+          debugColors.modelScroll = clamp(drag.startScroll - delta, 0, maxModelScroll);
+        },
+        onDragEnd: (mouseX, mouseY) => {
+          const drag = debugColors.modelDrag;
+          debugColors.modelDrag = null;
+          if (drag?.moved) return;
+          const localX = mouseX - contentX + (debugColors.modelScroll || 0);
+          const index = Math.floor(localX / (modelTileW + modelTileGap));
+          const model = models[index];
+          const itemStart = index * (modelTileW + modelTileGap);
+          if (model && localX >= itemStart && localX <= itemStart + modelTileW && mouseY >= carouselY && mouseY <= carouselY + carouselH) {
+            debugColors.selectedColorModelId = model.id;
+          }
+        },
+      });
+
+      if (maxModelScroll > 0) {
+        const thumbW = Math.max(24, contentW * (contentW / (contentW + maxModelScroll)));
+        const thumbX = contentX + (contentW - thumbW) * (debugColors.modelScroll / maxModelScroll);
+        draw.roundRect(thumbX, carouselY + carouselH - 2, thumbW, 2, 2, UI_THEME.border1, null);
+      }
+
+      const modelActionY = carouselY + carouselH + 6;
+      const modelActionGap = 8;
+      const modelActionW = (contentW - modelActionGap) / 2;
+      draw.drawButton(contentX, modelActionY, modelActionW, 28, 'Usar modelo', () => {
+        useSelectedDebugColorModel();
+      }, {
+        fill: UI_THEME.surface2,
+        hoverFill: UI_THEME.accentDark,
+        stroke: UI_THEME.border1,
+        disabled: !selectedModel,
+        font: 'bold 10px Inter, sans-serif',
+      });
+      draw.drawButton(contentX + modelActionW + modelActionGap, modelActionY, modelActionW, 28, 'Excluir modelo', () => {
+        deleteSelectedDebugColorModel();
+      }, {
+        fill: UI_THEME.dangerDark,
+        hoverFill: UI_THEME.danger,
+        stroke: '#fca5a5',
+        disabled: !selectedModel,
+        font: 'bold 10px Inter, sans-serif',
+      });
+
+      cy = modelActionY + 42;
 
       draw.drawText('Cores do mapa', contentX, cy + 4, {
         align: 'left',
@@ -3973,7 +4774,17 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         draw.roundRect(listX + listW - 5, thumbY, 3, thumbH, 2, UI_THEME.border1, null);
       }
 
-      draw.drawButton(contentX, actionY, contentW, 30, 'Aplicar', () => {
+      const bottomActionGap = 8;
+      const bottomActionW = (contentW - bottomActionGap) / 2;
+      draw.drawButton(contentX, actionY, bottomActionW, 30, 'Salvar modelo', () => {
+        saveCurrentDebugColorModel();
+      }, {
+        fill: UI_THEME.surface2,
+        hoverFill: UI_THEME.accentDark,
+        stroke: UI_THEME.border1,
+        font: 'bold 11px Inter, sans-serif',
+      });
+      draw.drawButton(contentX + bottomActionW + bottomActionGap, actionY, bottomActionW, 30, 'Aplicar', () => {
         applyDebugColorsToCurrentMap();
       }, {
         fill: UI_THEME.accentDark,
@@ -3989,6 +4800,24 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         });
       } else if (debugColors.applyStatus === 'failed') {
         draw.drawText('Falha ao aplicar no codigo.', contentX + contentW / 2, actionY - 10, {
+          align: 'center',
+          font: 'bold 10px Inter, sans-serif',
+          color: UI_THEME.danger,
+        });
+      } else if (performance.now() - (debugColors.lastModelSavedAt || 0) < 1800) {
+        draw.drawText('Modelo salvo.', contentX + contentW / 2, actionY - 10, {
+          align: 'center',
+          font: 'bold 10px Inter, sans-serif',
+          color: UI_THEME.success,
+        });
+      } else if (performance.now() - (debugColors.lastModelUsedAt || 0) < 1800) {
+        draw.drawText('Modelo aplicado na edicao.', contentX + contentW / 2, actionY - 10, {
+          align: 'center',
+          font: 'bold 10px Inter, sans-serif',
+          color: UI_THEME.success,
+        });
+      } else if (performance.now() - (debugColors.lastModelDeletedAt || 0) < 1800) {
+        draw.drawText('Modelo excluido.', contentX + contentW / 2, actionY - 10, {
           align: 'center',
           font: 'bold 10px Inter, sans-serif',
           color: UI_THEME.danger,
@@ -4111,7 +4940,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
             selected ? 'rgba(154,111,42,0.62)' : 'rgba(32,34,25,0.72)',
             selected ? '#f2c94c' : 'rgba(111,99,66,0.65)',
           );
-          draw.drawText(`Tile ${cube.x},${cube.y} | nivel ${Math.max(0, cube.level ?? 0) + 1}`, listX + 16, rowY + 19, {
+          draw.drawText(`Tile ${cube.x},${cube.y} | nível ${Math.max(0, cube.level ?? 0) + 1}`, listX + 16, rowY + 19, {
             align: 'left',
             font: '900 11px Inter, sans-serif',
             color: selected ? UI_THEME.text : UI_THEME.textMuted,
@@ -4256,7 +5085,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       x: panelX + 16,
       y: cy,
       w: panelW - 32,
-      label: 'Agua',
+      label: 'Água',
       checked: state.visuals.overworldWater !== false,
       onChange: () => {
         state.visuals.overworldWater = !(state.visuals.overworldWater !== false);

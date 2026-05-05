@@ -366,7 +366,7 @@ test('moves between connected overworld chunks', async ({ page }) => {
     return (
       game.mode === 'overworld' &&
       game.overworld.currentMapId === 'stone-grove' &&
-      game.player.x === 0 &&
+      game.player.x === 1 &&
       game.player.y === 5 &&
       !game.busy
     );

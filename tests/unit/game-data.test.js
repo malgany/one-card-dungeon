@@ -1,17 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ATTACK_PATTERNS,
   BOARD_SIZE,
   BIOMES,
+  CARD_SOURCES,
+  CHARACTERISTIC_DEFINITIONS,
   GAME_MODES,
   LEVELS,
   MONSTER_TEMPLATES,
   PHASES,
+  SPELL_DEFINITIONS,
+  SPELL_ELEMENTS,
   START_WORLD_MAP_ID,
   STAT_META,
   TERRAIN_TYPES,
   TIMING,
   WORLD_MAPS,
   WORLD_OBJECT_TYPES,
+  XP_RULES,
   getWorldMap,
 } from '../../js/config/game-data.js';
 
@@ -30,6 +36,37 @@ describe('game data', () => {
       DUNGEON_LEGACY: 'dungeonLegacy',
     });
     expect(Object.keys(STAT_META)).toEqual(['ap', 'speed', 'attack', 'defense']);
+  });
+
+  it('defines progression data for characteristics and XP', () => {
+    expect(XP_RULES).toMatchObject({
+      BASE_LEVEL_XP: 15,
+      LEVEL_XP_STEP: 5,
+      POINTS_PER_LEVEL: 5,
+      LIFE_PER_POINT: 5,
+      ELEMENT_DAMAGE_PER_POINT: 1,
+    });
+    expect(Object.keys(CHARACTERISTIC_DEFINITIONS)).toEqual(['life', 'earth', 'fire', 'air', 'water']);
+    expect(CHARACTERISTIC_DEFINITIONS.fire.element).toBe(SPELL_ELEMENTS.FIRE);
+    Object.values(MONSTER_TEMPLATES).forEach((template) => {
+      expect(template.xp).toBeGreaterThan(0);
+    });
+  });
+
+  it('defines the ranger level 3 air spell', () => {
+    expect(SPELL_DEFINITIONS.ranger[0]).toMatchObject({
+      id: 'rangerVerdantArrow',
+      name: 'Flecha Hirvante',
+      element: SPELL_ELEMENTS.AIR,
+      apCost: 4,
+      damage: 10,
+      minRange: 2,
+      maxRange: 6,
+      pattern: ATTACK_PATTERNS.CROSS,
+      unlockLevel: 3,
+      iconKey: 'spellVerdantArrow',
+    });
+    expect(CARD_SOURCES.spellVerdantArrow).toBe('./assets/ui/actions/ranger-verdant-arrow.png');
   });
 
   it('keeps all levels inside the board and references known monster templates', () => {

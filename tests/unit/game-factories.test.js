@@ -44,6 +44,8 @@ describe('game factories', () => {
       y: 0,
       hp: MONSTER_TEMPLATES.skeletonMinion.hp,
       maxHp: MONSTER_TEMPLATES.skeletonMinion.hp,
+      xp: MONSTER_TEMPLATES.skeletonMinion.xp,
+      xpGranted: false,
       name: MONSTER_TEMPLATES.skeletonMinion.name,
     });
     expect(levelMonsters(LEVELS[0]).map((m) => m.id)).toEqual([
@@ -63,6 +65,8 @@ describe('game factories', () => {
       y: 5,
       groupId: 'skeleton-minions',
       hp: MONSTER_TEMPLATES.skeletonMinion.hp,
+      xp: MONSTER_TEMPLATES.skeletonMinion.xp,
+      xpGranted: false,
     });
     expect(overworldEnemies(startMap).map((e) => e.groupId)).toContain('skeleton-minions');
     expect(createOverworldMapState(startMap).enemies.length).toBe(startMap.encounters.length);
@@ -95,10 +99,21 @@ describe('game factories', () => {
       y: startMap.playerStart.y,
       health: 60,
       maxHealth: 60,
+      level: 1,
+      experience: 0,
+      characteristicPoints: 0,
+      characteristics: {
+        life: 0,
+        earth: 0,
+        fire: 0,
+        air: 0,
+        water: 0,
+      },
       apMax: 6,
       speedBase: 3,
       attackSlot: {
         name: 'Golpe',
+        element: 'neutral',
         apCost: 5,
         damage: 10,
         lifeSteal: 0,

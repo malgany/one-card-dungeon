@@ -17,6 +17,11 @@ function monsterDeathFinishDelay(damage = 1) {
   );
 }
 
+function finishOverworldMapTransition() {
+  vi.advanceTimersByTime(TIMING.OVERWORLD_MAP_FADE_IN);
+  vi.advanceTimersByTime(TIMING.OVERWORLD_MAP_FADE_HOLD + TIMING.OVERWORLD_MAP_FADE_OUT);
+}
+
 describe('game actions', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -374,13 +379,43 @@ describe('game actions', () => {
 
     vi.advanceTimersByTime(movement.totalDuration);
 
+    expect(state.game.overworld.currentMapId).toBe('open-road');
+    expect(state.game.mapTransition).toMatchObject({
+      type: 'overworldMap',
+      fromMapId: 'open-road',
+      toMapId: 'stone-grove',
+    });
+    expect(state.game.busy).toBe(true);
+
+    vi.advanceTimersByTime(TIMING.OVERWORLD_MAP_FADE_IN);
+
     expect(state.game.overworld.currentMapId).toBe('stone-grove');
-    expect(state.game.player).toMatchObject({ x: 0, y: 5 });
+    expect(state.game.player).toMatchObject({ x: 1, y: 5, facing: { x: 1, y: 0 } });
     expect(getCurrentWorldMapState(state.game.overworld).enemies.length).toBeGreaterThan(0);
+    expect(state.game.busy).toBe(true);
+
+    vi.advanceTimersByTime(TIMING.OVERWORLD_MAP_FADE_HOLD + TIMING.OVERWORLD_MAP_FADE_OUT);
+
+    expect(state.game.mapTransition).toBe(null);
     expect(state.game.busy).toBe(false);
 
     expect(actions.moveOverworldPlayer({ x: 3, y: 3 })).toBe(false);
-    expect(state.game.player).toMatchObject({ x: 0, y: 5 });
+    expect(state.game.player).toMatchObject({ x: 1, y: 5 });
+  });
+
+  it('enters chao grid maps one tile inside the destination ramp', () => {
+    const game = createOverworldGame(getWorldMap('chao3-start'));
+    const { state, actions } = createActionHarness(game);
+
+    actions.moveOverworldPlayer({ x: 0, y: 4 });
+    const movement = state.game.animations.find((anim) => anim.type === 'movement' && anim.entityId === 'player');
+
+    vi.advanceTimersByTime(movement.totalDuration);
+    finishOverworldMapTransition();
+
+    expect(state.game.overworld.currentMapId).toBe('chao3-grid--1-0');
+    expect(state.game.player).toMatchObject({ x: 8, y: 5, facing: { x: -1, y: 0 } });
+    expect(state.game.busy).toBe(false);
   });
 
   it('starts an overworld encounter with the whole enemy group', () => {
@@ -427,6 +462,113 @@ describe('game actions', () => {
     expect(state.game.combatContext).toBe(null);
     expect(getCurrentWorldEnemies(state.game.overworld).some((enemy) => enemy.groupId === 'skeleton-mages')).toBe(false);
     expect(state.game.phase).toBe(PHASES.HERO);
+    expect(state.game.player.experience).toBe(30);
+  });
+
+  it('grants XP, levels up on the growing curve, and preserves overflow', () => {
+    const { state, actions } = createActionHarness(createOverworldGame(getWorldMap('open-road')));
+    const firstMonster = { type: 'skeletonMinion', xp: 10, xpGranted: false };
+    const secondMonster = { type: 'skeletonMage', xp: 45, xpGranted: false };
+
+    state.game.player.experience = 10;
+
+    expect(actions.grantMonsterExperience(firstMonster)).toMatchObject({
+      xp: 10,
+      levelsGained: 1,
+      pointsGained: 5,
+    });
+    expect(state.game.player).toMatchObject({
+      experience: 20,
+      level: 2,
+      characteristicPoints: 5,
+    });
+    expect(actions.getXpProgress(state.game.player)).toMatchObject({
+      progressXp: 5,
+      requiredXp: 20,
+    });
+
+    expect(actions.grantMonsterExperience(secondMonster)).toMatchObject({
+      xp: 45,
+      levelsGained: 2,
+      pointsGained: 10,
+    });
+    expect(state.game.player).toMatchObject({
+      experience: 65,
+      level: 4,
+      characteristicPoints: 15,
+    });
+    expect(actions.getXpProgress(state.game.player)).toMatchObject({
+      progressXp: 5,
+      requiredXp: 30,
+    });
+  });
+
+  it('allocates life and elemental characteristics without buffing neutral strike', () => {
+    const { state, actions } = createActionHarness(createGame());
+    state.game.player.health = 40;
+    state.game.player.characteristicPoints = 2;
+
+    expect(actions.allocateCharacteristic('life')).toBe(true);
+    expect(state.game.player.maxHealth).toBe(65);
+    expect(state.game.player.health).toBe(45);
+    expect(state.game.player.characteristics.life).toBe(1);
+    expect(state.game.player.characteristicPoints).toBe(1);
+
+    expect(actions.allocateCharacteristic('fire')).toBe(true);
+    expect(state.game.player.characteristics.fire).toBe(1);
+    expect(actions.getElementalDamageBonus('fire')).toBe(1);
+    expect(actions.getAttackDamage({ id: 'spark', damage: 5, element: 'fire' })).toBe(6);
+    expect(actions.getAttackDamage(state.game.player.attackSlot)).toBe(10);
+    expect(actions.allocateCharacteristic('water')).toBe(false);
+  });
+
+  it('locks the ranger spell until level 3 and keeps it out of the combat palette', () => {
+    const { state, actions } = createActionHarness(createGame());
+    state.game.player.characterType = 'ranger';
+
+    expect(actions.getPlayerSpellbook(state.game.player).map((spell) => ({
+      id: spell.id,
+      locked: spell.locked,
+      unlockLevel: spell.unlockLevel,
+    }))).toEqual([
+      { id: 'strike', locked: false, unlockLevel: 1 },
+      { id: 'rangerVerdantArrow', locked: true, unlockLevel: 3 },
+    ]);
+    expect(actions.getAvailableAttacks(state.game).map((attack) => attack.id)).toEqual(['strike']);
+
+    state.game.player.level = 3;
+
+    expect(actions.getPlayerSpellbook(state.game.player)[1].locked).toBe(false);
+    expect(actions.getAvailableAttacks(state.game).map((attack) => attack.id)).toEqual(['strike', 'rangerVerdantArrow']);
+  });
+
+  it('uses air bonus and cross range for the ranger spell without changing Golpe', () => {
+    const game = createDungeonLegacyGame();
+    game.phase = PHASES.HERO;
+    game.player = {
+      ...game.player,
+      characterType: 'ranger',
+      level: 3,
+      x: 0,
+      y: 5,
+      characteristics: {
+        ...game.player.characteristics,
+        air: 2,
+      },
+    };
+    game.monsters = [];
+    game.apRemaining = 4;
+    game.selectedAttackId = 'rangerVerdantArrow';
+    const { actions } = createActionHarness(game);
+    const spell = actions.getAvailableAttacks(game).find((attack) => attack.id === 'rangerVerdantArrow');
+
+    expect(actions.getAttackDamage(spell)).toBe(12);
+    expect(actions.getAttackDamage(game.player.attackSlot)).toBe(10);
+    expect(actions.getAttackRangeLabel(spell)).toBe('2~6');
+    expect(actions.getPlayerAttackTiles().has('0,4')).toBe(false);
+    expect(actions.getPlayerAttackTiles().has('0,3')).toBe(true);
+    expect(actions.getPlayerAttackTiles().has('2,5')).toBe(true);
+    expect(actions.getPlayerAttackTiles().has('2,3')).toBe(false);
   });
 
   it('applies level rewards and starts the next level', () => {
@@ -541,10 +683,24 @@ describe('game actions', () => {
     expect(state.game.levelIndex).toBe(LEVELS.length - 1);
     expect(state.game.player.health).toBe(3);
     expect(state.game.player.attackSlot.lifeSteal).toBe(0);
+    expect(state.game.player).toMatchObject({
+      level: 1,
+      experience: 0,
+      characteristicPoints: 0,
+      characteristics: {
+        life: 0,
+        earth: 0,
+        fire: 0,
+        air: 0,
+        water: 0,
+      },
+    });
     expect(Array.isArray(state.game.monsters)).toBe(true);
     expect(state.game.buttons).toEqual([]);
     expect(state.game.draggingDie).toBe(null);
     expect(state.game.menuOpen).toBe(false);
+    expect(state.game.activeModal).toBe(null);
+    expect(state.game.levelUpNotice).toBe(null);
     expect(state.game.busy).toBe(false);
     expect(state.game.animations).toEqual([]);
     expect(state.game.banner.title).toBe('Jogo carregado');

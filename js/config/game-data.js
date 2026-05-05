@@ -23,9 +23,89 @@ export const ACTION_RULES = {
   BASIC_ATTACK: {
     id: 'strike',
     name: 'Golpe',
+    element: 'neutral',
     apCost: 5,
     damage: 10,
     lifeSteal: 0,
+    minRange: 1,
+    pattern: 'path',
+    iconKey: 'actionStrike',
+  },
+};
+
+export const SPELL_ELEMENTS = {
+  NEUTRAL: 'neutral',
+  EARTH: 'earth',
+  FIRE: 'fire',
+  AIR: 'air',
+  WATER: 'water',
+};
+
+export const ATTACK_PATTERNS = {
+  PATH: 'path',
+  CROSS: 'cross',
+};
+
+export const SPELL_DEFINITIONS = {
+  ranger: [
+    {
+      id: 'rangerVerdantArrow',
+      name: 'Flecha Hirvante',
+      element: SPELL_ELEMENTS.AIR,
+      apCost: 4,
+      damage: 10,
+      lifeSteal: 0,
+      minRange: 2,
+      maxRange: 6,
+      pattern: ATTACK_PATTERNS.CROSS,
+      unlockLevel: 3,
+      iconKey: 'spellVerdantArrow',
+    },
+  ],
+};
+
+export const XP_RULES = {
+  BASE_LEVEL_XP: 15,
+  LEVEL_XP_STEP: 5,
+  POINTS_PER_LEVEL: 5,
+  LIFE_PER_POINT: 5,
+  ELEMENT_DAMAGE_PER_POINT: 1,
+};
+
+export const CHARACTERISTIC_DEFINITIONS = {
+  life: {
+    key: 'life',
+    label: 'Vida',
+    color: '#cf4f3f',
+    iconKey: 'characteristicLife',
+  },
+  earth: {
+    key: 'earth',
+    label: 'Terra',
+    color: '#9b6a3f',
+    element: SPELL_ELEMENTS.EARTH,
+    iconKey: 'characteristicEarth',
+  },
+  fire: {
+    key: 'fire',
+    label: 'Fogo',
+    color: '#d9572b',
+    element: SPELL_ELEMENTS.FIRE,
+    iconKey: 'characteristicFire',
+  },
+  air: {
+    key: 'air',
+    label: 'Ar',
+    color: '#6cab4f',
+    element: SPELL_ELEMENTS.AIR,
+    iconKey: 'characteristicAir',
+  },
+  water: {
+    key: 'water',
+    label: 'Água',
+    color: '#3b8fd9',
+    element: SPELL_ELEMENTS.WATER,
+    iconKey: 'characteristicWater',
   },
 };
 
@@ -37,12 +117,12 @@ export const STAT_META = {
 };
 
 export const MONSTER_TEMPLATES = {
-  skeletonMinion: { name: 'Esqueleto Minion', emoji: '💀', hp: 20, attack: 2, defense: 1, range: 3, speed: 3, tint: '#6b7280' },
-  skeletonWarrior: { name: 'Esqueleto Guerreiro', emoji: '💀', hp: 30, attack: 3, defense: 2, range: 3, speed: 3, tint: '#58606c' },
-  skeletonRogue: { name: 'Esqueleto Rogue', emoji: '💀', hp: 20, attack: 2, defense: 2, range: 5, speed: 3, tint: '#7c5c35' },
-  specter: { name: 'Espectro', emoji: '👻', hp: 30, attack: 4, defense: 2, range: 4, speed: 3, tint: '#5934a3' },
-  skeletonMage: { name: 'Esqueleto Mago', emoji: '💀', hp: 50, attack: 4, defense: 3, range: 2, speed: 3, tint: '#52525b' },
-  boss: { name: 'Guardião', emoji: '👹', hp: 60, attack: 5, defense: 4, range: 4, speed: 3, tint: '#8f1414' },
+  skeletonMinion: { name: 'Esqueleto Minion', emoji: '💀', hp: 20, attack: 2, defense: 1, range: 3, speed: 3, xp: 10, tint: '#6b7280' },
+  skeletonWarrior: { name: 'Esqueleto Guerreiro', emoji: '💀', hp: 30, attack: 3, defense: 2, range: 3, speed: 3, xp: 15, tint: '#58606c' },
+  skeletonRogue: { name: 'Esqueleto Rogue', emoji: '💀', hp: 20, attack: 2, defense: 2, range: 5, speed: 3, xp: 15, tint: '#7c5c35' },
+  specter: { name: 'Espectro', emoji: '👻', hp: 30, attack: 4, defense: 2, range: 4, speed: 3, xp: 20, tint: '#5934a3' },
+  skeletonMage: { name: 'Esqueleto Mago', emoji: '💀', hp: 50, attack: 4, defense: 3, range: 2, speed: 3, xp: 30, tint: '#52525b' },
+  boss: { name: 'Guardião', emoji: '👹', hp: 60, attack: 5, defense: 4, range: 4, speed: 3, xp: 60, tint: '#8f1414' },
 };
 
 export const LEGACY_MONSTER_TYPE_MAP = {
@@ -100,6 +180,14 @@ export const CARD_SOURCES = {
   skeletonMage: './assets/characters/skeleton-mage.png',
   boss: './assets/characters/skeleton-warrior.png',
   actionStrike: './assets/ui/actions/strike-punch.png',
+  spellVerdantArrow: './assets/ui/actions/ranger-verdant-arrow.png',
+  characteristics: './assets/ui/icons/characteristics.png',
+  spells: './assets/ui/icons/spells.png',
+  characteristicLife: './assets/ui/icons/characteristic-life.png',
+  characteristicEarth: './assets/ui/icons/characteristic-earth.png',
+  characteristicFire: './assets/ui/icons/characteristic-fire.png',
+  characteristicAir: './assets/ui/icons/characteristic-air.png',
+  characteristicWater: './assets/ui/icons/characteristic-water.png',
 };
 
 export const LEVELS = [
@@ -143,6 +231,9 @@ export const TIMING = {
   MONSTER_DEFEAT_EXIT_PAUSE: 600,
   DAMAGE_SHAKE_DURATION: 350,
   HERO_ATTACK_WAIT_TIME: 600, // Wait time after hero attack before busy=false
+  OVERWORLD_MAP_FADE_IN: 260,
+  OVERWORLD_MAP_FADE_HOLD: 120,
+  OVERWORLD_MAP_FADE_OUT: 380,
 };
 
 export const DEBUG_CONFIG = {
