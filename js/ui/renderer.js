@@ -1,5 +1,6 @@
 import {
   ATTACK_PATTERNS,
+  ACTION_RULES,
   BOARD_SIZE,
   CHARACTERISTIC_DEFINITIONS,
   DEBUG_CONFIG,
@@ -22,6 +23,7 @@ import {
 import { MODEL_LIBRARY } from '../config/world/model-library.js';
 import { TEXTURE_LIBRARY } from '../config/world/texture-library.js';
 import {
+  DEFAULT_MAP_COLOR_MODELS,
   DEFAULT_MAP_COLOR_VALUES,
   getMapColorValuesForMap,
   normalizeMapColorValues,
@@ -78,12 +80,22 @@ const DEBUG_COLOR_FIELDS = [
 ];
 const DEBUG_COLOR_DEFAULTS = DEFAULT_MAP_COLOR_VALUES;
 const DEBUG_COLOR_MODEL_STORAGE_KEY = 'one-rpg-debug-color-models';
-const DEBUG_COLOR_MODEL_GRID_POSITIONS = [
-  { x: 0, y: 0 },
-  { x: 0, y: 1 },
-  { x: 0, y: -1 },
-  { x: 1, y: 0 },
-  { x: -1, y: 0 },
+const DEBUG_HERO_NUMBER_FIELDS = [
+  { key: 'level', label: 'Nivel', min: 1 },
+  { key: 'health', label: 'Vida atual', min: 0 },
+  { key: 'maxHealth', label: 'Vida max', min: 1 },
+  { key: 'apMax', label: 'Acao max', min: 0 },
+  { key: 'apRemaining', label: 'Acao atual', min: 0 },
+  { key: 'speedBase', label: 'Mov. base', min: 0 },
+  { key: 'speedRemaining', label: 'Mov. atual', min: 0 },
+  { key: 'defenseBase', label: 'Defesa', min: 0 },
+  { key: 'rangeBase', label: 'Alcance', min: 1 },
+  { key: 'characteristicPoints', label: 'Pontos livres', min: 0 },
+  ...Object.values(CHARACTERISTIC_DEFINITIONS).map((definition) => ({
+    key: `characteristic:${definition.key}`,
+    label: definition.label,
+    min: 0,
+  })),
 ];
 
 export function getAnimationEndTime(anim) {
@@ -127,6 +139,10 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   const debugHeroFieldLabel = document.createElement('span');
   const debugHeroSelect = document.createElement('select');
   const debugHeroStatus = document.createElement('p');
+  const debugHeroConfigTitle = document.createElement('strong');
+  const debugHeroConfigGrid = document.createElement('div');
+  const debugHeroApplyButton = document.createElement('button');
+  const debugHeroInputs = new Map();
   const debugColorInputs = new Map();
   const debugColorHexInputs = new Map();
 
@@ -141,9 +157,40 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   debugHeroSelect.className = 'debug-hero-select';
   debugHeroSelect.setAttribute('aria-label', 'Animacao do Hero');
   debugHeroStatus.className = 'debug-hero-status';
+  debugHeroConfigTitle.className = 'debug-hero-section-title';
+  debugHeroConfigTitle.textContent = 'Configuracao';
+  debugHeroConfigGrid.className = 'debug-hero-config-grid';
+  debugHeroApplyButton.className = 'debug-hero-apply';
+  debugHeroApplyButton.type = 'button';
+  debugHeroApplyButton.textContent = 'Aplicar hero';
+
+  DEBUG_HERO_NUMBER_FIELDS.forEach((field) => {
+    const label = document.createElement('label');
+    const labelText = document.createElement('span');
+    const input = document.createElement('input');
+    label.className = 'debug-hero-config-field';
+    labelText.textContent = field.label;
+    input.type = 'number';
+    input.inputMode = 'numeric';
+    input.step = '1';
+    input.min = String(field.min);
+    input.dataset.heroField = field.key;
+    input.setAttribute('aria-label', field.label);
+    label.append(labelText, input);
+    debugHeroConfigGrid.append(label);
+    debugHeroInputs.set(field.key, input);
+  });
 
   debugHeroField.append(debugHeroFieldLabel, debugHeroSelect);
-  debugHeroOverlay.append(debugHeroTitle, debugHeroHelp, debugHeroField, debugHeroStatus);
+  debugHeroOverlay.append(
+    debugHeroTitle,
+    debugHeroHelp,
+    debugHeroField,
+    debugHeroStatus,
+    debugHeroConfigTitle,
+    debugHeroConfigGrid,
+    debugHeroApplyButton,
+  );
   document.body.append(debugHeroOverlay);
 
   DEBUG_COLOR_FIELDS.forEach((field) => {
@@ -226,9 +273,62 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     heroDebug.selectedAnimationId = debugHeroSelect.value === 'auto' ? null : debugHeroSelect.value;
   });
 
+  function debugHeroNumberValue(key, fallback = 0) {
+    const input = debugHeroInputs.get(key);
+    const value = Number(input?.value);
+    return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : fallback;
+  }
+
+  function updateDebugHeroFreePointsFromDraft() {
+    const freeInput = debugHeroInputs.get('characteristicPoints');
+    if (!freeInput || document.activeElement === freeInput) return;
+
+    const level = Math.max(1, debugHeroNumberValue('level', 1));
+    const earnedPoints = Math.max(0, level - 1) * XP_RULES.POINTS_PER_LEVEL;
+    const spentPoints = Object.keys(CHARACTERISTIC_DEFINITIONS).reduce((sum, key) => {
+      return sum + debugHeroNumberValue(`characteristic:${key}`, 0);
+    }, 0);
+    freeInput.value = String(Math.max(0, earnedPoints - spentPoints));
+  }
+
+  for (const input of debugHeroInputs.values()) {
+    input.addEventListener('input', () => {
+      updateDebugHeroFreePointsFromDraft();
+    });
+  }
+
+  function readDebugHeroConfig() {
+    const characteristics = {};
+    for (const key of Object.keys(CHARACTERISTIC_DEFINITIONS)) {
+      characteristics[key] = debugHeroNumberValue(`characteristic:${key}`, 0);
+    }
+
+    return {
+      level: Math.max(1, debugHeroNumberValue('level', 1)),
+      health: debugHeroNumberValue('health', 60),
+      maxHealth: debugHeroNumberValue('maxHealth', 60),
+      apMax: debugHeroNumberValue('apMax', ACTION_RULES.BASE_AP),
+      apRemaining: debugHeroNumberValue('apRemaining', ACTION_RULES.BASE_AP),
+      speedBase: debugHeroNumberValue('speedBase', 3),
+      speedRemaining: debugHeroNumberValue('speedRemaining', 3),
+      defenseBase: debugHeroNumberValue('defenseBase', 0),
+      rangeBase: debugHeroNumberValue('rangeBase', 2),
+      characteristicPoints: debugHeroNumberValue('characteristicPoints', 0),
+      characteristics,
+    };
+  }
+
+  debugHeroApplyButton.addEventListener('click', () => {
+    actions.applyDebugHeroConfig?.(readDebugHeroConfig());
+    const heroDebug = ensureDebugHeroState();
+    heroDebug.lastAppliedAt = performance.now();
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  });
+
   function ensureDebugHeroState() {
     if (!state.debugHero) state.debugHero = {};
     if (state.debugHero.selectedAnimationId === undefined) state.debugHero.selectedAnimationId = null;
+    if (!Number.isFinite(state.debugHero.lastAppliedAt)) state.debugHero.lastAppliedAt = 0;
     return state.debugHero;
   }
 
@@ -279,12 +379,49 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     return debugColors;
   }
 
+  function ensureDebugVisualSettingsState() {
+    if (!state.debugVisualSettings) state.debugVisualSettings = {};
+    const debugVisualSettings = state.debugVisualSettings;
+    if (!Number.isFinite(debugVisualSettings.lastAppliedAt)) debugVisualSettings.lastAppliedAt = 0;
+    if (typeof debugVisualSettings.applyError !== 'string') debugVisualSettings.applyError = '';
+    return debugVisualSettings;
+  }
+
   function normalizeDebugColorValues(values) {
     const normalized = normalizeMapColorValues(values);
     for (const field of DEBUG_COLOR_FIELDS) {
       normalized[field.key] = normalizeDebugHexColor(normalized[field.key], DEBUG_COLOR_DEFAULTS[field.key]);
     }
     return normalized;
+  }
+
+  function mapColorValues(mapId) {
+    const mapState = state.game.overworld?.mapStates?.[mapId] || null;
+    const draftValues = state.debugColors?.activeMapId === mapId ? state.debugColors?.values : null;
+    return normalizeMapColorValues(draftValues || mapState?.debugColors?.values || getMapColorValuesForMap(mapId));
+  }
+
+  function combatBackdropColorValues() {
+    const mapId = state.game.combatContext?.mapId || state.game.overworld?.currentMapId || null;
+    if (mapId) return mapColorValues(mapId);
+
+    return {
+      ...DEFAULT_MAP_COLOR_VALUES,
+      water1: UI_THEME.bg0,
+      water2: UI_THEME.bg1,
+      water3: UI_THEME.bg2,
+    };
+  }
+
+  function fillCombatBackdrop(currentLayout) {
+    const colors = combatBackdropColorValues();
+    const background = ctx.createLinearGradient(0, 0, 0, currentLayout.sh);
+    background.addColorStop(0, colors.water3);
+    background.addColorStop(0.55, colors.water2);
+    background.addColorStop(1, colors.water1);
+
+    ctx.fillStyle = background;
+    ctx.fillRect(-20, -20, currentLayout.sw + 40, currentLayout.sh + 40);
   }
 
   function debugColorModelStorage() {
@@ -296,18 +433,14 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   }
 
   function defaultDebugColorModels() {
-    const maps = Object.values(WORLD_MAPS);
-    return DEBUG_COLOR_MODEL_GRID_POSITIONS.map((position) => {
-      const map = maps.find((entry) => entry?.gridPosition?.x === position.x && entry?.gridPosition?.y === position.y);
-      if (!map) return null;
-      const label = `${position.x},${position.y}`;
+    return DEFAULT_MAP_COLOR_MODELS.map((model, index) => {
       return {
-        id: `map:${map.id}`,
-        source: 'map',
-        label,
-        values: normalizeDebugColorValues(getMapColorValuesForMap(map.id)),
+        id: typeof model.id === 'string' && model.id ? model.id : `default:${index}`,
+        source: 'default',
+        label: typeof model.label === 'string' && model.label ? model.label : `Modelo ${index + 1}`,
+        values: normalizeDebugColorValues(model.values),
       };
-    }).filter(Boolean);
+    });
   }
 
   function readDebugColorModelStore() {
@@ -417,7 +550,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const model = selectedDebugColorModel(debugColors);
     if (!model) return;
 
-    if (model.source === 'map') {
+    if (model.source === 'default') {
       if (!debugColors.deletedDefaultColorModelIds.includes(model.id)) {
         debugColors.deletedDefaultColorModelIds.push(model.id);
       }
@@ -482,8 +615,10 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
   function syncDebugHeroOverlay(bounds = null) {
     const visible = !!bounds;
+    const wasHidden = debugHeroOverlay.hidden;
     debugHeroOverlay.hidden = !visible;
     if (!visible) return;
+    if (wasHidden) debugHeroOverlay.scrollTop = 0;
 
     const heroDebug = ensureDebugHeroState();
     const selectedAnimationId = heroDebug.selectedAnimationId;
@@ -497,10 +632,44 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     debugHeroStatus.textContent = selectedOption
       ? `Atual: ${selectedOption.label}${selectedOption.loop ? ' (loop)' : ' (1x e para)'}`
       : 'Atual: Auto (jogo)';
+    if (performance.now() - (heroDebug.lastAppliedAt || 0) < 1800) {
+      debugHeroStatus.textContent = 'Hero aplicado.';
+    }
+
+    const player = state.game.player || {};
+    const fieldValues = {
+      level: player.level || 1,
+      health: player.health || 0,
+      maxHealth: player.maxHealth || 60,
+      apMax: player.apMax || ACTION_RULES.BASE_AP,
+      apRemaining: state.game.apRemaining ?? player.apMax ?? ACTION_RULES.BASE_AP,
+      speedBase: player.speedBase || 0,
+      speedRemaining: state.game.speedRemaining ?? player.speedBase ?? 0,
+      defenseBase: player.defenseBase || 0,
+      rangeBase: player.rangeBase || 2,
+      characteristicPoints: player.characteristicPoints || 0,
+    };
+    for (const key of Object.keys(CHARACTERISTIC_DEFINITIONS)) {
+      fieldValues[`characteristic:${key}`] = player.characteristics?.[key] || 0;
+    }
+    const heroInputFocused = [...debugHeroInputs.values()].includes(document.activeElement);
+    if (!heroInputFocused) {
+      for (const [key, value] of Object.entries(fieldValues)) {
+        const input = debugHeroInputs.get(key);
+        if (input) input.value = String(value);
+      }
+    }
 
     debugHeroOverlay.style.left = `${Math.round(bounds.x)}px`;
     debugHeroOverlay.style.top = `${Math.round(bounds.y)}px`;
     debugHeroOverlay.style.width = `${Math.round(bounds.w)}px`;
+    if (Number.isFinite(bounds.h)) {
+      debugHeroOverlay.style.height = `${Math.round(bounds.h)}px`;
+      debugHeroOverlay.style.maxHeight = `${Math.round(bounds.h)}px`;
+    } else {
+      debugHeroOverlay.style.height = '';
+      debugHeroOverlay.style.maxHeight = '';
+    }
   }
 
   function clearThreeBoardViewport(currentLayout) {
@@ -2924,7 +3093,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     threeBoard.setVisible?.(true);
 
-    const walls = levelWallsSet(state.game.levelIndex);
+    const walls = levelWallsSet(state.game.levelIndex, state.game.combatWalls);
     const reachable = actions.getReachableTiles();
     const playerAttackTiles = actions.getPlayerAttackTiles();
     const hoverTile = layout.hoveredTile();
@@ -2961,12 +3130,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     ctx.save();
 
-    const background = ctx.createLinearGradient(0, 0, 0, currentLayout.sh);
-    background.addColorStop(0, UI_THEME.bg2);
-    background.addColorStop(0.55, UI_THEME.bg1);
-    background.addColorStop(1, UI_THEME.bg0);
-    ctx.fillStyle = background;
-    ctx.fillRect(-20, -20, currentLayout.sw + 40, currentLayout.sh + 40);
+    fillCombatBackdrop(currentLayout);
 
     draw.roundRect(
       currentLayout.boardX - 14,
@@ -3711,6 +3875,51 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     }
   }
 
+  function currentDebugVisualSettingsValues() {
+    function numberValue(key, min, max, fallback) {
+      const value = Number(state.visuals?.[key]);
+      return Number.isFinite(value) ? clamp(value, min, max) : fallback;
+    }
+
+    return {
+      exposure: numberValue('exposure', 0.1, 3.0, 1.0),
+      ambientIntensity: numberValue('ambientIntensity', 0, 3.0, 1.05),
+      keyIntensity: numberValue('keyIntensity', 0, 5.0, 1.75),
+      keyLightDirectionDeg: numberValue('keyLightDirectionDeg', 0, 360, 84),
+      fogDensity: numberValue('fogDensity', 0, 0.1, 0.0),
+      shadowMapEnabled: !!state.visuals?.shadowMapEnabled,
+      showOutlines: !!state.visuals?.showOutlines,
+      showGrid: !!state.visuals?.showGrid,
+      overworldOrthographicCamera: !!state.visuals?.overworldOrthographicCamera,
+      overworldWater: state.visuals?.overworldWater !== false,
+    };
+  }
+
+  async function applyDebugVisualSettings() {
+    const debugVisualSettings = ensureDebugVisualSettingsState();
+    const values = currentDebugVisualSettingsValues();
+
+    state.visuals = { ...state.visuals, ...values };
+    debugVisualSettings.applyStatus = 'pending';
+    debugVisualSettings.applyError = '';
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+
+    try {
+      const response = await fetch('/__debug/visual-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+
+      debugVisualSettings.lastAppliedAt = performance.now();
+      debugVisualSettings.applyStatus = 'applied';
+    } catch (error) {
+      debugVisualSettings.applyStatus = 'failed';
+      debugVisualSettings.applyError = error instanceof Error ? error.message : 'Falha desconhecida.';
+    }
+  }
+
   function visibleAssetTreeRows(libraryItems, expandedFolders) {
     const rows = [];
     const sortedItems = libraryItems;
@@ -3955,7 +4164,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const heroTab = activeTab === 'hero';
     if (!colorTab) hideDebugColorInputs();
     const panelTargetW = (editorTab || colorTab) ? 380 : (cubeTab || heroTab) ? 340 : 320;
-    const panelTargetH = editorTab ? 820 : colorTab ? 800 : cubeTab ? 600 : heroTab ? 360 : activeTab === 'settings' ? 560 : 464;
+    const panelTargetH = editorTab ? 820 : colorTab ? 800 : cubeTab ? 600 : heroTab ? 610 : activeTab === 'settings' ? 610 : 464;
     const panelW = Math.min(panelTargetW, Math.max(236, currentLayout.sw - 48));
     const availablePanelH = Math.max(220, currentLayout.sh - DEBUG_PANEL_MARGIN * 2);
     const panelH = Math.min(panelTargetH, Math.max(334, availablePanelH), availablePanelH);
@@ -5001,12 +5210,14 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         x: heroCardX + 12,
         y: heroCardY + 12,
         w: heroCardW - 24,
+        h: heroCardH - 24,
       });
       return;
     }
 
     syncDebugHeroOverlay(null);
 
+    const debugVisualSettings = ensureDebugVisualSettingsState();
     const controls = [
       { label: 'Exposicao', key: 'exposure', min: 0.1, max: 3.0, digits: 2 },
       { label: 'Luz ambiente', key: 'ambientIntensity', min: 0, max: 3.0, digits: 2 },
@@ -5091,6 +5302,36 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         state.visuals.overworldWater = !(state.visuals.overworldWater !== false);
       },
     });
+
+    const actionY = cy + 42;
+    draw.drawButton(panelX + 16, actionY, panelW - 32, 30, 'Aplicar ajustes', () => {
+      applyDebugVisualSettings();
+    }, {
+      fill: UI_THEME.accentDark,
+      hoverFill: UI_THEME.accent,
+      stroke: '#e6c06f',
+      font: 'bold 11px Inter, sans-serif',
+    });
+
+    if (debugVisualSettings.applyStatus === 'pending') {
+      draw.drawText('Aplicando no codigo...', panelX + panelW / 2, actionY - 10, {
+        align: 'center',
+        font: 'bold 10px Inter, sans-serif',
+        color: UI_THEME.accent,
+      });
+    } else if (debugVisualSettings.applyStatus === 'failed') {
+      draw.drawText('Falha ao aplicar ajustes.', panelX + panelW / 2, actionY - 10, {
+        align: 'center',
+        font: 'bold 10px Inter, sans-serif',
+        color: UI_THEME.danger,
+      });
+    } else if (performance.now() - (debugVisualSettings.lastAppliedAt || 0) < 1800) {
+      draw.drawText('Ajustes aplicados.', panelX + panelW / 2, actionY - 10, {
+        align: 'center',
+        font: 'bold 10px Inter, sans-serif',
+        color: UI_THEME.success,
+      });
+    }
   }
 
   function drawDebugPanel(x, y, w) {

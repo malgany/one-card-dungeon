@@ -17,7 +17,7 @@ AP e o recurso usado para executar acoes. Cada acao define o proprio custo.
 
 ## Movimento e Alcance
 
-Movimento e feito apenas em cruz: cima, baixo, esquerda e direita.
+Movimento é feito apenas em cruz: cima, baixo, esquerda e direita.
 Nao existe passo diagonal. Para chegar em uma casa diagonal, o caminho custa dois passos ortogonais.
 
 Alcance usa a mesma distancia por passos ortogonais.

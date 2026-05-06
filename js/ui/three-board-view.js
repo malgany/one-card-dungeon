@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BOARD_SIZE, CARD_SOURCES, DEBUG_CONFIG, GAME_MODES, TERRAIN_TYPES, WORLD_ASSETS, WORLD_OBJECT_TYPES } from '../config/game-data.js';
-import { getCurrentWorldEnemies, getCurrentWorldMap, getCurrentWorldMapState } from '../game/world-state.js';
+import { getCurrentWorldEnemies, getCurrentWorldMap } from '../game/world-state.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { paletteSignature } from '../config/character-palettes.js';
@@ -85,7 +85,7 @@ const CHARACTER_TEXTURE_OVERRIDES = {
 const PLAYER_MODEL_BASE = {
   idleAnimation: 'Idle_A',
   walkAnimation: 'Running_B',
-  attackAnimation: 'Hit_A',
+  attackAnimation: 'Throw',
   damageAnimation: 'Hit_B',
   walkTimeScale: 1.65,
   scale: 0.42,
@@ -112,6 +112,10 @@ const PLAYER_MODELS = {
   ranger: {
     ...PLAYER_MODEL_BASE,
     modelUrl: WORLD_ASSETS.characters.ranger,
+    animations: [
+      ...PLAYER_MODEL_BASE.animations,
+      WORLD_ASSETS.animations.rigMedium.combatRanged,
+    ],
   },
   rogue: {
     ...PLAYER_MODEL_BASE,
@@ -177,6 +181,12 @@ export const HERO_DEBUG_ANIMATION_OPTIONS = [
   { id: 'Death_B', label: 'Death_B', loop: false },
   { id: 'Death_B_Pose', label: 'Death_B_Pose', loop: false },
   { id: 'T-Pose', label: 'T-Pose', loop: true },
+  { id: 'Ranged_Bow_Aiming_Idle', label: 'Ranged_Bow_Aiming_Idle', loop: true },
+  { id: 'Ranged_Bow_Draw', label: 'Ranged_Bow_Draw', loop: false },
+  { id: 'Ranged_Bow_Draw_Up', label: 'Ranged_Bow_Draw_Up', loop: false },
+  { id: 'Ranged_Bow_Idle', label: 'Ranged_Bow_Idle', loop: true },
+  { id: 'Ranged_Bow_Release', label: 'Ranged_Bow_Release', loop: false },
+  { id: 'Ranged_Bow_Release_Up', label: 'Ranged_Bow_Release_Up', loop: false },
 ];
 const HERO_DEBUG_ANIMATION_BY_ID = new Map(
   HERO_DEBUG_ANIMATION_OPTIONS.map((option) => [option.id, option]),
@@ -656,11 +666,27 @@ export function createThreeBoardView({ state }) {
     return /^#[0-9a-f]{6}$/i.test(trimmed) ? trimmed.toLowerCase() : fallback;
   }
 
-  function debugColorValues() {
-    const mapState = getCurrentWorldMapState(state.game.overworld);
-    const mapId = state.game.overworld?.currentMapId || null;
+  function mapColorValues(mapId) {
+    const mapState = state.game.overworld?.mapStates?.[mapId] || null;
     const draftValues = state.debugColors?.activeMapId === mapId ? state.debugColors?.values : null;
     return normalizeMapColorValues(draftValues || mapState?.debugColors?.values || getMapColorValuesForMap(mapId));
+  }
+
+  function debugColorValues() {
+    const mapId = state.game.overworld?.currentMapId || null;
+    return mapColorValues(mapId);
+  }
+
+  function combatColorValues() {
+    const mapId = state.game.combatContext?.mapId || state.game.overworld?.currentMapId || null;
+    if (mapId) return mapColorValues(mapId);
+
+    return normalizeMapColorValues({
+      ...DEFAULT_MAP_COLOR_VALUES,
+      water1: COMBAT_BACKDROP_COLOR,
+      water2: '#0d0f0b',
+      water3: '#14150f',
+    });
   }
 
   function hexToRgba(hex, alpha) {
@@ -1027,16 +1053,10 @@ export function createThreeBoardView({ state }) {
   function syncDebugColorMaterials() {
     const isOverworld = state.game.mode === GAME_MODES.OVERWORLD;
     const overworldWaterEnabled = state.visuals?.overworldWater !== false;
-    const colors = isOverworld
-      ? debugColorValues()
-      : {
-        ...DEFAULT_MAP_COLOR_VALUES,
-        water1: COMBAT_BACKDROP_COLOR,
-        water2: '#0d0f0b',
-        water3: '#14150f',
-      };
+    const colors = isOverworld ? debugColorValues() : combatColorValues();
     const backgroundColor = isOverworld && !overworldWaterEnabled ? colors.top1 : colors.water1;
-    const signature = `${isOverworld ? 'overworld' : 'combat'}:${overworldWaterEnabled ? 'water' : 'dry'}:${JSON.stringify(colors)}`;
+    const mapId = isOverworld ? state.game.overworld?.currentMapId : state.game.combatContext?.mapId;
+    const signature = `${isOverworld ? 'overworld' : 'combat'}:${mapId || 'default'}:${overworldWaterEnabled ? 'water' : 'dry'}:${JSON.stringify(colors)}`;
     if (signature === debugColorSignature) return;
 
     debugColorSignature = signature;
@@ -2776,7 +2796,11 @@ export function createThreeBoardView({ state }) {
   function tileAt(layout, px, py) {
     const point = worldPointAt(layout, px, py);
     if (!point) return null;
-    return { x: point.x, y: point.y };
+    return {
+      x: point.x,
+      y: point.y,
+      ...(point.kind ? { kind: point.kind } : {}),
+    };
   }
 
   function updateIslandWater(delta) {

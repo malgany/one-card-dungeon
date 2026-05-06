@@ -1,8 +1,10 @@
 const OVERWORLD_MUSIC_SRC = '/assets/audio/verden-i.mp3';
+const COMBAT_MUSIC_SRC = encodeURI('/assets/audio/Skyblade Ocarina.mp3');
 const OVERWORLD_MUSIC_VOLUME = 0.5;
 const OVERWORLD_MUSIC_VOLUME_KEY = 'one-rpg-overworld-music-volume-v1';
 
 let overworldMusic = null;
+let combatMusic = null;
 let overworldMusicVolume = readStoredOverworldMusicVolume();
 
 function storageAvailable() {
@@ -57,6 +59,19 @@ function getOverworldMusic() {
   return overworldMusic;
 }
 
+function getCombatMusic() {
+  if (!canUseMediaPlayback()) return null;
+
+  if (!combatMusic) {
+    combatMusic = new Audio(COMBAT_MUSIC_SRC);
+    combatMusic.loop = true;
+    combatMusic.preload = 'auto';
+    combatMusic.volume = overworldMusicVolume;
+  }
+
+  return combatMusic;
+}
+
 export function getOverworldMusicVolume() {
   return overworldMusicVolume;
 }
@@ -67,12 +82,19 @@ export function setOverworldMusicVolume(volume) {
   storeOverworldMusicVolume(normalized);
   if (overworldMusic) {
     overworldMusic.volume = normalized;
-    if (normalized === 0) stopOverworldMusic();
+  }
+  if (combatMusic) {
+    combatMusic.volume = normalized;
+  }
+  if (normalized === 0) {
+    stopOverworldMusic();
+    stopCombatMusic();
   }
   return overworldMusicVolume;
 }
 
 export function playOverworldMusic() {
+  stopCombatMusic();
   if (overworldMusicVolume === 0) return;
 
   const audio = getOverworldMusic();
@@ -93,6 +115,36 @@ export function stopOverworldMusic() {
 
   try {
     audio.pause();
+    audio.currentTime = 0;
+  } catch {
+    // Ignore media teardown errors from partially initialized audio elements.
+  }
+}
+
+export function playCombatMusic() {
+  stopOverworldMusic();
+  if (overworldMusicVolume === 0) return;
+
+  const audio = getCombatMusic();
+  if (!audio || !audio.paused) return;
+
+  try {
+    audio.volume = overworldMusicVolume;
+    audio.play()?.catch(() => {
+      // Browsers may block playback outside a user gesture; gameplay can continue silently.
+    });
+  } catch {
+    // Gameplay should not fail if the browser refuses media playback.
+  }
+}
+
+export function stopCombatMusic() {
+  const audio = combatMusic;
+  if (!audio) return;
+
+  try {
+    audio.pause();
+    audio.currentTime = 0;
   } catch {
     // Ignore media teardown errors from partially initialized audio elements.
   }

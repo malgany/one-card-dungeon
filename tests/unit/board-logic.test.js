@@ -44,6 +44,7 @@ describe('board logic', () => {
 
   it('builds wall and monster occupancy sets', () => {
     expect(levelWallsSet(0).has('2,1')).toBe(true);
+    expect(levelWallsSet(0, [[1, 1]])).toEqual(new Set(['1,1']));
     expect(monsterOccupiedKeys([
       { id: 'a', x: 1, y: 1, hp: 1 },
       { id: 'b', x: 2, y: 2, hp: 0 },

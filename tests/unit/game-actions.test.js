@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GAME_MODES, LEVELS, PHASES, SAVE_KEY, TIMING, getWorldMap } from '../../js/config/game-data.js';
+import { BOARD_SIZE, GAME_MODES, LEVELS, PHASES, SAVE_KEY, TIMING, getWorldMap } from '../../js/config/game-data.js';
 import { createGameActions } from '../../js/game/game-actions.js';
+import { dijkstra, levelWallsSet, posKey } from '../../js/game/board-logic.js';
+import { CHARACTERS_KEY, SELECTED_CHARACTER_KEY, totalXpForLevel } from '../../js/game/character-progress.js';
 import { createDungeonLegacyGame, createGame, createMonster, createOverworldGame } from '../../js/game/game-factories.js';
 import { getCurrentWorldEnemies, getCurrentWorldMapState } from '../../js/game/world-state.js';
 
@@ -20,6 +22,41 @@ function monsterDeathFinishDelay(damage = 1) {
 function finishOverworldMapTransition() {
   vi.advanceTimersByTime(TIMING.OVERWORLD_MAP_FADE_IN);
   vi.advanceTimersByTime(TIMING.OVERWORLD_MAP_FADE_HOLD + TIMING.OVERWORLD_MAP_FADE_OUT);
+}
+
+function inCombatBoard(cell) {
+  return cell.x >= 0 && cell.x < BOARD_SIZE && cell.y >= 0 && cell.y < BOARD_SIZE;
+}
+
+function hasClosedWallCorner(walls) {
+  const cornerPairs = [
+    [[0, -1], [1, 0]],
+    [[1, 0], [0, 1]],
+    [[0, 1], [-1, 0]],
+    [[-1, 0], [0, -1]],
+  ];
+
+  for (let y = 0; y < BOARD_SIZE; y += 1) {
+    for (let x = 0; x < BOARD_SIZE; x += 1) {
+      const key = `${x},${y}`;
+      if (walls.has(key)) continue;
+
+      for (const [first, second] of cornerPairs) {
+        const firstCell = { x: x + first[0], y: y + first[1] };
+        const secondCell = { x: x + second[0], y: y + second[1] };
+        if (
+          inCombatBoard(firstCell) &&
+          inCombatBoard(secondCell) &&
+          walls.has(posKey(firstCell)) &&
+          walls.has(posKey(secondCell))
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
 }
 
 describe('game actions', () => {
@@ -127,6 +164,11 @@ describe('game actions', () => {
     expect(state.game.busy).toBe(true);
     expect(state.game.selectedAttackId).toBe(null);
     expect(state.game.animations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'modelAction',
+        entityId: 'player',
+        animation: 'Throw',
+      }),
       expect.objectContaining({
         type: 'modelAction',
         entityId: monster.id,
@@ -418,10 +460,43 @@ describe('game actions', () => {
     expect(state.game.busy).toBe(false);
   });
 
+  it('can stand on a water-mode connection tile without changing maps', () => {
+    const game = createOverworldGame(getWorldMap('chao3-start'));
+    const { state, actions } = createActionHarness(game);
+
+    actions.moveOverworldPlayer({ x: 0, y: 4 }, { activateConnection: false });
+    const movement = state.game.animations.find((anim) => anim.type === 'movement' && anim.entityId === 'player');
+
+    vi.advanceTimersByTime(movement.totalDuration);
+
+    expect(state.game.overworld.currentMapId).toBe('chao3-start');
+    expect(state.game.player).toMatchObject({ x: 0, y: 4 });
+    expect(state.game.mapTransition).toBe(null);
+    expect(state.game.busy).toBe(false);
+  });
+
+  it('activates a bridge connection when already standing on its entry tile', () => {
+    const game = createOverworldGame(getWorldMap('chao3-start'));
+    game.player.x = 0;
+    game.player.y = 4;
+    const { state, actions } = createActionHarness(game);
+
+    actions.moveOverworldPlayer({ x: 0, y: 4 }, { activateConnection: true });
+    const movement = state.game.animations.find((anim) => anim.type === 'movement' && anim.entityId === 'player');
+
+    expect(movement.totalDuration).toBe(0);
+    vi.advanceTimersByTime(0);
+    finishOverworldMapTransition();
+
+    expect(state.game.overworld.currentMapId).toBe('chao3-grid--1-0');
+    expect(state.game.player).toMatchObject({ x: 8, y: 5, facing: { x: -1, y: 0 } });
+    expect(state.game.busy).toBe(false);
+  });
+
   it('starts an overworld encounter with the whole enemy group', () => {
     const game = createOverworldGame(getWorldMap('open-road'));
     const { state, actions } = createActionHarness(game);
-    const target = getCurrentWorldEnemies(state.game.overworld).find((enemy) => enemy.groupId === 'skeleton-minions');
+    const target = getCurrentWorldEnemies(state.game.overworld)[0];
     const returnPosition = { x: state.game.player.x, y: state.game.player.y };
 
     actions.startOverworldEncounter(target.id);
@@ -430,18 +505,34 @@ describe('game actions', () => {
     expect(state.game.combatContext).toMatchObject({
       origin: GAME_MODES.OVERWORLD,
       mapId: 'open-road',
-      groupId: 'skeleton-minions',
+      groupId: target.groupId,
       returnPosition,
     });
-    expect(state.game.monsters.map((monster) => monster.groupId)).toEqual(['skeleton-minions']);
+    expect(state.game.monsters.map((monster) => monster.groupId)).toEqual([target.groupId]);
     expect(state.game.turnQueue).toEqual(['player', ...state.game.monsters.map((monster) => monster.id)]);
+
+    const walls = levelWallsSet(state.game.levelIndex, state.game.combatWalls);
+    const reachable = dijkstra(state.game.player, walls).dist;
+
+    expect(state.game.combatWalls).toHaveLength(3);
+    expect(walls.size).toBe(3);
+    expect(walls.has(posKey(state.game.player))).toBe(false);
+    expect(state.game.monsters.every((monster) => !walls.has(posKey(monster)))).toBe(true);
+    expect(state.game.monsters.every((monster) => reachable.has(posKey(monster)))).toBe(true);
+    expect(reachable.size).toBe((BOARD_SIZE * BOARD_SIZE) - walls.size);
+    expect(hasClosedWallCorner(walls)).toBe(false);
+
+    state.game.player.rangeBase = 10;
+    state.game.selectedAttackId = state.game.player.attackSlot.id;
+    expect(actions.getPlayerAttackTiles().has(posKey(state.game.monsters[0]))).toBe(true);
   });
 
   it('returns to the overworld and removes the defeated group after map combat', () => {
     const game = createOverworldGame(getWorldMap('open-road'));
     const { state, actions } = createActionHarness(game);
-    const target = getCurrentWorldEnemies(state.game.overworld).find((enemy) => enemy.groupId === 'skeleton-mages');
+    const target = getCurrentWorldEnemies(state.game.overworld)[0];
     const returnPosition = { x: state.game.player.x, y: state.game.player.y };
+    const targetGroupId = target.groupId;
 
     actions.startOverworldEncounter(target.id);
     state.game.player.attackSlot = {
@@ -460,9 +551,10 @@ describe('game actions', () => {
     expect(state.game.player).toMatchObject(returnPosition);
     expect(state.game.monsters).toEqual([]);
     expect(state.game.combatContext).toBe(null);
-    expect(getCurrentWorldEnemies(state.game.overworld).some((enemy) => enemy.groupId === 'skeleton-mages')).toBe(false);
+    expect(state.game.combatWalls).toBe(null);
+    expect(getCurrentWorldEnemies(state.game.overworld).some((enemy) => enemy.groupId === targetGroupId)).toBe(false);
     expect(state.game.phase).toBe(PHASES.HERO);
-    expect(state.game.player.experience).toBe(30);
+    expect(state.game.player.experience).toBe(target.xp);
   });
 
   it('grants XP, levels up on the growing curve, and preserves overflow', () => {
@@ -501,6 +593,124 @@ describe('game actions', () => {
       progressXp: 5,
       requiredXp: 30,
     });
+  });
+
+  it('persists selected character progress when XP changes', () => {
+    const { state, actions } = createActionHarness(createOverworldGame(getWorldMap('open-road')));
+    state.game.player.characterId = 'saved-character';
+    localStorage.setItem(SELECTED_CHARACTER_KEY, 'saved-character');
+    localStorage.setItem(CHARACTERS_KEY, JSON.stringify([{
+      id: 'saved-character',
+      name: 'Doran',
+      type: 'ranger',
+      color: '#112233',
+      palette: { version: 1, slots: {} },
+      createdAt: 1,
+    }]));
+
+    actions.grantMonsterExperience({ type: 'skeletonMage', xp: 45, xpGranted: false });
+
+    const [storedCharacter] = JSON.parse(localStorage.getItem(CHARACTERS_KEY));
+    expect(storedCharacter.progress).toMatchObject({
+      experience: 45,
+      level: 3,
+      characteristicPoints: 10,
+      defenseBase: 0,
+    });
+  });
+
+  it('applies debug hero level and stat edits using the XP curve', () => {
+    const { state, actions } = createActionHarness(createOverworldGame(getWorldMap('open-road')));
+
+    expect(actions.applyDebugHeroConfig({
+      level: 10,
+      health: 70,
+      maxHealth: 80,
+      apMax: 8,
+      apRemaining: 7,
+      speedBase: 5,
+      speedRemaining: 4,
+      defenseBase: 0,
+      rangeBase: 3,
+      characteristics: {
+        life: 2,
+        earth: 1,
+        fire: 3,
+        air: 4,
+        water: 5,
+      },
+    })).toBe(true);
+
+    expect(state.game.player).toMatchObject({
+      level: 10,
+      experience: totalXpForLevel(10),
+      characteristicPoints: 30,
+      health: 70,
+      maxHealth: 80,
+      apMax: 8,
+      speedBase: 5,
+      defenseBase: 0,
+      rangeBase: 3,
+      characteristics: {
+        life: 2,
+        earth: 1,
+        fire: 3,
+        air: 4,
+        water: 5,
+      },
+    });
+    expect(state.game.apRemaining).toBe(7);
+    expect(state.game.speedRemaining).toBe(4);
+  });
+
+  it('respawns a new overworld enemy wave after a cleared map delay', () => {
+    const game = createOverworldGame(getWorldMap('open-road'));
+    const { state, actions } = createActionHarness(game);
+    const mapState = getCurrentWorldMapState(state.game.overworld);
+    const target = mapState.enemies[0];
+    mapState.enemies = [target];
+
+    actions.startOverworldEncounter(target.id);
+    state.game.player.attackSlot = {
+      ...state.game.player.attackSlot,
+      damage: 99,
+    };
+    state.game.player.rangeBase = 10;
+    state.game.apRemaining = 5;
+    state.game.selectedAttackId = state.game.player.attackSlot.id;
+    actions.attackMonster(target.id);
+    vi.advanceTimersByTime(monsterDeathFinishDelay());
+
+    expect(mapState.enemies).toEqual([]);
+    expect(mapState.nextRespawnAt).not.toBe(null);
+
+    vi.advanceTimersByTime(TIMING.OVERWORLD_ENEMY_RESPAWN_MIN - 1);
+    expect(mapState.enemies).toEqual([]);
+
+    vi.advanceTimersByTime(1);
+    expect(mapState.enemies.length).toBeGreaterThanOrEqual(2);
+    expect(mapState.enemies.length).toBeLessThanOrEqual(5);
+  });
+
+  it('schedules a respawn when loading an empty overworld map', () => {
+    const savedGame = createOverworldGame(getWorldMap('open-road'));
+    const savedMapState = getCurrentWorldMapState(savedGame.overworld);
+    savedMapState.enemies = [];
+    savedMapState.enemyWave = 4;
+    localStorage.setItem(SAVE_KEY, JSON.stringify(savedGame));
+
+    const { state, actions } = createActionHarness(createOverworldGame(getWorldMap('open-road')));
+
+    actions.loadGame();
+
+    const loadedMapState = getCurrentWorldMapState(state.game.overworld);
+    expect(loadedMapState.enemies).toEqual([]);
+    expect(loadedMapState.nextRespawnAt).not.toBe(null);
+
+    vi.advanceTimersByTime(TIMING.OVERWORLD_ENEMY_RESPAWN_MIN);
+    expect(loadedMapState.enemies.length).toBeGreaterThanOrEqual(2);
+    expect(loadedMapState.enemies.length).toBeLessThanOrEqual(5);
+    expect(loadedMapState.enemyWave).toBe(5);
   });
 
   it('allocates life and elemental characteristics without buffing neutral strike', () => {

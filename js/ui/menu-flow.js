@@ -1,6 +1,11 @@
 import { mountMenuCharacterPreview } from './menu-character-viewer.js';
 import { playOverworldMusic, stopOverworldMusic } from '../game/audio.js';
 import {
+  CHARACTERS_KEY,
+  SELECTED_CHARACTER_KEY,
+  applyCharacterProgressToPlayer,
+} from '../game/character-progress.js';
+import {
   CHARACTER_TYPES,
   characterAccentColor,
   createPaletteDraft,
@@ -16,6 +21,10 @@ import {
 
 export { CHARACTER_TYPES };
 
+function versionedAssetUrl(path) {
+  return `${path}?v=${INTRO_ASSET_VERSION}`;
+}
+
 const MENU_ASSETS = {
   home: '/assets/ui/menu/capa.png',
   select: '/assets/ui/menu/capa0.png',
@@ -23,8 +32,52 @@ const MENU_ASSETS = {
   logo: '/assets/ui/menu/logo.png',
 };
 
-const CHARACTERS_KEY = 'one-rpg-characters-v1';
-const SELECTED_CHARACTER_KEY = 'one-rpg-selected-character-v1';
+const INTRO_ASSET_VERSION = '2026-05-05-16x9-sound-v3';
+const INTRO_SCENE_BASE = '/assets/cenas-inicio/';
+const INTRO_SCENE_NAME = 'ChatGPT Image 5 de mai. de 2026, 15_00_38';
+const INTRO_SCENE_DURATION = 4500;
+const INTRO_END_BLACKOUT_DURATION = 2000;
+const INTRO_TRANSITION_DURATION = 560;
+const INTRO_SOUND_BASE = `${INTRO_SCENE_BASE}sounds/`;
+const INTRO_SOUND_VOLUME = 0.82;
+const INTRO_MUSIC_VOLUME = 0.28;
+const INTRO_MUSIC_SOURCE = versionedAssetUrl(`${INTRO_SOUND_BASE}${encodeURI('Black Vault Pulse.mp3')}`);
+const INTRO_SOUND_SOURCES = {
+  scene12: versionedAssetUrl(`${INTRO_SOUND_BASE}${encodeURI('1&2.mp3')}`),
+  scene3: versionedAssetUrl(`${INTRO_SOUND_BASE}${encodeURI('3.mp3')}`),
+  scene4: versionedAssetUrl(`${INTRO_SOUND_BASE}${encodeURI('4.mp3')}`),
+  scene5: versionedAssetUrl(`${INTRO_SOUND_BASE}${encodeURI('5.mp3')}`),
+  scene78: versionedAssetUrl(`${INTRO_SOUND_BASE}${encodeURI('7&8.mp3')}`),
+};
+const INTRO_SOUND_BY_SCENE = [
+  'scene12',
+  'scene12',
+  'scene3',
+  'scene4',
+  'scene5',
+  null,
+  'scene78',
+  'scene78',
+];
+const INTRO_CAMERA_PATHS = [
+  { startX: -18, startY: 7, endX: 16, endY: -7, focusX: '50%', focusY: '52%' },
+  { startX: 14, startY: -8, endX: -16, endY: 8, focusX: '48%', focusY: '54%' },
+  { startX: -12, startY: -5, endX: 18, endY: 5, focusX: '52%', focusY: '50%' },
+  { startX: 18, startY: 6, endX: -14, endY: -6, focusX: '50%', focusY: '52%' },
+  { startX: -16, startY: 8, endX: 12, endY: -8, focusX: '51%', focusY: '51%' },
+  { startX: 10, startY: -7, endX: -18, endY: 7, focusX: '49%', focusY: '53%' },
+  { startX: -14, startY: 5, endX: 18, endY: -5, focusX: '50%', focusY: '50%' },
+  { startX: 16, startY: -6, endX: -12, endY: 6, focusX: '52%', focusY: '51%' },
+];
+const INTRO_SCENES = INTRO_CAMERA_PATHS.map((path, index) => {
+  const filename = `${INTRO_SCENE_NAME} (${index + 1}).png`;
+  return {
+    ...path,
+    image: versionedAssetUrl(`${INTRO_SCENE_BASE}${encodeURI(filename)}`),
+    soundKey: INTRO_SOUND_BY_SCENE[index],
+  };
+});
+
 const MAX_CHARACTERS = 3;
 const CHARACTER_NAME_MAX_LENGTH = 30;
 const CHARACTER_NAME_PATTERN = '[A-Za-z0-9À-ÖØ-öø-ÿ]{1,30}';
@@ -210,6 +263,19 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
   let nameDraft = '';
   let activeCharacterPreview = null;
   let createReturnScreen = 'home';
+  let introTimer = null;
+  let introTransitionTimer = null;
+  let introAnimationFrame = null;
+  let introAfterFinish = null;
+  let introSceneIndex = 0;
+  let introActiveSlot = 0;
+  let introStartedAt = 0;
+  let introFinishing = false;
+  let introSlots = [];
+  let introPointer = { x: 0, y: 0 };
+  let introSoundByKey = new Map();
+  let activeIntroSoundKey = null;
+  let introMusic = null;
 
   function selectedCharacter() {
     return characters.find((character) => character.id === selectedCharacterId) || characters[0] || null;
@@ -330,12 +396,154 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
   }
 
   function setBackground(image) {
-    menuRoot.style.backgroundImage = `url("${image}")`;
+    menuRoot.style.backgroundImage = image ? `url("${image}")` : 'none';
   }
 
   function disposeCharacterPreview() {
     activeCharacterPreview?.dispose();
     activeCharacterPreview = null;
+  }
+
+  function canUseIntroSound() {
+    return typeof Audio !== 'undefined' && (
+      typeof navigator === 'undefined' ||
+      !navigator.userAgent?.includes('jsdom')
+    );
+  }
+
+  function getIntroSound(soundKey) {
+    if (!soundKey || !canUseIntroSound()) return null;
+
+    const source = INTRO_SOUND_SOURCES[soundKey];
+    if (!source) return null;
+
+    if (!introSoundByKey.has(soundKey)) {
+      const audio = new Audio(source);
+      audio.preload = 'auto';
+      audio.loop = false;
+      audio.volume = INTRO_SOUND_VOLUME;
+      introSoundByKey.set(soundKey, audio);
+    }
+
+    return introSoundByKey.get(soundKey);
+  }
+
+  function preloadIntroSounds() {
+    for (const soundKey of new Set(INTRO_SOUND_BY_SCENE.filter(Boolean))) {
+      const audio = getIntroSound(soundKey);
+      try {
+        audio?.load?.();
+      } catch {
+        // The intro should continue silently if a browser refuses media preloading.
+      }
+    }
+  }
+
+  function getIntroMusic() {
+    if (!canUseIntroSound()) return null;
+
+    if (!introMusic) {
+      introMusic = new Audio(INTRO_MUSIC_SOURCE);
+      introMusic.preload = 'auto';
+      introMusic.loop = false;
+      introMusic.volume = INTRO_MUSIC_VOLUME;
+    }
+
+    return introMusic;
+  }
+
+  function playIntroMusic() {
+    const audio = getIntroMusic();
+    if (!audio) return;
+
+    try {
+      audio.currentTime = 0;
+      audio.volume = INTRO_MUSIC_VOLUME;
+      audio.play()?.catch(() => {
+        // Browsers may block playback; scene audio and visuals should continue.
+      });
+    } catch {
+      // Ignore media playback errors; the intro can run silently.
+    }
+  }
+
+  function stopIntroMusic() {
+    const audio = introMusic;
+    if (!audio) return;
+
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+    } catch {
+      // Ignore teardown errors from partially initialized audio elements.
+    }
+
+    introMusic = null;
+  }
+
+  function stopIntroSound(soundKey = activeIntroSoundKey) {
+    if (!soundKey) return;
+
+    const audio = introSoundByKey.get(soundKey);
+    if (!audio) return;
+
+    try {
+      audio.pause();
+      audio.currentTime = 0;
+    } catch {
+      // Ignore teardown errors from partially initialized audio elements.
+    }
+
+    if (activeIntroSoundKey === soundKey) activeIntroSoundKey = null;
+  }
+
+  function stopAllIntroSounds() {
+    for (const soundKey of introSoundByKey.keys()) {
+      stopIntroSound(soundKey);
+    }
+    activeIntroSoundKey = null;
+  }
+
+  function syncIntroSoundForScene(sceneIndex) {
+    const nextSoundKey = INTRO_SCENES[sceneIndex]?.soundKey || null;
+    if (nextSoundKey === activeIntroSoundKey) return;
+
+    stopIntroSound();
+    if (!nextSoundKey) return;
+
+    const audio = getIntroSound(nextSoundKey);
+    if (!audio) return;
+
+    try {
+      audio.currentTime = 0;
+      audio.volume = INTRO_SOUND_VOLUME;
+      activeIntroSoundKey = nextSoundKey;
+      audio.play()?.catch(() => {
+        if (activeIntroSoundKey === nextSoundKey) activeIntroSoundKey = null;
+      });
+    } catch {
+      activeIntroSoundKey = null;
+    }
+  }
+
+  function clearIntroState({ keepCallback = false } = {}) {
+    stopIntroMusic();
+    stopAllIntroSounds();
+    if (introTimer) window.clearTimeout(introTimer);
+    if (introTransitionTimer) window.clearTimeout(introTransitionTimer);
+    if (introAnimationFrame) window.cancelAnimationFrame(introAnimationFrame);
+
+    introTimer = null;
+    introTransitionTimer = null;
+    introAnimationFrame = null;
+    introSceneIndex = 0;
+    introActiveSlot = 0;
+    introStartedAt = 0;
+    introFinishing = false;
+    introSlots = [];
+    introPointer = { x: 0, y: 0 };
+    introSoundByKey = new Map();
+    if (!keepCallback) introAfterFinish = null;
   }
 
   function mountCharacterPreview(character) {
@@ -350,6 +558,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
   }
 
   function showRoot(screenName, image) {
+    if (screenName !== 'intro') clearIntroState();
     menuRoot.hidden = false;
     menuRoot.className = `menu-root menu-root--${screenName}`;
     document.body.classList.add('menu-open');
@@ -357,10 +566,193 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
   }
 
   function hideRoot() {
+    clearIntroState();
     disposeCharacterPreview();
     menuRoot.hidden = true;
     menuRoot.className = 'menu-root';
     document.body.classList.remove('menu-open');
+  }
+
+  function preloadIntroScenes() {
+    if (typeof Image === 'undefined') return;
+
+    for (const scene of INTRO_SCENES) {
+      const image = new Image();
+      image.decoding = 'async';
+      image.src = scene.image;
+    }
+  }
+
+  function setIntroSlotScene(slot, scene, index) {
+    if (!slot || !scene) return;
+
+    slot.dataset.sceneIndex = String(index);
+    slot.setAttribute('aria-label', `Cena ${index + 1} de ${INTRO_SCENES.length}`);
+    slot.style.setProperty('--intro-image', `url("${scene.image}")`);
+    slot.style.setProperty('--intro-focus-x', scene.focusX);
+    slot.style.setProperty('--intro-focus-y', scene.focusY);
+  }
+
+  function setIntroLayerOffsets(slot, scene, elapsed) {
+    if (!slot || !scene) return;
+
+    const rawProgress = Math.max(0, Math.min(1, elapsed / INTRO_SCENE_DURATION));
+    const progress = rawProgress * rawProgress * (3 - 2 * rawProgress);
+    const cameraX = scene.startX + (scene.endX - scene.startX) * progress;
+    const cameraY = scene.startY + (scene.endY - scene.startY) * progress;
+    const pointerX = introPointer.x * 18;
+    const pointerY = introPointer.y * 14;
+
+    slot.style.setProperty('--intro-back-x', `${(-cameraX * 0.22 + pointerX * 0.12).toFixed(2)}px`);
+    slot.style.setProperty('--intro-back-y', `${(-cameraY * 0.18 + pointerY * 0.1).toFixed(2)}px`);
+    slot.style.setProperty('--intro-mid-x', `${(cameraX * 0.48 + pointerX * 0.28).toFixed(2)}px`);
+    slot.style.setProperty('--intro-mid-y', `${(cameraY * 0.36 + pointerY * 0.24).toFixed(2)}px`);
+    slot.style.setProperty('--intro-front-x', `${(cameraX * 0.86 + pointerX * 0.52).toFixed(2)}px`);
+    slot.style.setProperty('--intro-front-y', `${(cameraY * 0.7 + pointerY * 0.44).toFixed(2)}px`);
+  }
+
+  function updateIntroProgress(index) {
+    menuRoot.querySelectorAll('[data-intro-progress-dot]').forEach((dot, dotIndex) => {
+      dot.classList.toggle('is-active', dotIndex === index);
+    });
+  }
+
+  function runIntroCamera(now) {
+    if (!menuRoot.classList.contains('menu-root--intro') || introSlots.length === 0) {
+      introAnimationFrame = null;
+      return;
+    }
+
+    const slot = introSlots[introActiveSlot];
+    const scene = INTRO_SCENES[introSceneIndex];
+    setIntroLayerOffsets(slot, scene, now - introStartedAt);
+    introAnimationFrame = window.requestAnimationFrame(runIntroCamera);
+  }
+
+  function showIntroBlackout() {
+    menuRoot.innerHTML = '<section class="menu-intro-blackout" aria-hidden="true"></section>';
+  }
+
+  function finishIntro({ withBlackout = false } = {}) {
+    if (introFinishing) return;
+
+    introFinishing = true;
+    const afterFinish = introAfterFinish;
+
+    if (withBlackout) {
+      clearIntroState({ keepCallback: true });
+      introFinishing = true;
+      introAfterFinish = afterFinish;
+      showIntroBlackout();
+      introTimer = window.setTimeout(() => {
+        const callback = introAfterFinish;
+        clearIntroState();
+        if (typeof callback === 'function') callback();
+      }, INTRO_END_BLACKOUT_DURATION);
+      return;
+    }
+
+    clearIntroState();
+    if (typeof afterFinish === 'function') afterFinish();
+  }
+
+  function showNextIntroScene() {
+    if (introFinishing) return;
+
+    if (introSceneIndex >= INTRO_SCENES.length - 1) {
+      finishIntro({ withBlackout: true });
+      return;
+    }
+
+    if (introTransitionTimer) window.clearTimeout(introTransitionTimer);
+
+    const previousSlot = introSlots[introActiveSlot];
+    introSceneIndex += 1;
+    introActiveSlot = introActiveSlot === 0 ? 1 : 0;
+
+    const nextSlot = introSlots[introActiveSlot];
+    setIntroSlotScene(nextSlot, INTRO_SCENES[introSceneIndex], introSceneIndex);
+    setIntroLayerOffsets(nextSlot, INTRO_SCENES[introSceneIndex], 0);
+
+    nextSlot?.classList.remove('is-leaving');
+    nextSlot?.classList.add('is-active');
+    previousSlot?.classList.remove('is-active');
+    previousSlot?.classList.add('is-leaving');
+    introTransitionTimer = window.setTimeout(() => {
+      previousSlot?.classList.remove('is-leaving');
+    }, INTRO_TRANSITION_DURATION);
+
+    introStartedAt = performance.now();
+    updateIntroProgress(introSceneIndex);
+    syncIntroSoundForScene(introSceneIndex);
+    introTimer = window.setTimeout(showNextIntroScene, INTRO_SCENE_DURATION);
+  }
+
+  function continueStartFlow() {
+    characters = loadCharacters();
+    selectedCharacterId = getSelectedCharacterId() || characters[0]?.id || null;
+    if (characters.length > 0) renderSelect();
+    else {
+      createReturnScreen = 'home';
+      renderCreate();
+    }
+  }
+
+  function startFlow() {
+    characters = loadCharacters();
+    selectedCharacterId = getSelectedCharacterId() || characters[0]?.id || null;
+
+    if (characters.length > 0) {
+      renderSelect();
+      return;
+    }
+
+    createReturnScreen = 'home';
+    renderIntro(continueStartFlow);
+  }
+
+  function renderIntro(afterFinish = continueStartFlow) {
+    disposeCharacterPreview();
+    stopOverworldMusic();
+    clearIntroState();
+    introAfterFinish = afterFinish;
+    showRoot('intro', null);
+    menuRoot.innerHTML = `
+      <section class="menu-intro-screen" aria-label="Introducao">
+        <div class="menu-intro-stage" aria-live="off">
+          <figure class="menu-intro-scene is-active" data-intro-scene>
+            <div class="menu-intro-layer menu-intro-layer--back"></div>
+            <div class="menu-intro-layer menu-intro-layer--middle"></div>
+            <div class="menu-intro-layer menu-intro-layer--front"></div>
+          </figure>
+          <figure class="menu-intro-scene" data-intro-scene>
+            <div class="menu-intro-layer menu-intro-layer--back"></div>
+            <div class="menu-intro-layer menu-intro-layer--middle"></div>
+            <div class="menu-intro-layer menu-intro-layer--front"></div>
+          </figure>
+        </div>
+        <div class="menu-intro-shimmer" aria-hidden="true"></div>
+        <div class="menu-intro-controls">
+          <button class="menu-secondary-button menu-intro-skip" type="button" data-menu-action="skip-intro">Pular</button>
+        </div>
+        <div class="menu-intro-progress" aria-hidden="true">
+          ${INTRO_SCENES.map((_, index) => `<span class="menu-intro-progress-dot${index === 0 ? ' is-active' : ''}" data-intro-progress-dot></span>`).join('')}
+        </div>
+      </section>
+    `;
+
+    introSlots = Array.from(menuRoot.querySelectorAll('[data-intro-scene]'));
+    introSceneIndex = 0;
+    introActiveSlot = 0;
+    introStartedAt = performance.now();
+    preloadIntroScenes();
+    preloadIntroSounds();
+    playIntroMusic();
+    setIntroSlotScene(introSlots[0], INTRO_SCENES[0], 0);
+    setIntroLayerOffsets(introSlots[0], INTRO_SCENES[0], 0);
+    syncIntroSoundForScene(0);
+    introAnimationFrame = window.requestAnimationFrame(runIntroCamera);
+    introTimer = window.setTimeout(showNextIntroScene, INTRO_SCENE_DURATION);
   }
 
   function renderHome() {
@@ -493,6 +885,9 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     state.game.player.characterPalette = normalized.palette;
     state.game.player.characterPortrait = normalized.image;
     state.game.player.characterLabel = normalized.typeLabel;
+    applyCharacterProgressToPlayer(state.game.player, normalized.progress);
+    state.game.apRemaining = Math.min(state.game.player.apMax, state.game.apRemaining ?? state.game.player.apMax);
+    state.game.speedRemaining = Math.min(state.game.player.speedBase, state.game.speedRemaining ?? state.game.player.speedBase);
     state.game.selectedCharacter = {
       id: normalized.id,
       name: normalized.name,
@@ -569,13 +964,12 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
 
     const action = control.dataset.menuAction;
     if (action === 'start-flow') {
-      characters = loadCharacters();
-      selectedCharacterId = getSelectedCharacterId() || characters[0]?.id || null;
-      if (characters.length > 0) renderSelect();
-      else {
-        createReturnScreen = 'home';
-        renderCreate();
-      }
+      startFlow();
+      return;
+    }
+
+    if (action === 'skip-intro') {
+      finishIntro();
       return;
     }
 
@@ -643,6 +1037,18 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     flashPaletteSlot(paletteSlot.dataset.paletteSlotId);
   }, eventOptions);
 
+  menuRoot.addEventListener('pointermove', (event) => {
+    if (!menuRoot.classList.contains('menu-root--intro')) return;
+
+    const rect = menuRoot.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    introPointer = {
+      x: (event.clientX - rect.left) / rect.width - 0.5,
+      y: (event.clientY - rect.top) / rect.height - 0.5,
+    };
+  }, eventOptions);
+
   menuRoot.addEventListener('focusin', (event) => {
     const paletteSlot = event.target.closest?.('[data-palette-slot-id]');
     if (!paletteSlot || !menuRoot.contains(paletteSlot)) return;
@@ -688,6 +1094,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     flashPaletteSlot,
     dispose() {
       eventController.abort();
+      clearIntroState();
       disposeCharacterPreview();
     },
   };

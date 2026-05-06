@@ -2,6 +2,7 @@ import { createGameActions } from './game/game-actions.js';
 import { createGame, loadCardImages } from './game/game-factories.js';
 import { DEBUG_CONFIG } from './config/game-data.js';
 import { DEFAULT_MAP_COLOR_VALUES } from './config/map-colors.js';
+import { DEFAULT_VISUAL_SETTINGS } from './config/visual-settings.js';
 import { registerCanvasInput } from './ui/input.js';
 import { createLayoutTools } from './ui/layout.js';
 import { createMenuFlow } from './ui/menu-flow.js';
@@ -52,16 +53,7 @@ const state = {
     lastCopiedAt: 0,
   },
   visuals: {
-    exposure: 1.0,
-    ambientIntensity: 1.05,
-    keyIntensity: 1.75,
-    keyLightDirectionDeg: 84,
-    fogDensity: 0.0,
-    shadowMapEnabled: true,
-    showOutlines: false,
-    showGrid: false,
-    overworldOrthographicCamera: true,
-    overworldWater: true,
+    ...DEFAULT_VISUAL_SETTINGS,
   },
 };
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_MAP_COLOR_MODELS,
   DEFAULT_MAP_COLOR_VALUES,
+  MAP_COLOR_VALUES_BY_MAP,
   getMapColorValuesForMap,
   normalizeMapColorValues,
 } from '../../js/config/map-colors.js';
@@ -19,5 +21,13 @@ describe('map color config', () => {
 
   it('falls back to defaults for maps without an override', () => {
     expect(getMapColorValuesForMap('missing-map')).toEqual(DEFAULT_MAP_COLOR_VALUES);
+  });
+
+  it('keeps reusable color models independent from map overrides', () => {
+    const whiteModel = DEFAULT_MAP_COLOR_MODELS.find((model) => model.label === '0,1');
+
+    expect(whiteModel.values).not.toBe(MAP_COLOR_VALUES_BY_MAP['chao3-grid-0-1']);
+    expect(whiteModel.values.top1).toBe('#ffffff');
+    expect(whiteModel.values.side1).toBe('#1ae8ff');
   });
 });

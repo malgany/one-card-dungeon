@@ -19,6 +19,23 @@ const MAP_COLOR_KEYS = [
   'side5',
 ];
 
+const VISUAL_SETTINGS_SCHEMA = {
+  exposure: { type: 'number', default: 1.0, min: 0.1, max: 3.0 },
+  ambientIntensity: { type: 'number', default: 1.05, min: 0, max: 3.0 },
+  keyIntensity: { type: 'number', default: 1.75, min: 0, max: 5.0 },
+  keyLightDirectionDeg: { type: 'number', default: 84, min: 0, max: 360 },
+  fogDensity: { type: 'number', default: 0.0, min: 0, max: 0.1 },
+  shadowMapEnabled: { type: 'boolean', default: true },
+  showOutlines: { type: 'boolean', default: false },
+  showGrid: { type: 'boolean', default: false },
+  overworldOrthographicCamera: { type: 'boolean', default: true },
+  overworldWater: { type: 'boolean', default: true },
+};
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
 function normalizeHexColor(value) {
   if (typeof value !== 'string') return null;
   const normalized = value.trim().toLowerCase();
@@ -39,6 +56,47 @@ function normalizeMapId(value) {
   return /^[a-z0-9:_-]+$/i.test(mapId) ? mapId : null;
 }
 
+function normalizeColorModelId(value) {
+  if (typeof value !== 'string') return null;
+  const modelId = value.trim();
+  return /^[a-z0-9:_-]+$/i.test(modelId) ? modelId : null;
+}
+
+function normalizeColorModelLabel(value, fallback) {
+  if (typeof value !== 'string') return fallback;
+  const label = value.trim();
+  return label ? label.slice(0, 18) : fallback;
+}
+
+function normalizeColorModels(models = [], defaultValues = {}) {
+  if (!Array.isArray(models)) return [];
+
+  return models.map((model, index) => {
+    if (!model || typeof model !== 'object') return null;
+    return {
+      id: normalizeColorModelId(model.id) || `model-${index + 1}`,
+      label: normalizeColorModelLabel(model.label, `Modelo ${index + 1}`),
+      values: normalizeMapColorValues(model.values, defaultValues),
+    };
+  }).filter(Boolean);
+}
+
+function normalizeVisualSettings(values = {}) {
+  const normalized = {};
+
+  for (const [key, schema] of Object.entries(VISUAL_SETTINGS_SCHEMA)) {
+    if (schema.type === 'boolean') {
+      normalized[key] = typeof values?.[key] === 'boolean' ? values[key] : schema.default;
+      continue;
+    }
+
+    const value = Number(values?.[key]);
+    normalized[key] = Number.isFinite(value) ? clamp(value, schema.min, schema.max) : schema.default;
+  }
+
+  return normalized;
+}
+
 async function readMapColorsConfig(outputPath) {
   try {
     const moduleUrl = `${pathToFileURL(outputPath).href}?t=${Date.now()}`;
@@ -51,12 +109,27 @@ async function readMapColorsConfig(outputPath) {
       mapValuesByMap[mapId] = normalizeMapColorValues(values, defaultValues);
     }
 
-    return { defaultValues, mapValuesByMap };
+    return {
+      defaultValues,
+      defaultColorModels: normalizeColorModels(module.DEFAULT_MAP_COLOR_MODELS, defaultValues),
+      mapValuesByMap,
+    };
   } catch {
     return {
       defaultValues: Object.fromEntries(MAP_COLOR_KEYS.map((key) => [key, '#ffffff'])),
+      defaultColorModels: [],
       mapValuesByMap: {},
     };
+  }
+}
+
+async function readVisualSettingsConfig(outputPath) {
+  try {
+    const moduleUrl = `${pathToFileURL(outputPath).href}?t=${Date.now()}`;
+    const module = await import(moduleUrl);
+    return normalizeVisualSettings(module.DEFAULT_VISUAL_SETTINGS);
+  } catch {
+    return normalizeVisualSettings();
   }
 }
 
@@ -64,15 +137,39 @@ function mapColorLines(values, indent = '  ') {
   return MAP_COLOR_KEYS.map((key) => `${indent}${key}: '${values[key]}',`);
 }
 
-function serializeMapColorsConfig({ defaultValues, mapValuesByMap }) {
+function quotedString(value) {
+  return `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
+function visualSettingsLines(values, indent = '  ') {
+  return Object.keys(VISUAL_SETTINGS_SCHEMA).map((key) => `${indent}${key}: ${values[key]},`);
+}
+
+function serializeMapColorsConfig({ defaultValues, defaultColorModels = [], mapValuesByMap }) {
   const mapIds = Object.keys(mapValuesByMap).sort((a, b) => a.localeCompare(b));
   const lines = [
     'export const DEFAULT_MAP_COLOR_VALUES = Object.freeze({',
     ...mapColorLines(defaultValues),
     '});',
     '',
-    'export const MAP_COLOR_VALUES_BY_MAP = Object.freeze({',
+    'export const DEFAULT_MAP_COLOR_MODELS = Object.freeze([',
   ];
+
+  for (const model of defaultColorModels) {
+    lines.push('  Object.freeze({');
+    lines.push(`    id: ${quotedString(model.id)},`);
+    lines.push(`    label: ${quotedString(model.label)},`);
+    lines.push('    values: Object.freeze({');
+    lines.push(...mapColorLines(model.values, '      '));
+    lines.push('    }),');
+    lines.push('  }),');
+  }
+
+  lines.push(
+    ']);',
+    '',
+    'export const MAP_COLOR_VALUES_BY_MAP = Object.freeze({',
+  );
 
   for (const mapId of mapIds) {
     lines.push(`  '${mapId}': Object.freeze({`);
@@ -97,6 +194,15 @@ function serializeMapColorsConfig({ defaultValues, mapValuesByMap }) {
   );
 
   return lines.join('\n');
+}
+
+function serializeVisualSettingsConfig(values) {
+  return [
+    'export const DEFAULT_VISUAL_SETTINGS = Object.freeze({',
+    ...visualSettingsLines(normalizeVisualSettings(values)),
+    '});',
+    '',
+  ].join('\n');
 }
 
 function mapColorsDebugPlugin() {
@@ -142,6 +248,35 @@ function mapColorsDebugPlugin() {
 
             response.setHeader('Content-Type', 'application/json');
             response.end(JSON.stringify({ ok: true, mapId }));
+          } catch (error) {
+            response.statusCode = 500;
+            response.end(error instanceof Error ? error.message : 'Unknown error');
+          }
+        });
+      });
+
+      server.middlewares.use('/__debug/visual-settings', (request, response) => {
+        if (request.method !== 'POST') {
+          response.statusCode = 405;
+          response.end('Method not allowed');
+          return;
+        }
+
+        let body = '';
+        request.on('data', (chunk) => {
+          body += chunk;
+        });
+        request.on('end', async () => {
+          try {
+            const payload = JSON.parse(body || '{}');
+            const values = normalizeVisualSettings(payload?.values || {});
+            const outputPath = path.resolve(server.config.root, 'js/config/visual-settings.js');
+            const currentValues = await readVisualSettingsConfig(outputPath);
+            await writeFile(outputPath, serializeVisualSettingsConfig({ ...currentValues, ...values }), 'utf8');
+            server.ws.send({ type: 'full-reload' });
+
+            response.setHeader('Content-Type', 'application/json');
+            response.end(JSON.stringify({ ok: true, values }));
           } catch (error) {
             response.statusCode = 500;
             response.end(error instanceof Error ? error.message : 'Unknown error');

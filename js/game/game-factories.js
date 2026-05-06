@@ -7,11 +7,79 @@ import {
   MONSTER_TEMPLATES,
   PHASES,
   START_WORLD_MAP_ID,
+  WORLD_OBJECT_TYPES,
   getWorldMap,
   normalizeEncounterGroupId,
   normalizeMonsterId,
   normalizeMonsterType,
 } from '../config/game-data.js';
+
+const OVERWORLD_SPAWN_MIN = 2;
+const OVERWORLD_SPAWN_MAX = 5;
+const FALLBACK_OVERWORLD_ENEMY_TYPES = ['skeletonMinion', 'skeletonWarrior', 'skeletonRogue', 'skeletonMage'];
+
+function randomInt(min, max) {
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+function keyFor(x, y) {
+  return `${x},${y}`;
+}
+
+function objectFootprint(object) {
+  return object?.footprint || WORLD_OBJECT_TYPES[object?.type]?.footprint || [[0, 0]];
+}
+
+function spawnBlockedKeys(map) {
+  const blocked = new Set();
+
+  if (map?.playerStart) blocked.add(keyFor(map.playerStart.x, map.playerStart.y));
+  for (const connection of map?.connections || []) {
+    blocked.add(keyFor(connection.x, connection.y));
+  }
+  for (const object of map?.objects || []) {
+    for (const [dx, dy] of objectFootprint(object)) {
+      blocked.add(keyFor(object.x + dx, object.y + dy));
+    }
+  }
+
+  return blocked;
+}
+
+function spawnPoolForMap(map) {
+  const encounterTypes = (map?.encounters || [])
+    .map((encounter) => normalizeMonsterType(encounter.type))
+    .filter((type) => MONSTER_TEMPLATES[type]);
+
+  return encounterTypes.length > 0 ? encounterTypes : FALLBACK_OVERWORLD_ENEMY_TYPES;
+}
+
+function randomSpawnCell(map, occupied) {
+  const width = map?.size?.width || 10;
+  const height = map?.size?.height || 10;
+
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const x = randomInt(0, width - 1);
+    const y = randomInt(0, height - 1);
+    const key = keyFor(x, y);
+    if (!occupied.has(key)) {
+      occupied.add(key);
+      return { x, y };
+    }
+  }
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const key = keyFor(x, y);
+      if (!occupied.has(key)) {
+        occupied.add(key);
+        return { x, y };
+      }
+    }
+  }
+
+  return { x: 0, y: 0 };
+}
 
 export function loadCardImages() {
   const images = {};
@@ -111,8 +179,22 @@ export function levelMonsters(level) {
   });
 }
 
-export function overworldEnemies(map) {
-  return (map.encounters || []).map((encounter, index) => {
+export function overworldEnemies(map, wave = 0) {
+  const count = randomInt(OVERWORLD_SPAWN_MIN, OVERWORLD_SPAWN_MAX);
+  const pool = spawnPoolForMap(map);
+  const occupied = spawnBlockedKeys(map);
+
+  return Array.from({ length: count }, (_, index) => {
+    const type = pool[randomInt(0, pool.length - 1)];
+    const cell = randomSpawnCell(map, occupied);
+    const encounter = {
+      id: `${map.id}-spawn-${wave}-${index}`,
+      type,
+      x: cell.x,
+      y: cell.y,
+      groupId: `${map.id}-spawn-${wave}-${index}`,
+    };
+
     return createOverworldEnemy(encounter, index, map.id);
   });
 }
@@ -120,7 +202,9 @@ export function overworldEnemies(map) {
 export function createOverworldMapState(map) {
   return {
     mapId: map.id,
-    enemies: overworldEnemies(map),
+    enemies: overworldEnemies(map, 0),
+    enemyWave: 1,
+    nextRespawnAt: null,
     removedObjectIds: [],
     debugColors: null,
   };
@@ -163,7 +247,7 @@ export function createPlayer(position) {
     apMax: ACTION_RULES.BASE_AP,
     speedBase: 3,
     attackSlot: { ...ACTION_RULES.BASIC_ATTACK },
-    defenseBase: 2,
+    defenseBase: 0,
     rangeBase: 2,
   };
 }
@@ -203,6 +287,7 @@ export function createOverworldGame(map = getWorldMap(START_WORLD_MAP_ID)) {
     monsters: [],
     overworld: createOverworldRuntime(map),
     combatContext: null,
+    combatWalls: null,
     phase: PHASES.HERO,
     ...createBaseUiState(),
     speedRemaining: player.speedBase,
@@ -232,6 +317,7 @@ export function createDungeonLegacyGame() {
     monsters,
     overworld: null,
     combatContext: null,
+    combatWalls: null,
     phase: PHASES.HERO,
     ...createBaseUiState(),
     speedRemaining: 3,

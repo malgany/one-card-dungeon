@@ -41,10 +41,12 @@ test('loads and renders the canvas game without console errors', async ({ page }
   expect(await page.locator('canvas').count()).toBeGreaterThanOrEqual(2);
   await page.waitForFunction(() => window.__ONE_RPG_DEBUG__?.state?.game?.overworld?.currentMapId === 'chao3-start');
   await page.waitForFunction(() => document.querySelector('.board-webgl')?.clientWidth > 100);
-  expect(await page.evaluate(() => {
+  const enemyCount = await page.evaluate(() => {
     const game = window.__ONE_RPG_DEBUG__.state.game;
     return game.overworld.mapStates[game.overworld.currentMapId].enemies.length;
-  })).toBe(2);
+  });
+  expect(enemyCount).toBeGreaterThanOrEqual(2);
+  expect(enemyCount).toBeLessThanOrEqual(5);
 
   const box = await canvas.boundingBox();
   expect(box?.width).toBeGreaterThan(100);
@@ -77,6 +79,38 @@ test('positions the home panel proportionally on very wide screens', async ({ pa
 });
 
 test('opens character creation when no character exists', async ({ page }) => {
+  test.setTimeout(60_000);
+
+  await page.addInitScript(() => {
+    const audioEvents = [];
+    window.__ONE_RPG_AUDIO_EVENTS__ = audioEvents;
+    window.Audio = class FakeAudio {
+      constructor(src) {
+        this.src = src;
+        this.currentTime = 0;
+        this.volume = 1;
+        this.loop = false;
+        this.paused = true;
+        this.preload = '';
+        audioEvents.push({ type: 'create', src });
+      }
+
+      load() {
+        audioEvents.push({ type: 'load', src: this.src });
+      }
+
+      play() {
+        this.paused = false;
+        audioEvents.push({ type: 'play', src: this.src, currentTime: this.currentTime });
+        return Promise.resolve();
+      }
+
+      pause() {
+        this.paused = true;
+        audioEvents.push({ type: 'pause', src: this.src, currentTime: this.currentTime });
+      }
+    };
+  });
   await page.goto('/');
 
   await expect(page.locator('.menu-screen--create')).toBeVisible();
@@ -84,7 +118,41 @@ test('opens character creation when no character exists', async ({ page }) => {
   await expect(page.locator('.menu-home-panel')).toBeVisible();
 
   await page.locator('.menu-home-panel .menu-primary-button').click();
+  await expect(page.locator('.menu-intro-screen')).toBeVisible();
+  await expect(page.locator('[data-intro-progress-dot]')).toHaveCount(8);
+  await expect.poll(async () => {
+    return page.evaluate(async () => {
+      const layer = document.querySelector('.menu-intro-scene.is-active .menu-intro-layer--back');
+      const imageUrl = getComputedStyle(layer).backgroundImage.slice(5, -2);
+      const image = new Image();
+      image.src = imageUrl;
+      await image.decode().catch(() => null);
+      return `${image.naturalWidth}x${image.naturalHeight}`;
+    });
+  }).toBe('1672x941');
+  await page.waitForFunction(() => {
+    return document.querySelectorAll('[data-intro-progress-dot]')[1]?.classList.contains('is-active');
+  });
+  const intro12PlayCount = await page.evaluate(() => {
+    return window.__ONE_RPG_AUDIO_EVENTS__.filter((event) => {
+      return event.type === 'play' && event.src.includes('1&2.mp3');
+    }).length;
+  });
+  const introMusicPlayCount = await page.evaluate(() => {
+    return window.__ONE_RPG_AUDIO_EVENTS__.filter((event) => {
+      return event.type === 'play' && event.src.includes('Black%20Vault%20Pulse.mp3');
+    }).length;
+  });
+  expect(intro12PlayCount).toBe(1);
+  expect(introMusicPlayCount).toBe(1);
+  await page.getByRole('button', { name: 'Pular' }).click();
   await expect(page.locator('.menu-screen--create')).toBeVisible();
+  const introMusicPauseCount = await page.evaluate(() => {
+    return window.__ONE_RPG_AUDIO_EVENTS__.filter((event) => {
+      return event.type === 'pause' && event.src.includes('Black%20Vault%20Pulse.mp3');
+    }).length;
+  });
+  expect(introMusicPauseCount).toBe(1);
 
   await page.getByPlaceholder('Nome do personagem').fill('Aria');
   await page.locator('[data-menu-action="choose-type"][data-type-id="knight"]').click();
@@ -107,6 +175,33 @@ test('opens character creation when no character exists', async ({ page }) => {
     return JSON.parse(window.localStorage.getItem('one-rpg-characters-v1'));
   });
   expect(savedCharacters[0].palette.slots.r4c2).toBe('#00FF88');
+});
+
+test('skips intro and opens character selection when a character exists', async ({ page }) => {
+  await page.addInitScript(() => {
+    const character = {
+      id: 'saved-character',
+      name: 'Doran',
+      type: 'ranger',
+      typeLabel: 'Patrulheiro',
+      color: '#112233',
+      palette: { version: 1, slots: {} },
+      image: '/assets/characters/ranger.png',
+      createdAt: Date.now(),
+    };
+    window.localStorage.setItem('one-rpg-characters-v1', JSON.stringify([character]));
+    window.localStorage.setItem('one-rpg-selected-character-v1', character.id);
+  });
+
+  await page.goto('/');
+  await page.waitForFunction(() => window.__ONE_RPG_DEBUG__?.menuFlow);
+  await page.evaluate(() => window.__ONE_RPG_DEBUG__.menuFlow.show());
+  await expect(page.locator('.menu-home-panel')).toBeVisible();
+
+  await page.locator('.menu-home-panel .menu-primary-button').click();
+
+  await expect(page.locator('.menu-screen--select')).toBeVisible();
+  await expect(page.locator('.menu-intro-screen')).toHaveCount(0);
 });
 
 test('edits grouped mage palette slots together', async ({ page }) => {
@@ -327,7 +422,8 @@ test('moves from overworld into combat and returns after victory', async ({ page
   await page.evaluate(() => {
     const { state, actions } = window.__ONE_RPG_DEBUG__;
     const mapState = state.game.overworld.mapStates[state.game.overworld.currentMapId];
-    const target = mapState.enemies.find((enemy) => enemy.groupId === 'skeleton-mages');
+    const target = mapState.enemies[0];
+    window.__ONE_RPG_DEBUG__.targetGroupId = target.groupId;
     actions.startOverworldEncounter(target.id);
   });
   await page.waitForFunction(() => window.__ONE_RPG_DEBUG__.state.game.mode === 'combat');
@@ -345,7 +441,7 @@ test('moves from overworld into combat and returns after victory', async ({ page
   await page.waitForFunction(() => {
     const game = window.__ONE_RPG_DEBUG__.state.game;
     const mapState = game.overworld.mapStates[game.overworld.currentMapId];
-    return game.mode === 'overworld' && !mapState.enemies.some((enemy) => enemy.groupId === 'skeleton-mages');
+    return game.mode === 'overworld' && !mapState.enemies.some((enemy) => enemy.groupId === window.__ONE_RPG_DEBUG__.targetGroupId);
   });
 });
 

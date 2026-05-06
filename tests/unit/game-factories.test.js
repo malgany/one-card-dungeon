@@ -55,8 +55,10 @@ describe('game factories', () => {
   });
 
   it('creates overworld enemies with group ids', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
     const enemy = createOverworldEnemy('skeletonMinion', 4, 5, 'skeleton-minions', 0);
     const startMap = getWorldMap('open-road');
+    const generatedEnemies = overworldEnemies(startMap);
 
     expect(enemy).toMatchObject({
       id: 'overworld-skeleton-minions-0',
@@ -68,8 +70,14 @@ describe('game factories', () => {
       xp: MONSTER_TEMPLATES.skeletonMinion.xp,
       xpGranted: false,
     });
-    expect(overworldEnemies(startMap).map((e) => e.groupId)).toContain('skeleton-minions');
-    expect(createOverworldMapState(startMap).enemies.length).toBe(startMap.encounters.length);
+    expect(generatedEnemies.length).toBeGreaterThanOrEqual(2);
+    expect(generatedEnemies.length).toBeLessThanOrEqual(5);
+    expect(generatedEnemies[0]).toMatchObject({
+      id: 'overworld-open-road-open-road-spawn-0-0-0',
+      type: 'skeletonMinion',
+      groupId: 'open-road-spawn-0-0',
+    });
+    expect(createOverworldMapState(startMap).enemies.length).toBeGreaterThanOrEqual(2);
   });
 
   it('normalizes legacy monster inputs', () => {

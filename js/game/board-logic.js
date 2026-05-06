@@ -32,9 +32,10 @@ function pathStepCost(a, b, allowDiagonal = false) {
   return dx + dy;
 }
 
-export function levelWallsSet(levelIndex) {
+export function levelWallsSet(levelIndex, wallsOverride = null) {
   const walls = new Set();
-  LEVELS[levelIndex].walls.forEach(([x, y]) => walls.add(`${x},${y}`));
+  const wallPairs = Array.isArray(wallsOverride) ? wallsOverride : LEVELS[levelIndex].walls;
+  wallPairs.forEach(([x, y]) => walls.add(`${x},${y}`));
   return walls;
 }
 

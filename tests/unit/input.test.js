@@ -144,4 +144,33 @@ describe('canvas input', () => {
     listeners.get('click')();
     expect(actions.moveOverworldPlayer).toHaveBeenCalledWith({ x: 2, y: 0 });
   });
+
+  it('activates water-mode overworld connections only from bridge clicks', () => {
+    const { actions, layout, listeners, state } = createInputHarness();
+    state.game.mode = GAME_MODES.OVERWORLD;
+    state.game.phase = PHASES.HERO;
+    state.game.player = { x: 0, y: 0 };
+    state.visuals = { overworldWater: true };
+
+    layout.tileAt
+      .mockReturnValueOnce({ x: 2, y: 0 })
+      .mockReturnValueOnce({ x: 2, y: 0, kind: 'connectionBridge' })
+      .mockReturnValueOnce({ x: 2, y: 0, kind: 'connectionBridge' });
+
+    listeners.get('click')();
+    expect(actions.moveOverworldPlayer).toHaveBeenLastCalledWith({ x: 2, y: 0 }, { activateConnection: false });
+
+    listeners.get('click')();
+    expect(actions.moveOverworldPlayer).toHaveBeenLastCalledWith(
+      { x: 2, y: 0, kind: 'connectionBridge' },
+      { activateConnection: true },
+    );
+
+    state.game.player = { x: 2, y: 0 };
+    listeners.get('click')();
+    expect(actions.moveOverworldPlayer).toHaveBeenLastCalledWith(
+      { x: 2, y: 0, kind: 'connectionBridge' },
+      { activateConnection: true },
+    );
+  });
 });

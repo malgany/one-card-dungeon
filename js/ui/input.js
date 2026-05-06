@@ -260,6 +260,18 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     state.suppressClick = true;
   }
 
+  function overworldMovementOptionsForTile(tile) {
+    if (tile?.kind === 'connectionBridge') {
+      return { activateConnection: true };
+    }
+
+    if (state.visuals && state.visuals.overworldWater !== false) {
+      return { activateConnection: false };
+    }
+
+    return undefined;
+  }
+
   function handleClick(event) {
     syncMouseFromEvent(event);
 
@@ -305,9 +317,14 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
 
       if (enemy) {
         actions.startOverworldEncounter(enemy.id);
-      } else if (!isPlayer) {
+      } else if (!isPlayer || tile.kind === 'connectionBridge') {
         state.game.selectedEntity = null;
-        actions.moveOverworldPlayer(tile);
+        const movementOptions = overworldMovementOptionsForTile(tile);
+        if (movementOptions) {
+          actions.moveOverworldPlayer(tile, movementOptions);
+        } else {
+          actions.moveOverworldPlayer(tile);
+        }
       }
       return;
     }

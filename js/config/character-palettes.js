@@ -520,5 +520,8 @@ export function normalizeCharacterRecord(character, index = 0) {
     palette,
     image: type.image,
     createdAt: Number.isFinite(character?.createdAt) ? character.createdAt : Date.now(),
+    progress: character?.progress && typeof character.progress === 'object'
+      ? { ...character.progress }
+      : null,
   };
 }
