@@ -3,6 +3,7 @@ import {
   DEFAULT_MAP_COLOR_MODELS,
   DEFAULT_MAP_COLOR_VALUES,
   MAP_COLOR_VALUES_BY_MAP,
+  getDefaultNewMapColorValues,
   getMapColorValuesForMap,
   normalizeMapColorValues,
 } from '../../js/config/map-colors.js';
@@ -19,8 +20,9 @@ describe('map color config', () => {
     expect(normalized.side1).toBe(DEFAULT_MAP_COLOR_VALUES.side1);
   });
 
-  it('falls back to defaults for maps without an override', () => {
-    expect(getMapColorValuesForMap('missing-map')).toEqual(DEFAULT_MAP_COLOR_VALUES);
+  it('falls back to the first reusable model for maps without an override', () => {
+    expect(getDefaultNewMapColorValues()).toEqual(DEFAULT_MAP_COLOR_MODELS[0].values);
+    expect(getMapColorValuesForMap('missing-map')).toEqual(DEFAULT_MAP_COLOR_MODELS[0].values);
   });
 
   it('keeps reusable color models independent from map overrides', () => {

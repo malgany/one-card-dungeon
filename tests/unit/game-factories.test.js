@@ -80,6 +80,14 @@ describe('game factories', () => {
     expect(createOverworldMapState(startMap).enemies.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('allows maps to disable random overworld enemies', () => {
+    const emptyMap = getWorldMap('chao3-grid--1-0');
+
+    expect(emptyMap.randomEncounters).toBe(false);
+    expect(overworldEnemies(emptyMap)).toEqual([]);
+    expect(createOverworldMapState(emptyMap).enemies).toEqual([]);
+  });
+
   it('normalizes legacy monster inputs', () => {
     expect(createMonster('spider', 4, 0, 0)).toMatchObject({
       id: 'skeletonMinion-0-4-0',

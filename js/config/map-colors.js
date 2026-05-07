@@ -95,38 +95,38 @@ export const DEFAULT_MAP_COLOR_MODELS = Object.freeze([
     id: 'model--1-0',
     label: '-1,0',
     values: Object.freeze({
-      water1: '#00d5ff',
-      water2: '#017f98',
-      water3: '#abeaf7',
-      top1: '#38e22c',
-      top2: '#ffffff',
-      top3: '#0ba300',
-      top4: '#1eba1c',
-      top5: '#2b552b',
-      side1: '#ab6130',
-      side2: '#6f3915',
-      side3: '#89502a',
-      side4: '#b89984',
-      side5: '#000000',
+      water1: '#fff8df',
+      water2: '#f4d676',
+      water3: '#fff1b8',
+      top1: '#fff8df',
+      top2: '#f4df99',
+      top3: '#fffdf2',
+      top4: '#e8c95e',
+      top5: '#d6af38',
+      side1: '#f7e3a4',
+      side2: '#c89d3f',
+      side3: '#fff1c7',
+      side4: '#b7832f',
+      side5: '#6f5521',
     }),
   }),
 ]);
 
 export const MAP_COLOR_VALUES_BY_MAP = Object.freeze({
   'chao3-grid--1-0': Object.freeze({
-    water1: '#f23c13',
-    water2: '#ffa517',
-    water3: '#ffe242',
-    top1: '#893e48',
-    top2: '#ffa8b4',
-    top3: '#000000',
-    top4: '#7f7171',
-    top5: '#000000',
-    side1: '#893e48',
-    side2: '#815656',
-    side3: '#000000',
-    side4: '#b89984',
-    side5: '#000000',
+    water1: '#fff8df',
+    water2: '#f4d676',
+    water3: '#fff1b8',
+    top1: '#fff8df',
+    top2: '#f4df99',
+    top3: '#fffdf2',
+    top4: '#e8c95e',
+    top5: '#d6af38',
+    side1: '#f7e3a4',
+    side2: '#c89d3f',
+    side3: '#fff1c7',
+    side4: '#b7832f',
+    side5: '#6f5521',
   }),
   'chao3-grid-0--1': Object.freeze({
     water1: '#121212',
@@ -203,6 +203,21 @@ export const MAP_COLOR_VALUES_BY_MAP = Object.freeze({
     side4: '#9d755c',
     side5: '#614a3c',
   }),
+  'stone-grove': Object.freeze({
+    water1: '#f25c05',
+    water2: '#f28f16',
+    water3: '#f2c641',
+    top1: '#733c50',
+    top2: '#bf8a9d',
+    top3: '#000000',
+    top4: '#332640',
+    top5: '#000000',
+    side1: '#733c50',
+    side2: '#bf8a9d',
+    side3: '#40251b',
+    side4: '#332640',
+    side5: '#000000',
+  }),
 });
 
 export function normalizeMapColorValues(values = {}, fallback = DEFAULT_MAP_COLOR_VALUES) {
@@ -212,6 +227,10 @@ export function normalizeMapColorValues(values = {}, fallback = DEFAULT_MAP_COLO
   }));
 }
 
+export function getDefaultNewMapColorValues() {
+  return normalizeMapColorValues(DEFAULT_MAP_COLOR_MODELS[0]?.values || DEFAULT_MAP_COLOR_VALUES);
+}
+
 export function getMapColorValuesForMap(mapId) {
-  return normalizeMapColorValues(MAP_COLOR_VALUES_BY_MAP[mapId]);
+  return normalizeMapColorValues(MAP_COLOR_VALUES_BY_MAP[mapId], getDefaultNewMapColorValues());
 }

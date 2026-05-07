@@ -18,6 +18,13 @@ import {
   normalizeMonsterType,
 } from '../config/game-data.js';
 import {
+  NURSERY_INTRO_ID,
+  NURSERY_INTRO_LINE_GAP,
+  NURSERY_INTRO_MAP_ID,
+  activeNurseryIntroLine,
+  createNurseryIntroCutscene,
+} from '../config/cutscenes/nursery-intro.js';
+import {
   coordinatePairsToSet,
   dijkstra,
   distanceBetween,
@@ -33,11 +40,14 @@ import {
   createCombatMonsterFromEnemy,
   createDungeonLegacyGame,
   createGame,
+  createOverworldGame,
   ensureOverworldMapState,
   levelMonsters,
   overworldEnemies,
 } from './game-factories.js';
 import {
+  levelFromExperience,
+  levelXpRequirement,
   persistPlayerProgress,
   totalXpForLevel,
 } from './character-progress.js';
@@ -60,9 +70,19 @@ import {
 
 let heroTurnTimeoutId = null;
 const PLAYER_ATTACK_ANIMATION = 'Throw';
+const RANGER_VERDANT_ARROW_ANIMATION = 'Ranged_Bow_Release';
+const RANGER_VERDANT_ARROW_ANIMATION_DURATION = 1333;
+const RANGER_VERDANT_ARROW_PROJECTILE_START = 620;
+const RANGER_VERDANT_ARROW_PROJECTILE_DURATION = 280;
 const OVERWORLD_COMBAT_WALL_COUNT = 3;
 const COMBAT_WALL_GENERATION_ATTEMPTS = 80;
 const COMBAT_ARENA_BOUNDS = { width: BOARD_SIZE, height: BOARD_SIZE };
+const NURSERY_WAKE_ANIMATION = 'Spawn_Ground';
+const NURSERY_IDLE_TALK_ANIMATION = 'Idle_B';
+const NURSERY_GESTURE_ANIMATION = 'Interact';
+const NURSERY_FALLEN_ANIMATION = 'Death_B';
+const NURSERY_WAKE_ANIMATION_DURATION = 1300;
+const NURSERY_GESTURE_ANIMATION_DURATION = 1300;
 
 function mapBounds(map) {
   return {
@@ -115,6 +135,33 @@ function overworldMapTransitionDuration() {
 
 function shouldActivateOverworldConnection(options = {}) {
   return options.activateConnection !== false;
+}
+
+function lineUsesGestureAnimation(line) {
+  const text = String(line?.text || '');
+  return text.includes('?') || text.length <= 34;
+}
+
+function playerCutsceneAnimationForLine(line, firstPlayerLineIndex) {
+  if (line?.actor !== 'player') return null;
+  if (line.index === firstPlayerLineIndex) {
+    return {
+      animation: NURSERY_WAKE_ANIMATION,
+      duration: NURSERY_WAKE_ANIMATION_DURATION,
+    };
+  }
+
+  if (lineUsesGestureAnimation(line)) {
+    return {
+      animation: NURSERY_GESTURE_ANIMATION,
+      duration: Math.min(NURSERY_GESTURE_ANIMATION_DURATION, line.duration || NURSERY_GESTURE_ANIMATION_DURATION),
+    };
+  }
+
+  return {
+    animation: NURSERY_IDLE_TALK_ANIMATION,
+    duration: line.duration || NURSERY_GESTURE_ANIMATION_DURATION,
+  };
 }
 
 function characteristicKeys() {
@@ -342,24 +389,25 @@ function spellBookForPlayer(player) {
   ];
 }
 
-function levelXpRequirement(level) {
-  const normalizedLevel = Math.max(1, Math.floor(level || 1));
-  return XP_RULES.BASE_LEVEL_XP + (normalizedLevel - 1) * XP_RULES.LEVEL_XP_STEP;
-}
-
-function levelFromExperience(experience) {
-  const totalExperience = toNonNegativeInteger(experience);
-  let level = 1;
-  let threshold = levelXpRequirement(level);
-  let spentExperience = 0;
-
-  while (totalExperience >= spentExperience + threshold) {
-    spentExperience += threshold;
-    level += 1;
-    threshold = levelXpRequirement(level);
+function playerAttackModelActionFor(attack) {
+  if (attack?.id === 'rangerVerdantArrow') {
+    return {
+      animation: RANGER_VERDANT_ARROW_ANIMATION,
+      duration: RANGER_VERDANT_ARROW_ANIMATION_DURATION,
+      impactDelay: RANGER_VERDANT_ARROW_PROJECTILE_START + RANGER_VERDANT_ARROW_PROJECTILE_DURATION,
+      projectile: {
+        model: 'arrowBow',
+        startDelay: RANGER_VERDANT_ARROW_PROJECTILE_START,
+        duration: RANGER_VERDANT_ARROW_PROJECTILE_DURATION,
+      },
+    };
   }
 
-  return level;
+  return {
+    animation: PLAYER_ATTACK_ANIMATION,
+    duration: TIMING.PLAYER_ATTACK_ANIMATION,
+    impactDelay: TIMING.ATTACK_BUMP_DURATION,
+  };
 }
 
 export function createGameActions(state) {
@@ -445,6 +493,178 @@ export function createGameActions(state) {
       cardKey,
       accent,
     });
+  }
+
+  function clearCutsceneAnimations(game = getGame()) {
+    game.animations = (game.animations || []).filter((animation) => {
+      return animation.cutsceneId !== NURSERY_INTRO_ID;
+    });
+  }
+
+  function startOverworldAtMap(mapId) {
+    const map = getWorldMap(mapId);
+    if (!map) return false;
+
+    const nextGame = createOverworldGame(map);
+    nextGame.cutscene = null;
+    nextGame.player.x = map.playerStart.x;
+    nextGame.player.y = map.playerStart.y;
+    nextGame.player.facing = { x: 0, y: -1 };
+    nextGame.animations = [];
+    nextGame.busy = false;
+    setGame(nextGame);
+    setEvent(`Entrou em ${map.name}.`);
+    return true;
+  }
+
+  function scheduleNurseryCutsceneAnimations(game, cutscene) {
+    const lines = Array.isArray(cutscene?.lines) ? cutscene.lines : [];
+    const firstPlayerLine = lines.find((line) => line.actor === 'player') || null;
+    clearCutsceneAnimations(game);
+
+    if (firstPlayerLine) {
+      game.animations.push({
+        type: 'modelAction',
+        entityId: 'player',
+        animation: NURSERY_FALLEN_ANIMATION,
+        sourceX: game.player.x,
+        sourceY: game.player.y,
+        targetX: game.player.x,
+        targetY: game.player.y,
+        startTime: cutscene.startedAt,
+        duration: Math.max(1, firstPlayerLine.startTime - cutscene.startedAt),
+        cutsceneId: NURSERY_INTRO_ID,
+      });
+    }
+
+    for (const line of lines) {
+      const action = playerCutsceneAnimationForLine(line, firstPlayerLine?.index);
+      if (!action) continue;
+
+      game.animations.push({
+        type: 'modelAction',
+        entityId: 'player',
+        animation: action.animation,
+        sourceX: game.player.x,
+        sourceY: game.player.y,
+        targetX: game.player.x,
+        targetY: game.player.y,
+        startTime: line.startTime,
+        duration: Math.max(1, action.duration),
+        cutsceneId: NURSERY_INTRO_ID,
+      });
+    }
+  }
+
+  function startNurseryCutscene() {
+    let game = getGame();
+    if (!isOverworldMode(game) || game.overworld?.currentMapId !== NURSERY_INTRO_MAP_ID) {
+      if (!startOverworldAtMap(NURSERY_INTRO_MAP_ID)) return false;
+      game = getGame();
+    }
+
+    const map = getWorldMap(NURSERY_INTRO_MAP_ID);
+    if (!map) return false;
+
+    ensureOverworldMapState(game.overworld, map.id);
+    game.mode = GAME_MODES.OVERWORLD;
+    game.phase = PHASES.HERO;
+    game.overworld.currentMapId = map.id;
+    game.player.x = map.playerStart.x;
+    game.player.y = map.playerStart.y;
+    game.player.facing = { x: 0, y: -1 };
+    game.monsters = [];
+    game.combatContext = null;
+    game.combatWalls = null;
+    game.turnQueue = ['player'];
+    game.turnCount = 0;
+    game.speedRemaining = game.player.speedBase;
+    game.apRemaining = game.player.apMax;
+    game.selectedEntity = null;
+    game.selectedAttackId = null;
+    game.draggingDie = null;
+    game.draggingControl = null;
+    game.activeModal = null;
+    game.menuOpen = false;
+    game.mapTransition = null;
+    game.banner = null;
+    game.busy = true;
+
+    const cutscene = createNurseryIntroCutscene(performance.now());
+    game.cutscene = cutscene;
+    scheduleNurseryCutsceneAnimations(game, cutscene);
+    setEvent('Cena inicial: O Berçário.');
+    return true;
+  }
+
+  function finishNurseryCutscene(game = getGame()) {
+    if (!game.cutscene || game.cutscene.id !== NURSERY_INTRO_ID) return false;
+
+    game.cutscene = null;
+    game.busy = false;
+    game.player.facing = { x: 1, y: 0 };
+    clearCutsceneAnimations(game);
+    setEvent('A passagem do Berçário está aberta.');
+    return true;
+  }
+
+  function advanceCutscene(now = performance.now()) {
+    const game = getGame();
+    const cutscene = game.cutscene;
+    if (!cutscene || cutscene.id !== NURSERY_INTRO_ID || !Array.isArray(cutscene.lines)) return false;
+
+    const activeLine = activeNurseryIntroLine(cutscene, now);
+    const currentLine = activeLine || cutscene.lines[cutscene.currentLineIndex] || cutscene.lines[0];
+    const currentIndex = Math.max(0, currentLine?.index ?? cutscene.currentLineIndex ?? 0);
+    if (currentIndex >= cutscene.lines.length - 1) {
+      return finishNurseryCutscene(game);
+    }
+
+    const current = cutscene.lines[currentIndex];
+    const next = cutscene.lines[currentIndex + 1];
+    const nextStartTime = now + NURSERY_INTRO_LINE_GAP;
+    const delta = Math.max(0, next.startTime - nextStartTime);
+
+    current.endTime = Math.min(current.endTime, now);
+    if (delta > 0) {
+      for (let index = currentIndex + 1; index < cutscene.lines.length; index += 1) {
+        cutscene.lines[index].startTime -= delta;
+        cutscene.lines[index].endTime -= delta;
+      }
+      cutscene.endsAt -= delta;
+
+      for (const animation of game.animations || []) {
+        if (animation.cutsceneId !== NURSERY_INTRO_ID) continue;
+        const animationEnd = animation.startTime + Math.max(0, animation.duration || 0);
+        if (animation.startTime > now) {
+          animation.startTime -= delta;
+        } else if (animationEnd > nextStartTime) {
+          animation.duration = Math.max(1, nextStartTime - animation.startTime);
+        }
+      }
+    }
+
+    cutscene.currentLineIndex = currentIndex + 1;
+    return true;
+  }
+
+  function skipCutscene() {
+    return finishNurseryCutscene(getGame());
+  }
+
+  function tickCutscene(now = performance.now()) {
+    const game = getGame();
+    const cutscene = game.cutscene;
+    if (!cutscene || cutscene.id !== NURSERY_INTRO_ID) return false;
+
+    if (now >= cutscene.endsAt) {
+      finishNurseryCutscene(game);
+      return true;
+    }
+
+    const activeLine = activeNurseryIntroLine(cutscene, now);
+    if (activeLine) cutscene.currentLineIndex = activeLine.index;
+    return true;
   }
 
   function getEquippedAttack(game = getGame()) {
@@ -721,6 +941,39 @@ export function createGameActions(state) {
       remainingSeconds: Math.ceil(remainingMs / 1000),
       progress: Math.min(1, Math.max(0, remainingMs / TIMING.HERO_TURN_DURATION)),
     };
+  }
+
+  function tickOverworldHealthRegen(now = performance.now()) {
+    const game = getGame();
+    if (!game || game.mode !== GAME_MODES.OVERWORLD) return false;
+
+    const player = game.player;
+    if (!player || !Number.isFinite(player.maxHealth)) return false;
+
+    player.health = Number.isFinite(player.health)
+      ? Math.max(0, Math.min(player.maxHealth, Math.floor(player.health)))
+      : player.maxHealth;
+
+    if (player.health >= player.maxHealth) {
+      game.nextOverworldHealthRegenAt = null;
+      return false;
+    }
+
+    const interval = TIMING.OVERWORLD_HEALTH_REGEN_INTERVAL;
+    if (!Number.isFinite(game.nextOverworldHealthRegenAt)) {
+      game.nextOverworldHealthRegenAt = now + interval;
+      return false;
+    }
+
+    if (now < game.nextOverworldHealthRegenAt) return false;
+
+    const ticks = 1 + Math.floor((now - game.nextOverworldHealthRegenAt) / interval);
+    player.health = Math.min(player.maxHealth, player.health + ticks);
+    game.nextOverworldHealthRegenAt = player.health >= player.maxHealth
+      ? null
+      : game.nextOverworldHealthRegenAt + ticks * interval;
+
+    return true;
   }
 
   function startHeroTurn(message = null) {
@@ -1199,6 +1452,7 @@ export function createGameActions(state) {
     const combatWalls = generateRandomCombatWalls(level, monsterPositions);
 
     game.mode = GAME_MODES.COMBAT;
+    game.nextOverworldHealthRegenAt = null;
     syncGameMusic(game);
     game.levelIndex = 0;
     game.combatWalls = combatWalls;
@@ -1256,6 +1510,7 @@ export function createGameActions(state) {
     game.phase = PHASES.HERO;
     game.heroTurnStartedAt = null;
     game.heroTurnEndsAt = null;
+    game.nextOverworldHealthRegenAt = null;
     const map = getCurrentWorldMap(game.overworld);
     game.player.x = context.returnPosition?.x ?? map?.playerStart?.x ?? 0;
     game.player.y = context.returnPosition?.y ?? map?.playerStart?.y ?? 0;
@@ -1366,6 +1621,7 @@ export function createGameActions(state) {
       y: targetCell.y - game.player.y,
     };
     const attackStartTime = performance.now();
+    const playerAttackModelAction = playerAttackModelActionFor(attack);
 
     game.animations.push({
       type: 'floatingText',
@@ -1380,14 +1636,29 @@ export function createGameActions(state) {
     game.animations.push({
       type: 'modelAction',
       entityId: 'player',
-      animation: PLAYER_ATTACK_ANIMATION,
+      animation: playerAttackModelAction.animation,
       sourceX: game.player.x,
       sourceY: game.player.y,
       targetX: targetCell.x,
       targetY: targetCell.y,
       startTime: attackStartTime,
-      duration: TIMING.PLAYER_ATTACK_ANIMATION
+      duration: playerAttackModelAction.duration
     });
+
+    if (playerAttackModelAction.projectile) {
+      game.animations.push({
+        type: 'projectile',
+        id: `player:${attack.id}:${attackStartTime}`,
+        entityId: 'player',
+        model: playerAttackModelAction.projectile.model,
+        sourceX: game.player.x,
+        sourceY: game.player.y,
+        targetX: targetCell.x,
+        targetY: targetCell.y,
+        startTime: attackStartTime + playerAttackModelAction.projectile.startDelay,
+        duration: playerAttackModelAction.projectile.duration,
+      });
+    }
 
     let damage = 0;
     let healed = 0;
@@ -1410,11 +1681,11 @@ export function createGameActions(state) {
       game.animations.push({
         type: 'damageShake',
         entityId: target.id,
-        startTime: attackStartTime + TIMING.ATTACK_BUMP_DURATION,
+        startTime: attackStartTime + playerAttackModelAction.impactDelay,
         duration: TIMING.DAMAGE_SHAKE_DURATION
       });
 
-      const targetDamageStartTime = attackStartTime + TIMING.ATTACK_BUMP_DURATION;
+      const targetDamageStartTime = attackStartTime + playerAttackModelAction.impactDelay;
       if (damage > 0) {
         game.animations.push({
           type: 'modelAction',
@@ -1435,7 +1706,7 @@ export function createGameActions(state) {
         y: target.y,
         text: damage > 0 ? `-${damage}` : 'DEF',
         color: damage > 0 ? '#b94735' : '#d9c894',
-        startTime: attackStartTime + 150,
+        startTime: attackStartTime + playerAttackModelAction.impactDelay,
         duration: 1200
       });
     }
@@ -1456,15 +1727,15 @@ export function createGameActions(state) {
     const targetDefeated = target.hp <= 0;
     const finishDelay = targetDefeated
       ? (
-        (damage > 0 ? TIMING.ATTACK_BUMP_DURATION + TIMING.PLAYER_DAMAGE_ANIMATION : 0)
+        (damage > 0 ? playerAttackModelAction.impactDelay + TIMING.PLAYER_DAMAGE_ANIMATION : 0)
         + TIMING.MONSTER_DEATH_ANIMATION
         + TIMING.MONSTER_DEFEAT_EXIT_PAUSE
       )
-      : TIMING.HERO_ATTACK_WAIT_TIME;
+      : Math.max(TIMING.HERO_ATTACK_WAIT_TIME, playerAttackModelAction.duration);
 
     if (targetDefeated) {
       const deathStartTime = damage > 0
-        ? attackStartTime + TIMING.ATTACK_BUMP_DURATION + TIMING.PLAYER_DAMAGE_ANIMATION
+        ? attackStartTime + playerAttackModelAction.impactDelay + TIMING.PLAYER_DAMAGE_ANIMATION
         : attackStartTime;
 
       game.animations.push({
@@ -1784,6 +2055,7 @@ export function createGameActions(state) {
         draggingDie: null,
         draggingControl: null,
         selectedAttackId: null,
+        cutscene: null,
         mapTransition: null,
         menuOpen: false,
         menuView: 'main',
@@ -1953,6 +2225,7 @@ export function createGameActions(state) {
     normalized.selectedAttackId = null;
     normalized.activeModal = null;
     normalized.levelUpNotice = null;
+    normalized.cutscene = null;
     normalized.mapTransition = null;
     normalized.menuOpen = false;
     normalized.busy = false;
@@ -1960,6 +2233,9 @@ export function createGameActions(state) {
     normalized.banner = null;
     normalized.heroTurnStartedAt = null;
     normalized.heroTurnEndsAt = null;
+    normalized.nextOverworldHealthRegenAt = Number.isFinite(normalized.nextOverworldHealthRegenAt)
+      ? normalized.nextOverworldHealthRegenAt
+      : null;
     normalized.turnQueue = Array.isArray(normalized.turnQueue)
       ? normalized.turnQueue.map((id) => id === 'player' ? id : normalizeMonsterId(id))
       : [];
@@ -1970,7 +2246,15 @@ export function createGameActions(state) {
       normalized.combatContext = null;
       normalized.combatWalls = null;
       normalized.phase = PHASES.HERO;
-    } else if (!normalized.turnQueue || normalized.turnQueue.length === 0) {
+    } else {
+      normalized.nextOverworldHealthRegenAt = null;
+    }
+
+    if (normalized.player.health >= normalized.player.maxHealth) {
+      normalized.nextOverworldHealthRegenAt = null;
+    }
+
+    if (!normalized.turnQueue || normalized.turnQueue.length === 0) {
       normalized.turnQueue = ['player', ...normalized.monsters.map(m => m.id)];
     }
 
@@ -2049,6 +2333,7 @@ export function createGameActions(state) {
     assignedStatForDie,
     attackMonster,
     attackTile,
+    advanceCutscene,
     closeActiveModal,
     confirmEnergy,
     endHeroPhase,
@@ -2080,12 +2365,17 @@ export function createGameActions(state) {
     saveGame,
     setOverworldMusicVolume: updateOverworldMusicVolume,
     setEvent,
+    skipCutscene,
     showBanner,
     openCharacteristicsModal,
     openSpellsModal,
     startHeroTurn,
     startEnergyTurn,
+    startNurseryCutscene,
+    startOverworldAtMap,
     startOverworldEncounter,
+    tickCutscene,
+    tickOverworldHealthRegen,
     toggleAttackSelection,
   };
 }

@@ -67,10 +67,6 @@ function recolorSlot(ctx, slotId, targetHex) {
   ctx.putImageData(imageData, x, y);
 }
 
-export function hasPaletteOverrides(typeId, palette) {
-  return Object.keys(normalizeCharacterPalette(typeId, palette).slots).length > 0;
-}
-
 function slotOverrideSignature(typeId, slotOverrides) {
   const normalized = normalizePaletteSlots(typeId, slotOverrides, { pruneDefaults: false });
   const parts = Object.entries(normalized)

@@ -1,11 +1,14 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GAME_MODES, PHASES } from '../../js/config/game-data.js';
 import { registerCanvasInput } from '../../js/ui/input.js';
+
+const cleanupCallbacks = [];
 
 function createInputHarness() {
   const listeners = new Map();
   const canvas = {
     addEventListener: vi.fn((name, handler) => listeners.set(name, handler)),
+    removeEventListener: vi.fn((name) => listeners.delete(name)),
     getBoundingClientRect: () => ({ left: 10, top: 20 }),
   };
   const state = {
@@ -45,6 +48,11 @@ function createInputHarness() {
     moveOverworldPlayer: vi.fn(),
     movePlayer: vi.fn(),
     startOverworldEncounter: vi.fn(),
+    getAvailableAttacks: vi.fn(() => []),
+    toggleAttackSelection: vi.fn(),
+    endHeroPhase: vi.fn(),
+    advanceCutscene: vi.fn(),
+    skipCutscene: vi.fn(),
   };
   const layout = {
     pointInRect: (px, py, rect) => px >= rect.x && py >= rect.y && px <= rect.x + rect.w && py <= rect.y + rect.h,
@@ -52,11 +60,16 @@ function createInputHarness() {
     tileAt: vi.fn(() => null),
   };
 
-  registerCanvasInput({ canvas, state, actions, layout });
-  return { actions, listeners, layout, state };
+  const unregister = registerCanvasInput({ canvas, state, actions, layout });
+  cleanupCallbacks.push(unregister);
+  return { actions, listeners, layout, state, unregister };
 }
 
 describe('canvas input', () => {
+  afterEach(() => {
+    while (cleanupCallbacks.length > 0) cleanupCallbacks.pop()?.();
+  });
+
   it('updates mouse position relative to the canvas', () => {
     const { listeners, state } = createInputHarness();
 
@@ -145,11 +158,79 @@ describe('canvas input', () => {
     expect(actions.moveOverworldPlayer).toHaveBeenCalledWith({ x: 2, y: 0 });
   });
 
+  it('ignores clicks while a cutscene is active', () => {
+    const { actions, layout, listeners, state } = createInputHarness();
+    state.game.mode = GAME_MODES.OVERWORLD;
+    state.game.phase = PHASES.HERO;
+    state.game.cutscene = { id: 'nursery-intro' };
+    layout.tileAt.mockReturnValue({ x: 2, y: 0 });
+
+    listeners.get('click')();
+
+    expect(layout.tileAt).not.toHaveBeenCalled();
+    expect(actions.moveOverworldPlayer).not.toHaveBeenCalled();
+    expect(actions.startOverworldEncounter).not.toHaveBeenCalled();
+    expect(actions.advanceCutscene).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows cutscene buttons while board input is blocked', () => {
+    const { actions, layout, listeners, state } = createInputHarness();
+    const onClick = vi.fn();
+    state.game.mode = GAME_MODES.OVERWORLD;
+    state.game.phase = PHASES.HERO;
+    state.game.cutscene = { id: 'nursery-intro' };
+    state.game.buttons = [{ x: 0, y: 0, w: 20, h: 20, onClick }];
+    state.mouse = { x: 5, y: 5 };
+    layout.tileAt.mockReturnValue({ x: 2, y: 0 });
+
+    listeners.get('click')();
+
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(layout.tileAt).not.toHaveBeenCalled();
+    expect(actions.moveOverworldPlayer).not.toHaveBeenCalled();
+    expect(actions.advanceCutscene).not.toHaveBeenCalled();
+  });
+
+  it('allows debug drag controls while a cutscene is active', () => {
+    const { listeners, state } = createInputHarness();
+    const onDragStart = vi.fn();
+    const onDragEnd = vi.fn();
+    state.game.cutscene = { id: 'nursery-intro' };
+    state.game.buttons = [{
+      x: 0,
+      y: 0,
+      w: 20,
+      h: 20,
+      onDragStart,
+      onDragEnd,
+    }];
+    state.mouse = { x: 5, y: 5 };
+
+    listeners.get('mousedown')();
+    expect(onDragStart).toHaveBeenCalledWith(5, 5);
+    expect(state.game.draggingControl).toBe(state.game.buttons[0]);
+
+    listeners.get('mouseup')();
+    expect(onDragEnd).toHaveBeenCalledWith(5, 5);
+    expect(state.game.draggingControl).toBe(null);
+  });
+
+  it('advances cutscenes with keyboard confirm keys', () => {
+    const { actions, state } = createInputHarness();
+    state.game.cutscene = { id: 'nursery-intro' };
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', bubbles: true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Enter', bubbles: true }));
+
+    expect(actions.advanceCutscene).toHaveBeenCalledTimes(2);
+  });
+
   it('activates water-mode overworld connections only from bridge clicks', () => {
     const { actions, layout, listeners, state } = createInputHarness();
     state.game.mode = GAME_MODES.OVERWORLD;
     state.game.phase = PHASES.HERO;
     state.game.player = { x: 0, y: 0 };
+    state.game.overworld = { currentMapId: 'chao3-start', mapStates: {} };
     state.visuals = { overworldWater: true };
 
     layout.tileAt
@@ -172,5 +253,94 @@ describe('canvas input', () => {
       { x: 2, y: 0, kind: 'connectionBridge' },
       { activateConnection: true },
     );
+  });
+
+  it('uses the current map water draft for overworld connection clicks', () => {
+    const { actions, layout, listeners, state } = createInputHarness();
+    state.game.mode = GAME_MODES.OVERWORLD;
+    state.game.phase = PHASES.HERO;
+    state.game.player = { x: 0, y: 0 };
+    state.game.overworld = {
+      currentMapId: 'chao3-start',
+      mapStates: {
+        'chao3-start': {
+          debugVisualSettings: { values: { overworldWater: false } },
+        },
+      },
+    };
+    state.visuals = { overworldWater: true };
+
+    layout.tileAt.mockReturnValue({ x: 2, y: 0 });
+
+    listeners.get('click')();
+
+    expect(actions.moveOverworldPlayer).toHaveBeenLastCalledWith({ x: 2, y: 0 });
+  });
+
+  it('snaps dragged editor models to outside lower-ground tile centers', () => {
+    const { listeners, state } = createInputHarness();
+    const placement = {
+      id: 'model-1',
+      kind: 'model',
+      position: { x: 0, y: 0, z: 0 },
+    };
+    state.game.phase = PHASES.HERO;
+    state.debugPanelOpen = true;
+    state.debugPanelTab = 'editor';
+    state.debugPanelBounds = { x: 200, y: 200, w: 100, h: 100 };
+    state.debugEditor = {
+      selectedPlacementId: placement.id,
+      placements: [placement],
+    };
+    state.boardInteraction = {
+      worldPointAtAny: vi.fn(() => ({ x: -1, y: 10, worldX: -2.6, worldZ: 7.2 })),
+      worldPointAtLower: vi.fn(() => ({ x: -2, y: 7, worldX: -4.5, worldZ: 4.5 })),
+    };
+
+    listeners.get('mousedown')({ clientX: 20, clientY: 30 });
+
+    expect(placement.position).toEqual({ x: -4.5, y: -0.62, z: 4.5 });
+  });
+
+  it('selects action slots with top-row and numpad number keys', () => {
+    const { actions, state } = createInputHarness();
+    state.game.phase = PHASES.HERO;
+    actions.getAvailableAttacks.mockReturnValue([
+      { id: 'slot-1' },
+      { id: 'slot-2' },
+      { id: 'slot-3' },
+      { id: 'slot-4' },
+      { id: 'slot-5' },
+      { id: 'slot-6' },
+    ]);
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit1', bubbles: true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Numpad6', bubbles: true }));
+
+    expect(actions.toggleAttackSelection).toHaveBeenNthCalledWith(1, 'slot-1');
+    expect(actions.toggleAttackSelection).toHaveBeenNthCalledWith(2, 'slot-6');
+  });
+
+  it('ends the hero turn with the space key', () => {
+    const { actions, state } = createInputHarness();
+    state.game.phase = PHASES.HERO;
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', bubbles: true }));
+
+    expect(actions.endHeroPhase).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not trigger gameplay shortcuts while typing in inputs', () => {
+    const { actions } = createInputHarness();
+    actions.getAvailableAttacks.mockReturnValue([{ id: 'slot-1' }]);
+    const input = document.createElement('input');
+    document.body.append(input);
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit1', bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', bubbles: true }));
+    input.remove();
+
+    expect(actions.toggleAttackSelection).not.toHaveBeenCalled();
+    expect(actions.endHeroPhase).not.toHaveBeenCalled();
   });
 });

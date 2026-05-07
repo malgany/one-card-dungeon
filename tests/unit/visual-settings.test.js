@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_VISUAL_SETTINGS } from '../../js/config/visual-settings.js';
+import {
+  DEFAULT_VISUAL_SETTINGS,
+  getOverworldWaterEnabled,
+} from '../../js/config/visual-settings.js';
 
 describe('visual settings config', () => {
   it('provides the persisted debug visual defaults', () => {
@@ -15,5 +18,19 @@ describe('visual settings config', () => {
       overworldOrthographicCamera: true,
       overworldWater: true,
     });
+  });
+
+  it('lets the current map runtime value override the global water setting', () => {
+    expect(getOverworldWaterEnabled({
+      mapId: 'chao3-start',
+      baseValues: { overworldWater: true },
+      runtimeValues: { overworldWater: false },
+    })).toBe(false);
+
+    expect(getOverworldWaterEnabled({
+      mapId: 'chao3-start',
+      baseValues: { overworldWater: false },
+      runtimeValues: { overworldWater: true },
+    })).toBe(true);
   });
 });

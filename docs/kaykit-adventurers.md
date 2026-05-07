@@ -62,9 +62,27 @@ O jogador padrao usa `mage.glb`.
 Uso atual no jogo:
 
 - Parado: `Idle_A`
-- Andando: `Walking_A`
-- Ataque do jogador em combate: `Hit_A`
+- Andando/correndo: `Running_B` para aventureiros do jogador
+- Ataque padrao do jogador em combate: `Throw`
+- Flecha Hirvante do patrulheiro: `Ranged_Bow_Release` do pacote `KayKit_Character_Animations_1.1/Animations/gltf/Rig_Medium/Rig_Medium_CombatRanged.glb`
 - Dano recebido pelo jogador em combate: `Hit_B`
+
+## Encaixe De Arco E Flecha
+
+O patrulheiro (`ranger.glb`) usa props do pacote Adventurers para nao tocar animacoes de arco com as maos vazias:
+
+- arco: `assets/models/adventurers/props/bow_withString.gltf`
+- flecha na mao: `assets/models/adventurers/props/arrow_bow.gltf`
+
+O renderer registra esses caminhos em `WORLD_ASSETS.props` e os anexa em `js/ui/three-board-view.js` pela configuracao `PLAYER_MODELS.ranger.equipment`.
+Os pontos preferidos sao `handslot.l` e `handslot.r`; como o `GLTFLoader` pode normalizar nomes, o codigo tambem tenta `hand.l`/`wrist.l` e `hand.r`/`wrist.r`.
+
+Regra visual atual:
+
+- no mundo aberto, o patrulheiro nao segura arco;
+- no ataque basico do patrulheiro, o jogador continua usando `Throw` sem arco/projetil;
+- arco e flecha aparecem apenas durante clipes de arco, como `Ranged_Bow_Release`;
+- o projetil disparado ate o inimigo usa outro clone de `arrow_bow.gltf` com animacao `type: 'projectile'`.
 
 ## Props
 

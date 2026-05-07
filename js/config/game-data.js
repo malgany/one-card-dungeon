@@ -125,14 +125,14 @@ export const MONSTER_TEMPLATES = {
   boss: { name: 'Guardião', emoji: '👹', hp: 60, attack: 5, defense: 4, range: 4, speed: 3, xp: 60, tint: '#8f1414' },
 };
 
-export const LEGACY_MONSTER_TYPE_MAP = {
+const LEGACY_MONSTER_TYPE_MAP = {
   spider: 'skeletonMinion',
   skeleton: 'skeletonWarrior',
   archer: 'skeletonRogue',
   golem: 'skeletonMage',
 };
 
-export const LEGACY_ENCOUNTER_GROUP_MAP = {
+const LEGACY_ENCOUNTER_GROUP_MAP = {
   'nest-a': 'skeleton-minions',
   'ruins-b': 'skeleton-warriors',
   'stone-c': 'skeleton-mages',
@@ -236,6 +236,7 @@ export const TIMING = {
   OVERWORLD_MAP_FADE_OUT: 380,
   OVERWORLD_ENEMY_RESPAWN_MIN: 60000,
   OVERWORLD_ENEMY_RESPAWN_MAX: 90000,
+  OVERWORLD_HEALTH_REGEN_INTERVAL: 2000,
 };
 
 export const DEBUG_CONFIG = {

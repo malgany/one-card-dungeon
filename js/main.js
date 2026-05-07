@@ -1,6 +1,7 @@
 import { createGameActions } from './game/game-actions.js';
 import { createGame, loadCardImages } from './game/game-factories.js';
 import { DEBUG_CONFIG } from './config/game-data.js';
+import { readDebugSettings } from './config/debug-settings.js';
 import { DEFAULT_MAP_COLOR_VALUES } from './config/map-colors.js';
 import { DEFAULT_VISUAL_SETTINGS } from './config/visual-settings.js';
 import { registerCanvasInput } from './ui/input.js';
@@ -27,6 +28,7 @@ const state = {
   debugPanelPosition: { x: 12, y: 56 },
   debugPanelDragOffset: null,
   debugPanelTab: 'settings',
+  debugSettings: readDebugSettings(),
   debugHero: {
     selectedAnimationId: null,
   },
@@ -43,6 +45,13 @@ const state = {
     lastAppliedAt: 0,
     applyStatus: null,
     scroll: 0,
+  },
+  debugMaps: {
+    dirty: false,
+    applyStatus: null,
+    applyError: '',
+    lastAppliedAt: 0,
+    lastChangedAt: 0,
   },
   debugEditor: {
     expandedFolders: {},

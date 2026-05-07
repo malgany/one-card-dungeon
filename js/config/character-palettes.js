@@ -311,7 +311,7 @@ const CHARACTER_DEFINITION_MAP = {
   },
 };
 
-export const CHARACTER_DEFINITIONS = Object.freeze(CHARACTER_DEFINITION_MAP);
+const CHARACTER_DEFINITIONS = Object.freeze(CHARACTER_DEFINITION_MAP);
 
 export const CHARACTER_TYPES = Object.freeze(
   Object.values(CHARACTER_DEFINITIONS).map(({ id, label, image, summary }) => ({
@@ -322,7 +322,7 @@ export const CHARACTER_TYPES = Object.freeze(
   })),
 );
 
-export const DEFAULT_CHARACTER_TYPE_ID = CHARACTER_TYPES[0].id;
+const DEFAULT_CHARACTER_TYPE_ID = CHARACTER_TYPES[0].id;
 
 export function getCharacterDefinition(typeId) {
   return CHARACTER_DEFINITIONS[typeId] || CHARACTER_DEFINITIONS[DEFAULT_CHARACTER_TYPE_ID];
@@ -369,10 +369,6 @@ export function getDefaultPaletteSlots(typeId) {
     ...definition.defaultSlots,
     ...definition.fixedSlots,
   };
-}
-
-export function getUsedPaletteSlots(typeId) {
-  return [...getCharacterDefinition(typeId).usedSlots];
 }
 
 export function getPaletteSlotGroups(typeId) {

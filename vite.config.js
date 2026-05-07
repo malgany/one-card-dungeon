@@ -2,6 +2,13 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { defineConfig, loadEnv } from 'vite';
+import {
+  buildWorldMapPersistenceSnapshot,
+  pruneMapValuesByMap,
+  serializeDebugGeneratedWorldMaps,
+} from './js/config/world/map-persistence.js';
+import { AUTHORED_WORLD_MAPS } from './js/config/world/maps/authored.js';
+import { START_WORLD_MAP_ID } from './js/config/world/maps/index.js';
 
 const MAP_COLOR_KEYS = [
   'water1',
@@ -127,9 +134,17 @@ async function readVisualSettingsConfig(outputPath) {
   try {
     const moduleUrl = `${pathToFileURL(outputPath).href}?t=${Date.now()}`;
     const module = await import(moduleUrl);
-    return normalizeVisualSettings(module.DEFAULT_VISUAL_SETTINGS);
+    const defaultValues = normalizeVisualSettings(module.DEFAULT_VISUAL_SETTINGS);
+    const mapValuesByMap = {};
+
+    for (const [mapId, values] of Object.entries(module.MAP_VISUAL_SETTINGS_BY_MAP || {})) {
+      if (!normalizeMapId(mapId)) continue;
+      mapValuesByMap[mapId] = normalizeVisualSettings({ ...defaultValues, ...values });
+    }
+
+    return { defaultValues, mapValuesByMap };
   } catch {
-    return normalizeVisualSettings();
+    return { defaultValues: normalizeVisualSettings(), mapValuesByMap: {} };
   }
 }
 
@@ -187,8 +202,12 @@ function serializeMapColorsConfig({ defaultValues, defaultColorModels = [], mapV
     '  }));',
     '}',
     '',
+    'export function getDefaultNewMapColorValues() {',
+    '  return normalizeMapColorValues(DEFAULT_MAP_COLOR_MODELS[0]?.values || DEFAULT_MAP_COLOR_VALUES);',
+    '}',
+    '',
     'export function getMapColorValuesForMap(mapId) {',
-    '  return normalizeMapColorValues(MAP_COLOR_VALUES_BY_MAP[mapId]);',
+    '  return normalizeMapColorValues(MAP_COLOR_VALUES_BY_MAP[mapId], getDefaultNewMapColorValues());',
     '}',
     '',
   );
@@ -196,13 +215,40 @@ function serializeMapColorsConfig({ defaultValues, defaultColorModels = [], mapV
   return lines.join('\n');
 }
 
-function serializeVisualSettingsConfig(values) {
+function serializeVisualSettingsConfig({ defaultValues, mapValuesByMap = {} }) {
+  const mapIds = Object.keys(mapValuesByMap).sort((a, b) => a.localeCompare(b));
   return [
     'export const DEFAULT_VISUAL_SETTINGS = Object.freeze({',
-    ...visualSettingsLines(normalizeVisualSettings(values)),
+    ...visualSettingsLines(normalizeVisualSettings(defaultValues)),
     '});',
     '',
+    'export const MAP_VISUAL_SETTINGS_BY_MAP = Object.freeze({',
+    ...mapIds.flatMap((mapId) => [
+      `  '${mapId}': Object.freeze({`,
+      `    overworldWater: ${mapValuesByMap[mapId].overworldWater},`,
+      '  }),',
+    ]),
+    '});',
+    '',
+    'export function getOverworldWaterEnabled({ mapId = null, baseValues = DEFAULT_VISUAL_SETTINGS, runtimeValues = null } = {}) {',
+    "  if (typeof runtimeValues?.overworldWater === 'boolean') return runtimeValues.overworldWater;",
+    '  const mapValues = mapId ? MAP_VISUAL_SETTINGS_BY_MAP[mapId] : null;',
+    "  if (typeof mapValues?.overworldWater === 'boolean') return mapValues.overworldWater;",
+    '  return baseValues?.overworldWater !== false;',
+    '}',
+    '',
   ].join('\n');
+}
+
+function readRequestBody(request) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    request.on('data', (chunk) => {
+      body += chunk;
+    });
+    request.on('error', reject);
+    request.on('end', () => resolve(body));
+  });
 }
 
 function mapColorsDebugPlugin() {
@@ -255,6 +301,54 @@ function mapColorsDebugPlugin() {
         });
       });
 
+      server.middlewares.use('/__debug/world-maps', (request, response) => {
+        if (request.method !== 'POST') {
+          response.statusCode = 405;
+          response.end('Method not allowed');
+          return;
+        }
+
+        readRequestBody(request).then(async (body) => {
+          try {
+            const payload = JSON.parse(body || '{}');
+            const snapshot = buildWorldMapPersistenceSnapshot({
+              maps: payload?.maps,
+              authoredMaps: AUTHORED_WORLD_MAPS,
+              startMapId: START_WORLD_MAP_ID,
+            });
+            const existingMapIds = new Set(snapshot.worldMapIds);
+
+            const debugMapsPath = path.resolve(server.config.root, 'js/config/world/maps/debug-generated.js');
+            await writeFile(debugMapsPath, serializeDebugGeneratedWorldMaps(snapshot), 'utf8');
+
+            const colorsPath = path.resolve(server.config.root, 'js/config/map-colors.js');
+            const colorConfig = await readMapColorsConfig(colorsPath);
+            colorConfig.mapValuesByMap = pruneMapValuesByMap(colorConfig.mapValuesByMap, existingMapIds);
+            await writeFile(colorsPath, serializeMapColorsConfig(colorConfig), 'utf8');
+
+            const visualsPath = path.resolve(server.config.root, 'js/config/visual-settings.js');
+            const visualConfig = await readVisualSettingsConfig(visualsPath);
+            visualConfig.mapValuesByMap = pruneMapValuesByMap(visualConfig.mapValuesByMap, existingMapIds);
+            await writeFile(visualsPath, serializeVisualSettingsConfig(visualConfig), 'utf8');
+
+            server.ws.send({ type: 'full-reload' });
+
+            response.setHeader('Content-Type', 'application/json');
+            response.end(JSON.stringify({
+              ok: true,
+              generatedCount: snapshot.generatedMaps.length,
+              deletedAuthoredMapIds: snapshot.deletedAuthoredMapIds,
+            }));
+          } catch (error) {
+            response.statusCode = 400;
+            response.end(error instanceof Error ? error.message : 'Invalid world maps payload');
+          }
+        }).catch((error) => {
+          response.statusCode = 500;
+          response.end(error instanceof Error ? error.message : 'Unknown error');
+        });
+      });
+
       server.middlewares.use('/__debug/visual-settings', (request, response) => {
         if (request.method !== 'POST') {
           response.statusCode = 405;
@@ -270,13 +364,26 @@ function mapColorsDebugPlugin() {
           try {
             const payload = JSON.parse(body || '{}');
             const values = normalizeVisualSettings(payload?.values || {});
+            const mapId = normalizeMapId(payload?.mapId);
             const outputPath = path.resolve(server.config.root, 'js/config/visual-settings.js');
-            const currentValues = await readVisualSettingsConfig(outputPath);
-            await writeFile(outputPath, serializeVisualSettingsConfig({ ...currentValues, ...values }), 'utf8');
+            const visualConfig = await readVisualSettingsConfig(outputPath);
+            visualConfig.defaultValues = normalizeVisualSettings({
+              ...visualConfig.defaultValues,
+              ...values,
+              overworldWater: mapId ? visualConfig.defaultValues.overworldWater : values.overworldWater,
+            });
+            if (mapId) {
+              visualConfig.mapValuesByMap[mapId] = normalizeVisualSettings({
+                ...visualConfig.defaultValues,
+                ...visualConfig.mapValuesByMap[mapId],
+                overworldWater: values.overworldWater,
+              });
+            }
+            await writeFile(outputPath, serializeVisualSettingsConfig(visualConfig), 'utf8');
             server.ws.send({ type: 'full-reload' });
 
             response.setHeader('Content-Type', 'application/json');
-            response.end(JSON.stringify({ ok: true, values }));
+            response.end(JSON.stringify({ ok: true, mapId, values }));
           } catch (error) {
             response.statusCode = 500;
             response.end(error instanceof Error ? error.message : 'Unknown error');

@@ -9,6 +9,8 @@ import {
   getMapColorValuesForMap,
   normalizeMapColorValues,
 } from '../config/map-colors.js';
+import { NURSERY_INTRO_ID } from '../config/cutscenes/nursery-intro.js';
+import { getOverworldWaterEnabled } from '../config/visual-settings.js';
 import { configureCharacterTexture, loadCharacterPaletteTexture } from './character-palette-texture.js';
 
 const CARD_WIDTH = 0.56;
@@ -58,6 +60,10 @@ const CONNECTION_BRIDGE_POST_WATER_OUTLINE_LENGTH = CONNECTION_BRIDGE_POST_SIZE
 const KEY_LIGHT_DEFAULT_DIRECTION_DEG = 84;
 const KEY_LIGHT_RADIUS = Math.hypot(5, 5);
 const KEY_LIGHT_HEIGHT = 10;
+const NURSERY_SPOTLIGHT_SOURCE_OFFSET = { x: 1.18, y: 5.85, z: -1.76 };
+const NURSERY_SPOTLIGHT_TARGET_HEIGHT = 0.18;
+const NURSERY_SPOTLIGHT_BASE_RADIUS = 0.74;
+const NURSERY_SPOTLIGHT_INNER_RADIUS = 0.34;
 const HIGHLIGHT_ORDER = [
   'hover',
   'playerAttack',
@@ -112,6 +118,36 @@ const PLAYER_MODELS = {
   ranger: {
     ...PLAYER_MODEL_BASE,
     modelUrl: WORLD_ASSETS.characters.ranger,
+    equipment: [
+      {
+        id: 'bow',
+        url: WORLD_ASSETS.props.bowWithString,
+        slotNames: ['handslot.l', 'hand.l', 'wrist.l'],
+        localRotation: [Math.PI / 2, 0, 0],
+        visibleInModes: [GAME_MODES.COMBAT],
+        visibleDuringActions: [
+          'Ranged_Bow_Aiming_Idle',
+          'Ranged_Bow_Draw',
+          'Ranged_Bow_Draw_Up',
+          'Ranged_Bow_Release',
+          'Ranged_Bow_Release_Up',
+        ],
+      },
+      {
+        id: 'arrow',
+        url: WORLD_ASSETS.props.arrowBow,
+        slotNames: ['handslot.r', 'hand.r', 'wrist.r'],
+        localRotation: [Math.PI / 2, 0, 0],
+        visibleInModes: [GAME_MODES.COMBAT],
+        visibleDuringActions: [
+          'Ranged_Bow_Aiming_Idle',
+          'Ranged_Bow_Draw',
+          'Ranged_Bow_Draw_Up',
+          'Ranged_Bow_Release',
+          'Ranged_Bow_Release_Up',
+        ],
+      },
+    ],
     animations: [
       ...PLAYER_MODEL_BASE.animations,
       WORLD_ASSETS.animations.rigMedium.combatRanged,
@@ -830,6 +866,67 @@ export function createThreeBoardView({ state }) {
   const materialCache = new Map();
   const geometryCache = new Map();
 
+  function contactShadowTexture() {
+    const cacheKey = 'contact-shadow:texture';
+    if (materialCache.has(cacheKey)) return materialCache.get(cacheKey);
+
+    const textureCanvas = document.createElement('canvas');
+    textureCanvas.width = 96;
+    textureCanvas.height = 96;
+    const textureCtx = textureCanvas.getContext('2d');
+    const gradient = textureCtx.createRadialGradient(48, 48, 5, 48, 48, 48);
+    gradient.addColorStop(0, 'rgba(0,0,0,0.86)');
+    gradient.addColorStop(0.64, 'rgba(0,0,0,0.58)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    textureCtx.fillStyle = gradient;
+    textureCtx.fillRect(0, 0, 96, 96);
+
+    const texture = new THREE.CanvasTexture(textureCanvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    materialCache.set(cacheKey, texture);
+    return texture;
+  }
+
+  function contactShadowMaterialFor(type) {
+    const opacity = type.contactShadow?.opacity ?? 0.16;
+    const cacheKey = `contact-shadow:${opacity}`;
+    if (materialCache.has(cacheKey)) return materialCache.get(cacheKey);
+
+    const material = new THREE.MeshBasicMaterial({
+      map: contactShadowTexture(),
+      transparent: true,
+      opacity,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    materialCache.set(cacheKey, material);
+    return material;
+  }
+
+  function cutsceneLightHaloTexture() {
+    const cacheKey = 'cutscene-light-halo:texture';
+    if (materialCache.has(cacheKey)) return materialCache.get(cacheKey);
+
+    const textureCanvas = document.createElement('canvas');
+    textureCanvas.width = 160;
+    textureCanvas.height = 160;
+    const textureCtx = textureCanvas.getContext('2d');
+    const gradient = textureCtx.createRadialGradient(80, 80, 2, 80, 80, 80);
+    gradient.addColorStop(0, 'rgba(255,255,255,0.78)');
+    gradient.addColorStop(0.34, 'rgba(244,255,218,0.34)');
+    gradient.addColorStop(0.72, 'rgba(255,234,168,0.12)');
+    gradient.addColorStop(1, 'rgba(255,234,168,0)');
+    textureCtx.fillStyle = gradient;
+    textureCtx.fillRect(0, 0, 160, 160);
+
+    const texture = new THREE.CanvasTexture(textureCanvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    materialCache.set(cacheKey, texture);
+    return texture;
+  }
+
   function standardMaterial({ color = '#6f6342', texture = null, roughness = 0.86, metalness = 0.04 } = {}) {
     const textureMap = textureFor(texture);
 
@@ -1041,21 +1138,26 @@ export function createThreeBoardView({ state }) {
   };
   const activeProceduralGrassTexture = proceduralGrassTextures.soft;
   let debugColorSignature = '';
-  const waterMaterial = new THREE.MeshBasicMaterial({
+  const waterMaterial = new THREE.MeshStandardMaterial({
     color: colorFromHex('#28c3e6'),
     side: THREE.DoubleSide,
+    roughness: 0.92,
+    metalness: 0,
   });
-  const waterLightBandMaterial = new THREE.MeshBasicMaterial({
+  const waterLightBandMaterial = new THREE.MeshStandardMaterial({
     color: colorFromHex('#7fdce8'),
     side: THREE.DoubleSide,
+    roughness: 0.92,
+    metalness: 0,
   });
 
   function syncDebugColorMaterials() {
     const isOverworld = state.game.mode === GAME_MODES.OVERWORLD;
-    const overworldWaterEnabled = state.visuals?.overworldWater !== false;
+    const mapId = isOverworld ? state.game.overworld?.currentMapId : state.game.combatContext?.mapId;
+    const runtimeValues = mapId ? state.game.overworld?.mapStates?.[mapId]?.debugVisualSettings?.values : null;
+    const overworldWaterEnabled = getOverworldWaterEnabled({ mapId, baseValues: state.visuals, runtimeValues });
     const colors = isOverworld ? debugColorValues() : combatColorValues();
     const backgroundColor = isOverworld && !overworldWaterEnabled ? colors.top1 : colors.water1;
-    const mapId = isOverworld ? state.game.overworld?.currentMapId : state.game.combatContext?.mapId;
     const signature = `${isOverworld ? 'overworld' : 'combat'}:${mapId || 'default'}:${overworldWaterEnabled ? 'water' : 'dry'}:${JSON.stringify(colors)}`;
     if (signature === debugColorSignature) return;
 
@@ -1072,14 +1174,17 @@ export function createThreeBoardView({ state }) {
     groundMaterial.needsUpdate = true;
     terrainCubeSideMaterial.needsUpdate = true;
   }
-  const waterDarkBandMaterial = new THREE.MeshBasicMaterial({
+  const waterDarkBandMaterial = new THREE.MeshStandardMaterial({
     color: colorFromHex('#128eaa'),
     side: THREE.DoubleSide,
+    roughness: 0.92,
+    metalness: 0,
   });
 
   const wallMeshes = new Map();
   const objectMeshes = new Map();
   const unitMeshes = new Map();
+  const projectileMeshes = new Map();
   const debugEditorMeshes = new Map();
   const wallGeometry = new THREE.BoxGeometry(0.9, 0.54, 0.9);
   const debugTextureGeometry = new THREE.PlaneGeometry(1, 1);
@@ -1121,7 +1226,7 @@ export function createThreeBoardView({ state }) {
   const waterPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 32, 32), waterMaterial);
   waterPlane.rotation.x = -Math.PI / 2;
   waterPlane.position.y = ISLAND_WATER_LEVEL;
-  waterPlane.receiveShadow = false;
+  waterPlane.receiveShadow = true;
   waterPlane.frustumCulled = false;
   waterPlane.visible = false;
   waterPlane.userData.phase = 0;
@@ -1130,7 +1235,7 @@ export function createThreeBoardView({ state }) {
   function createWaterStrip(material) {
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
     mesh.rotation.x = -Math.PI / 2;
-    mesh.receiveShadow = false;
+    mesh.receiveShadow = true;
     mesh.frustumCulled = false;
     mesh.visible = false;
     boardGroup.add(mesh);
@@ -1333,6 +1438,70 @@ export function createThreeBoardView({ state }) {
   const dummy = new THREE.Object3D();
   const pathArrowGroup = new THREE.Group();
   scene.add(pathArrowGroup);
+  const projectileGroup = new THREE.Group();
+  scene.add(projectileGroup);
+
+  const cutsceneLightGroup = new THREE.Group();
+  cutsceneLightGroup.visible = false;
+  cutsceneLightGroup.renderOrder = 18;
+  scene.add(cutsceneLightGroup);
+
+  const cutsceneLightGeometry = new THREE.ConeGeometry(1, 1, 56, 1, true);
+  const cutsceneOuterLightMaterial = new THREE.MeshBasicMaterial({
+    color: colorFromHex('#fffaf0'),
+    transparent: true,
+    opacity: 0.1,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+    fog: false,
+  });
+  const cutsceneInnerLightMaterial = new THREE.MeshBasicMaterial({
+    color: colorFromHex('#f3ffe1'),
+    transparent: true,
+    opacity: 0.15,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+    fog: false,
+  });
+  const cutsceneOuterLight = new THREE.Mesh(cutsceneLightGeometry, cutsceneOuterLightMaterial);
+  const cutsceneInnerLight = new THREE.Mesh(cutsceneLightGeometry, cutsceneInnerLightMaterial);
+  cutsceneOuterLight.renderOrder = 18;
+  cutsceneInnerLight.renderOrder = 19;
+  cutsceneOuterLight.frustumCulled = false;
+  cutsceneInnerLight.frustumCulled = false;
+  cutsceneLightGroup.add(cutsceneOuterLight);
+  cutsceneLightGroup.add(cutsceneInnerLight);
+
+  const cutsceneHaloMaterial = new THREE.MeshBasicMaterial({
+    map: cutsceneLightHaloTexture(),
+    transparent: true,
+    opacity: 0.86,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+    fog: false,
+  });
+  const cutsceneLightHalo = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), cutsceneHaloMaterial);
+  cutsceneLightHalo.rotation.x = -Math.PI / 2;
+  cutsceneLightHalo.position.y = 0.082;
+  cutsceneLightHalo.renderOrder = 17;
+  cutsceneLightHalo.frustumCulled = false;
+  cutsceneLightHalo.visible = false;
+  scene.add(cutsceneLightHalo);
+
+  const cutsceneSpotLightTarget = new THREE.Object3D();
+  scene.add(cutsceneSpotLightTarget);
+  const cutsceneSpotLight = new THREE.SpotLight(colorFromHex('#fff8df'), 0, 8, Math.PI / 8, 0.72, 1.4);
+  cutsceneSpotLight.castShadow = false;
+  cutsceneSpotLight.target = cutsceneSpotLightTarget;
+  cutsceneSpotLight.visible = false;
+  scene.add(cutsceneSpotLight);
+
   const hemisphere = new THREE.HemisphereLight(colorFromHex('#dbeafe'), colorFromHex('#25170f'), state.visuals?.ambientIntensity ?? 1.0);
   scene.add(hemisphere);
 
@@ -1368,7 +1537,13 @@ export function createThreeBoardView({ state }) {
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   const boardPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0.04);
+  const lowerEditorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), TERRAIN_CUBE_HEIGHT);
   const rayHit = new THREE.Vector3();
+  const cutsceneLightTarget = new THREE.Vector3();
+  const cutsceneLightSource = new THREE.Vector3();
+  const cutsceneLightCenter = new THREE.Vector3();
+  const cutsceneLightDirection = new THREE.Vector3();
+  const cutsceneLightLocalUp = new THREE.Vector3(0, 1, 0);
 
   function syncRendererSize(layout) {
     const width = Math.max(1, Math.floor(layout.sw));
@@ -1489,11 +1664,61 @@ export function createThreeBoardView({ state }) {
     return viewport;
   }
 
+  function updateCutsceneSpotlight(now) {
+    const active = state.game.mode === GAME_MODES.OVERWORLD
+      && state.game.cutscene?.id === NURSERY_INTRO_ID;
+
+    cutsceneLightGroup.visible = active;
+    cutsceneLightHalo.visible = active;
+    cutsceneSpotLight.visible = active;
+    if (!active) {
+      cutsceneSpotLight.intensity = 0;
+      return;
+    }
+
+    const { drawX, drawY } = movementPosition(
+      state.game.player,
+      'player',
+      state.game.animations || [],
+      now || performance.now(),
+    );
+    const playerCenter = tileCenter(drawX, drawY, currentBoard.width, currentBoard.height);
+    cutsceneLightTarget.set(playerCenter.x, NURSERY_SPOTLIGHT_TARGET_HEIGHT, playerCenter.z);
+    cutsceneLightSource.set(
+      playerCenter.x + NURSERY_SPOTLIGHT_SOURCE_OFFSET.x,
+      NURSERY_SPOTLIGHT_SOURCE_OFFSET.y,
+      playerCenter.z + NURSERY_SPOTLIGHT_SOURCE_OFFSET.z,
+    );
+
+    const length = Math.max(0.1, cutsceneLightSource.distanceTo(cutsceneLightTarget));
+    cutsceneLightCenter.copy(cutsceneLightSource).add(cutsceneLightTarget).multiplyScalar(0.5);
+    cutsceneLightDirection.copy(cutsceneLightSource).sub(cutsceneLightTarget).normalize();
+    const pulse = 0.94 + Math.sin((now || performance.now()) / 680) * 0.06;
+
+    cutsceneLightGroup.position.copy(cutsceneLightCenter);
+    cutsceneLightGroup.quaternion.setFromUnitVectors(cutsceneLightLocalUp, cutsceneLightDirection);
+    cutsceneOuterLight.scale.set(NURSERY_SPOTLIGHT_BASE_RADIUS, length, NURSERY_SPOTLIGHT_BASE_RADIUS);
+    cutsceneInnerLight.scale.set(NURSERY_SPOTLIGHT_INNER_RADIUS, length, NURSERY_SPOTLIGHT_INNER_RADIUS);
+    cutsceneOuterLightMaterial.opacity = 0.095 * pulse;
+    cutsceneInnerLightMaterial.opacity = 0.145 * pulse;
+
+    cutsceneLightHalo.position.set(playerCenter.x, 0.088, playerCenter.z);
+    cutsceneLightHalo.scale.set(1.72 * pulse, 1.22 * pulse, 1);
+    cutsceneHaloMaterial.opacity = 0.58 * pulse;
+
+    cutsceneSpotLight.position.copy(cutsceneLightSource);
+    cutsceneSpotLightTarget.position.copy(cutsceneLightTarget);
+    cutsceneSpotLightTarget.updateMatrixWorld();
+    cutsceneSpotLight.intensity = 0.92 * pulse;
+  }
+
   function syncBoardGeometry(width = BOARD_SIZE, height = BOARD_SIZE, connections = []) {
     const isOverworld = state.game.mode === GAME_MODES.OVERWORLD;
     const hasGround = isOverworld && syncGroundMaterial();
     const useCubeTerrain = isOverworld;
-    const waterEnabled = useCubeTerrain && state.visuals?.overworldWater !== false;
+    const mapId = isOverworld ? state.game.overworld?.currentMapId || null : null;
+    const runtimeValues = mapId ? state.game.overworld?.mapStates?.[mapId]?.debugVisualSettings?.values : null;
+    const waterEnabled = useCubeTerrain && getOverworldWaterEnabled({ mapId, baseValues: state.visuals, runtimeValues });
     const dryGroundEnabled = useCubeTerrain && !waterEnabled;
     const terrain = isOverworld ? currentOverworldTerrain() : null;
     const terrainId = terrain?.id || null;
@@ -1720,9 +1945,93 @@ export function createThreeBoardView({ state }) {
     return true;
   }
 
+  function applyEquipmentTransform(object, equipment) {
+    const position = equipment.localPosition || [0, 0, 0];
+    const rotation = equipment.localRotation || [0, 0, 0];
+    const scale = Number.isFinite(equipment.localScale) ? equipment.localScale : 1;
+
+    object.position.set(position[0] || 0, position[1] || 0, position[2] || 0);
+    object.rotation.set(rotation[0] || 0, rotation[1] || 0, rotation[2] || 0);
+    object.scale.setScalar(scale);
+  }
+
+  function syncModelEquipment(group, activeAnimation = null) {
+    group.userData.equipmentAnimation = activeAnimation;
+
+    for (const equipmentState of Object.values(group.userData.equipment || {})) {
+      const visibleModes = equipmentState.definition.visibleInModes;
+      const isModeVisible = Array.isArray(visibleModes)
+        ? visibleModes.includes(state.game.mode)
+        : true;
+      const activeActions = equipmentState.definition.visibleDuringActions;
+      const isActionVisible = Array.isArray(activeActions)
+        ? activeActions.includes(activeAnimation)
+        : equipmentState.definition.visible !== false;
+      equipmentState.object.visible = isModeVisible && isActionVisible;
+    }
+  }
+
+  function normalizedObjectName(name) {
+    return String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  function findModelObjectByNames(model, names) {
+    const candidates = (Array.isArray(names) ? names : [names])
+      .filter(Boolean)
+      .map(normalizedObjectName);
+    if (candidates.length === 0) return null;
+
+    let match = null;
+    model.traverse((object) => {
+      if (match) return;
+      const objectName = normalizedObjectName(object.name);
+      if (candidates.includes(objectName)) match = object;
+    });
+    return match;
+  }
+
+  function attachModelEquipment(group, model, modelConfig, entityId) {
+    const equipmentList = Array.isArray(modelConfig.equipment) ? modelConfig.equipment : [];
+    if (equipmentList.length === 0) return;
+
+    group.userData.equipment = group.userData.equipment || {};
+
+    for (const equipment of equipmentList) {
+      const slotNames = equipment.slotNames || equipment.slotName;
+      const slot = findModelObjectByNames(model, slotNames);
+      if (!slot) {
+        console.warn('Slot de equipamento nao encontrado:', slotNames, modelConfig.modelUrl);
+        continue;
+      }
+
+      loadGltfAsset(equipment.url).then(async (gltf) => {
+        if (unitMeshes.get(entityId) !== group) return;
+
+        const object = cloneSkeleton(gltf.scene);
+        object.traverse((child) => {
+          child.userData.entityId = entityId;
+        });
+        applyEquipmentTransform(object, equipment);
+        await prepareGltfModel(gltf, object, { url: equipment.url });
+
+        group.userData.equipment[equipment.id] = {
+          definition: equipment,
+          object,
+        };
+        slot.add(object);
+        syncModelEquipment(group, group.userData.equipmentAnimation || null);
+      }).catch((error) => {
+        console.error('Erro ao carregar equipamento da unidade:', equipment.url, error);
+      });
+    }
+  }
+
   function updateModelUnitState(group, unit, movement, action, now) {
     const modelConfig = group.userData.modelConfig || DEFAULT_PLAYER_MODEL;
-    if (applySelectedHeroDebugAnimation(group)) return;
+    if (applySelectedHeroDebugAnimation(group)) {
+      syncModelEquipment(group, heroDebugAnimationId());
+      return;
+    }
 
     if (action) {
       faceDirection(group, {
@@ -1737,6 +2046,7 @@ export function createThreeBoardView({ state }) {
         playModelUnitAnimation(group, modelConfig.attackAnimation, { restart: shouldRestart });
       }
       group.userData.activeModelActionKey = actionKey;
+      syncModelEquipment(group, animationName);
       return;
     }
 
@@ -1746,6 +2056,7 @@ export function createThreeBoardView({ state }) {
       group,
       isMoving ? modelConfig.walkAnimation : modelConfig.idleAnimation,
     );
+    syncModelEquipment(group, null);
 
     if (!isMoving) {
       faceDirection(group, unit?.facing);
@@ -1812,6 +2123,8 @@ export function createThreeBoardView({ state }) {
         finished: false,
       },
       actions: {},
+      equipment: {},
+      equipmentAnimation: null,
     };
     scene.add(group);
 
@@ -1832,6 +2145,7 @@ export function createThreeBoardView({ state }) {
         palette: isPlayer ? unit?.characterPalette : null,
       });
       group.add(model);
+      attachModelEquipment(group, model, modelConfig, entityId);
 
       const mixer = new THREE.AnimationMixer(model);
       const clips = new Map();
@@ -1989,6 +2303,23 @@ export function createThreeBoardView({ state }) {
       mesh.add(outlineMesh);
     }
 
+    if (type.contactShadow) {
+      const radius = type.contactShadow.radius || Math.max(type.radius || 0.3, 0.3);
+      const height = type.height || type.size?.height || 0.45;
+      const groundOffset = type.groundOffset ?? 0.05;
+      const contactShadow = new THREE.Mesh(
+        new THREE.PlaneGeometry(radius * 2, radius * 2),
+        contactShadowMaterialFor(type),
+      );
+      contactShadow.name = `${type.id}-contact-shadow`;
+      contactShadow.rotation.x = -Math.PI / 2;
+      contactShadow.position.y = -(height / 2 + groundOffset) + 0.018;
+      contactShadow.renderOrder = 3;
+      contactShadow.castShadow = false;
+      contactShadow.receiveShadow = false;
+      mesh.add(contactShadow);
+    }
+
     boardGroup.add(mesh);
     return mesh;
   }
@@ -2030,7 +2361,7 @@ export function createThreeBoardView({ state }) {
 
       const posY = type.shape === 'model'
         ? (type.groundOffset ?? 0)
-        : height / 2 + 0.05;
+        : height / 2 + (type.groundOffset ?? 0.05);
 
       mesh.position.set(posX, posY, posZ);
     }
@@ -2176,7 +2507,8 @@ export function createThreeBoardView({ state }) {
     if (selected) {
       const position = selected.position || { x: 0, y: 0, z: 0 };
       const scale = Number.isFinite(selected.scale) ? selected.scale : DEBUG_MODEL_DEFAULT_SCALE;
-      debugSelectionMarker.position.set(position.x || 0, 0.075, position.z || 0);
+      const markerY = selected.kind === 'texture' ? 0.075 : (position.y || 0) + 0.075;
+      debugSelectionMarker.position.set(position.x || 0, markerY, position.z || 0);
       debugSelectionMarker.scale.setScalar(Math.max(0.6, scale));
       debugSelectionMarker.visible = true;
     } else {
@@ -2319,6 +2651,76 @@ export function createThreeBoardView({ state }) {
       arrow.cone.renderOrder = 30;
 
       pathArrowGroup.add(arrow);
+    }
+  }
+
+  function projectileKey(animation, index) {
+    return animation.id || `${animation.entityId || 'projectile'}:${animation.startTime}:${index}`;
+  }
+
+  function projectileModelUrl(animation) {
+    if (animation.model === 'arrowBow') return WORLD_ASSETS.props.arrowBow;
+    return null;
+  }
+
+  function createProjectileMesh(animation, key) {
+    const group = new THREE.Group();
+    group.visible = false;
+    projectileMeshes.set(key, group);
+    projectileGroup.add(group);
+
+    const modelUrl = projectileModelUrl(animation);
+    if (!modelUrl) return group;
+
+    loadGltfAsset(modelUrl).then(async (gltf) => {
+      if (projectileMeshes.get(key) !== group) return;
+
+      const model = cloneSkeleton(gltf.scene);
+      model.traverse((child) => {
+        child.userData.entityId = animation.entityId;
+      });
+      model.scale.setScalar(0.42);
+      await prepareGltfModel(gltf, model, { url: modelUrl });
+      group.add(model);
+      group.visible = true;
+    }).catch((error) => {
+      console.error('Erro ao carregar projetil:', modelUrl, error);
+    });
+
+    return group;
+  }
+
+  function updateProjectiles(now) {
+    const activeKeys = new Set();
+
+    (state.game.animations || []).forEach((animation, index) => {
+      if (animation.type !== 'projectile') return;
+      const startTime = Number.isFinite(animation.startTime) ? animation.startTime : 0;
+      const duration = Math.max(1, animation.duration || 1);
+      if (now < startTime || now >= startTime + duration) return;
+
+      const key = projectileKey(animation, index);
+      activeKeys.add(key);
+
+      let group = projectileMeshes.get(key);
+      if (!group) group = createProjectileMesh(animation, key);
+
+      const progress = THREE.MathUtils.clamp((now - startTime) / duration, 0, 1);
+      const source = tileCenter(animation.sourceX, animation.sourceY, currentBoard.width, currentBoard.height);
+      const target = tileCenter(animation.targetX, animation.targetY, currentBoard.width, currentBoard.height);
+      const x = THREE.MathUtils.lerp(source.x, target.x, progress);
+      const z = THREE.MathUtils.lerp(source.z, target.z, progress);
+      const arc = Math.sin(progress * Math.PI) * 0.22;
+
+      group.position.set(x, 0.48 + arc, z);
+      group.rotation.y = Math.atan2(target.x - source.x, target.z - source.z);
+      group.visible = group.children.length > 0;
+    });
+
+    for (const [key, group] of projectileMeshes.entries()) {
+      if (activeKeys.has(key)) continue;
+      projectileGroup.remove(group);
+      projectileMeshes.delete(key);
     }
   }
 
@@ -2793,6 +3195,32 @@ export function createThreeBoardView({ state }) {
     return point;
   }
 
+  function worldPointAtLower(layout, px, py) {
+    const viewport = syncCamera(layout, performance.now());
+
+    if (
+      px < viewport.x ||
+      py < viewport.y ||
+      px > viewport.x + viewport.w ||
+      py > viewport.y + viewport.h
+    ) {
+      return null;
+    }
+
+    pointer.x = ((px - viewport.x) / viewport.w) * 2 - 1;
+    pointer.y = -(((py - viewport.y) / viewport.h) * 2 - 1);
+    raycaster.setFromCamera(pointer, activeCamera);
+
+    if (!raycaster.ray.intersectPlane(lowerEditorPlane, rayHit)) return null;
+
+    return {
+      x: Math.floor(rayHit.x + currentBoard.width / 2),
+      y: Math.floor(rayHit.z + currentBoard.height / 2),
+      worldX: rayHit.x,
+      worldZ: rayHit.z,
+    };
+  }
+
   function tileAt(layout, px, py) {
     const point = worldPointAt(layout, px, py);
     if (!point) return null;
@@ -2854,6 +3282,7 @@ export function createThreeBoardView({ state }) {
     tileAt,
     worldPointAt,
     worldPointAtAny,
+    worldPointAtLower,
   };
 
   return {
@@ -2922,7 +3351,9 @@ export function createThreeBoardView({ state }) {
       });
       updatePathArrows(hoverPath);
       updateUnits(now);
+      updateProjectiles(now);
       updateConnections(connections);
+      updateCutsceneSpotlight(now);
 
       // Atualizar animações 3D
       const delta = animationTimer.getDelta();

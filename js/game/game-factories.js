@@ -180,6 +180,8 @@ export function levelMonsters(level) {
 }
 
 export function overworldEnemies(map, wave = 0) {
+  if (map?.randomEncounters === false) return [];
+
   const count = randomInt(OVERWORLD_SPAWN_MIN, OVERWORLD_SPAWN_MAX);
   const pool = spawnPoolForMap(map);
   const occupied = spawnBlockedKeys(map);
@@ -210,7 +212,7 @@ export function createOverworldMapState(map) {
   };
 }
 
-export function createOverworldRuntime(map = getWorldMap(START_WORLD_MAP_ID)) {
+function createOverworldRuntime(map = getWorldMap(START_WORLD_MAP_ID)) {
   return {
     currentMapId: map.id,
     mapStates: {
@@ -231,7 +233,7 @@ export function ensureOverworldMapState(overworld, mapId) {
   return overworld.mapStates[mapId];
 }
 
-export function createPlayer(position) {
+function createPlayer(position) {
   return {
     x: position.x,
     y: position.y,
@@ -270,10 +272,12 @@ function createBaseUiState() {
     menuOpen: false,
     menuView: 'main',
     optionsTab: 'how-to',
+    cutscene: null,
     animations: [],
     busy: false,
     heroTurnStartedAt: null,
     heroTurnEndsAt: null,
+    nextOverworldHealthRegenAt: null,
   };
 }
 

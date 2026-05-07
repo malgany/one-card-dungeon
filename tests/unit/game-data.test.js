@@ -20,6 +20,7 @@ import {
   XP_RULES,
   getWorldMap,
 } from '../../js/config/game-data.js';
+import { NURSERY_INTRO_MAP_ID } from '../../js/config/cutscenes/nursery-intro.js';
 
 describe('game data', () => {
   it('defines the phases and stat metadata used by the UI and actions', () => {
@@ -106,6 +107,7 @@ describe('game data', () => {
   it('keeps world chunk data valid and grouped', () => {
     expect(getWorldMap(START_WORLD_MAP_ID)).toBeDefined();
 
+    const gridKeys = new Set();
     Object.values(WORLD_MAPS).forEach((map) => {
       expect(BIOMES[map.biome]).toBeDefined();
       expect(TERRAIN_TYPES[map.defaultTerrain]).toBeDefined();
@@ -117,6 +119,11 @@ describe('game data', () => {
       expect(map.playerStart.x).toBeLessThan(map.size.width);
       expect(map.playerStart.y).toBeGreaterThanOrEqual(0);
       expect(map.playerStart.y).toBeLessThan(map.size.height);
+      if (map.gridPosition) {
+        const key = `${map.gridPosition.x},${map.gridPosition.y}`;
+        expect(gridKeys.has(key)).toBe(false);
+        gridKeys.add(key);
+      }
 
       const objectKeys = new Set();
       map.objects.forEach((object) => {
@@ -162,5 +169,45 @@ describe('game data', () => {
         expect(connection.spawn.y).toBeLessThan(target.size.height);
       });
     });
+  });
+
+  it('places the authored road maps on the world minimap chain', () => {
+    expect(getWorldMap('open-road').gridPosition).toEqual({ x: 2, y: 0 });
+    expect(getWorldMap('stone-grove').gridPosition).toEqual({ x: 3, y: 0 });
+    expect(getWorldMap('stone-grove').defaultTerrain).toBe('debugGrass');
+
+    expect(getWorldMap('chao3-grid-1-0').connections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ targetMapId: 'open-road', x: 9, y: 5 }),
+      ]),
+    );
+    expect(getWorldMap('open-road').connections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ targetMapId: 'chao3-grid-1-0', x: 0, y: 4 }),
+        expect.objectContaining({ targetMapId: 'stone-grove', x: 9, y: 5 }),
+      ]),
+    );
+    expect(getWorldMap('stone-grove').connections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ targetMapId: 'open-road', x: 0, y: 4 }),
+      ]),
+    );
+  });
+
+  it('configures the nursery room as a safe intro scene with a non-blocking passage', () => {
+    const nursery = getWorldMap(NURSERY_INTRO_MAP_ID);
+    const portal = nursery.objects.find((object) => object.type === 'nursery-portal');
+
+    expect(nursery).toMatchObject({
+      id: NURSERY_INTRO_MAP_ID,
+      name: 'O Berçário',
+      gridPosition: { x: -1, y: 0 },
+      playerStart: { x: 4, y: 6 },
+      encounters: [],
+      randomEncounters: false,
+    });
+    expect(nursery.objects.some((object) => object.x === nursery.playerStart.x && object.y === nursery.playerStart.y)).toBe(false);
+    expect(portal).toMatchObject({ x: 9, y: 5 });
+    expect(WORLD_OBJECT_TYPES[portal.type].blocksMovement).toBe(false);
   });
 });

@@ -18,8 +18,7 @@ import {
   sanitizeCharacterName,
   serializePaletteDraft,
 } from '../config/character-palettes.js';
-
-export { CHARACTER_TYPES };
+import { NURSERY_INTRO_MAP_ID } from '../config/cutscenes/nursery-intro.js';
 
 function versionedAssetUrl(path) {
   return `${path}?v=${INTRO_ASSET_VERSION}`;
@@ -276,9 +275,68 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
   let introSoundByKey = new Map();
   let activeIntroSoundKey = null;
   let introMusic = null;
+  let menuDialog = null;
 
   function selectedCharacter() {
     return characters.find((character) => character.id === selectedCharacterId) || characters[0] || null;
+  }
+
+  function closeMenuDialog() {
+    menuDialog = null;
+    menuRoot.querySelector('[data-menu-dialog]')?.remove();
+  }
+
+  function renderMenuDialog() {
+    menuRoot.querySelector('[data-menu-dialog]')?.remove();
+    if (!menuDialog) return;
+
+    menuRoot.insertAdjacentHTML('beforeend', `
+      <div class="menu-dialog-backdrop" data-menu-dialog role="presentation">
+        <section class="menu-dialog menu-glass" role="dialog" aria-modal="true" aria-labelledby="menu-dialog-title" aria-describedby="menu-dialog-message">
+          <div class="menu-dialog-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+          </div>
+          <div class="menu-dialog-copy">
+            <strong id="menu-dialog-title">${escapeHtml(menuDialog.title)}</strong>
+            <p id="menu-dialog-message">${escapeHtml(menuDialog.message)}</p>
+          </div>
+          <div class="menu-dialog-actions">
+            <button class="menu-secondary-button" type="button" data-menu-action="dialog-cancel">${escapeHtml(menuDialog.cancelLabel || 'Cancelar')}</button>
+            <button class="menu-danger-button" type="button" data-menu-action="dialog-confirm">${escapeHtml(menuDialog.confirmLabel || 'Excluir')}</button>
+          </div>
+        </section>
+      </div>
+    `);
+
+    menuRoot.querySelector('[data-menu-action="dialog-cancel"]')?.focus();
+  }
+
+  function requestDeleteCharacter(character) {
+    menuDialog = {
+      type: 'delete-character',
+      characterId: character.id,
+      title: 'Excluir personagem',
+      message: `Tem certeza que deseja excluir "${character.name}"? Essa acao nao pode ser desfeita.`,
+      confirmLabel: 'Excluir',
+      cancelLabel: 'Cancelar',
+    };
+    renderMenuDialog();
+  }
+
+  function confirmMenuDialog() {
+    if (!menuDialog) return;
+
+    if (menuDialog.type === 'delete-character') {
+      const charId = menuDialog.characterId;
+      characters = characters.filter((c) => c.id !== charId);
+      saveCharacters(characters);
+      if (selectedCharacterId === charId) {
+        selectedCharacterId = characters[0]?.id || null;
+        setSelectedCharacterId(selectedCharacterId);
+      }
+      menuDialog = null;
+      renderSelect();
+    }
   }
 
   function ensurePaletteDraft(typeId) {
@@ -906,10 +964,16 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     playOverworldMusic();
   }
 
-  function playCharacter(character) {
+  function playCharacter(character, options = {}) {
     const normalized = normalizeCharacter(character);
     setSelectedCharacterId(normalized.id);
+    if (options.startNurseryIntro) {
+      actions?.startOverworldAtMap?.(NURSERY_INTRO_MAP_ID);
+    }
     applyCharacter(normalized);
+    if (options.startNurseryIntro) {
+      actions?.startNurseryCutscene?.();
+    }
     hideRoot();
   }
 
@@ -917,7 +981,9 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     characters = loadCharacters();
     if (characters.length > 0) {
       selectedCharacterId = characters[0].id;
-      playCharacter(characters[0]);
+      playCharacter(characters[0], {
+        startNurseryIntro: state.debugSettings?.initialDialogue === true,
+      });
       return;
     }
 
@@ -949,7 +1015,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     characters = [...characters, character].slice(0, MAX_CHARACTERS);
     selectedCharacterId = character.id;
     saveCharacters(characters);
-    playCharacter(character);
+    playCharacter(character, { startNurseryIntro: true });
   }
 
   menuRoot.addEventListener('click', (event) => {
@@ -1017,16 +1083,24 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
       const charToDelete = characters.find((c) => c.id === charId);
       if (!charToDelete) return;
 
-      if (window.confirm(`Tem certeza que deseja excluir o personagem "${charToDelete.name}"?`)) {
-        characters = characters.filter((c) => c.id !== charId);
-        saveCharacters(characters);
-        if (selectedCharacterId === charId) {
-          selectedCharacterId = characters[0]?.id || null;
-          setSelectedCharacterId(selectedCharacterId);
-        }
-        renderSelect();
-      }
+      requestDeleteCharacter(charToDelete);
+      return;
     }
+
+    if (action === 'dialog-cancel') {
+      closeMenuDialog();
+      return;
+    }
+
+    if (action === 'dialog-confirm') {
+      confirmMenuDialog();
+    }
+  }, eventOptions);
+
+  menuRoot.addEventListener('keydown', (event) => {
+    if (!menuDialog || event.key !== 'Escape') return;
+    event.preventDefault();
+    closeMenuDialog();
   }, eventOptions);
 
   menuRoot.addEventListener('pointerover', (event) => {

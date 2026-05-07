@@ -66,7 +66,7 @@ function normalizeCharacteristics(values = {}) {
   return characteristics;
 }
 
-export function normalizeCharacterProgress(progress = {}, fallback = {}) {
+function normalizeCharacterProgress(progress = {}, fallback = {}) {
   const source = progress && typeof progress === 'object' ? progress : {};
   const fallbackSource = fallback && typeof fallback === 'object' ? fallback : {};
   const characteristics = normalizeCharacteristics(source.characteristics || fallbackSource.characteristics);
@@ -101,7 +101,7 @@ export function normalizeCharacterProgress(progress = {}, fallback = {}) {
   };
 }
 
-export function characterProgressFromPlayer(player) {
+function characterProgressFromPlayer(player) {
   return normalizeCharacterProgress(player);
 }
 
@@ -111,7 +111,7 @@ export function applyCharacterProgressToPlayer(player, progress) {
   return player;
 }
 
-export function readStoredCharacters() {
+function readStoredCharacters() {
   if (!storageAvailable()) return [];
 
   try {
@@ -122,7 +122,7 @@ export function readStoredCharacters() {
   }
 }
 
-export function writeStoredCharacters(characters) {
+function writeStoredCharacters(characters) {
   if (!storageAvailable()) return false;
 
   try {
@@ -133,7 +133,7 @@ export function writeStoredCharacters(characters) {
   }
 }
 
-export function selectedStoredCharacterId() {
+function selectedStoredCharacterId() {
   if (!storageAvailable()) return null;
 
   try {

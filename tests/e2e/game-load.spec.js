@@ -164,11 +164,14 @@ test('opens character creation when no character exists', async ({ page }) => {
 
   await expect(page.locator('#menu-root')).toBeHidden();
   await page.waitForFunction(() => {
-    const player = window.__ONE_RPG_DEBUG__?.state?.game?.player;
+    const game = window.__ONE_RPG_DEBUG__?.state?.game;
+    const player = game?.player;
     return (
       player?.name === 'Aria' &&
       player?.characterType === 'knight' &&
-      player?.characterPalette?.slots?.r4c2 === '#00FF88'
+      player?.characterPalette?.slots?.r4c2 === '#00FF88' &&
+      game?.overworld?.currentMapId === 'chao3-grid--1-0' &&
+      game?.cutscene?.id === 'nursery-intro'
     );
   });
   const savedCharacters = await page.evaluate(() => {
@@ -202,6 +205,46 @@ test('skips intro and opens character selection when a character exists', async 
 
   await expect(page.locator('.menu-screen--select')).toBeVisible();
   await expect(page.locator('.menu-intro-screen')).toHaveCount(0);
+
+  await page.locator('[data-menu-action="play-selected"]').click();
+  await expect(page.locator('#menu-root')).toBeHidden();
+  await page.waitForFunction(() => {
+    const game = window.__ONE_RPG_DEBUG__?.state?.game;
+    return (
+      game?.player?.name === 'Doran' &&
+      game?.overworld?.currentMapId === 'chao3-start' &&
+      !game?.cutscene
+    );
+  });
+});
+
+test('debug initial dialogue setting forces the nursery cutscene for existing characters', async ({ page }) => {
+  await page.addInitScript(() => {
+    const character = {
+      id: 'saved-character',
+      name: 'Doran',
+      type: 'ranger',
+      typeLabel: 'Patrulheiro',
+      color: '#112233',
+      palette: { version: 1, slots: {} },
+      image: '/assets/characters/ranger.png',
+      createdAt: Date.now(),
+    };
+    window.localStorage.setItem('one-rpg-characters-v1', JSON.stringify([character]));
+    window.localStorage.setItem('one-rpg-selected-character-v1', character.id);
+    window.localStorage.setItem('one-rpg-debug-settings-v1', JSON.stringify({ initialDialogue: true }));
+  });
+
+  await page.goto('/');
+  await expect(page.locator('#menu-root')).toBeHidden();
+  await page.waitForFunction(() => {
+    const game = window.__ONE_RPG_DEBUG__?.state?.game;
+    return (
+      game?.player?.name === 'Doran' &&
+      game?.overworld?.currentMapId === 'chao3-grid--1-0' &&
+      game?.cutscene?.id === 'nursery-intro'
+    );
+  });
 });
 
 test('edits grouped mage palette slots together', async ({ page }) => {
@@ -293,8 +336,14 @@ test('opens character selection when a character exists', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#menu-root')).toBeHidden();
   await page.waitForFunction(() => {
-    const player = window.__ONE_RPG_DEBUG__?.state?.game?.player;
-    return player?.name === 'Doran' && player?.characterType === 'ranger';
+    const game = window.__ONE_RPG_DEBUG__?.state?.game;
+    const player = game?.player;
+    return (
+      player?.name === 'Doran' &&
+      player?.characterType === 'ranger' &&
+      game?.overworld?.currentMapId === 'chao3-start' &&
+      !game?.cutscene
+    );
   });
   await page.evaluate(() => window.__ONE_RPG_DEBUG__.menuFlow.showCharacterSelect());
 
@@ -491,6 +540,7 @@ test('clicks any visible bridge part to enter its overworld connection', async (
 
   await page.evaluate(async () => {
     const { PHASES } = await import('/js/config/game-data.js');
+    const { ensureOverworldMapState } = await import('/js/game/game-factories.js');
     const { state } = window.__ONE_RPG_DEBUG__;
     state.game.phase = PHASES.HERO;
     state.game.player.x = 4;
@@ -501,6 +551,8 @@ test('clicks any visible bridge part to enter its overworld connection', async (
     state.debugZoom = 0.98;
     state.visuals.overworldOrthographicCamera = true;
     state.visuals.overworldWater = true;
+    const mapState = ensureOverworldMapState(state.game.overworld, state.game.overworld.currentMapId);
+    mapState.debugVisualSettings = { values: { overworldWater: true } };
   });
 
   async function waitFrames(count = 8) {
@@ -531,13 +583,17 @@ test('clicks any visible bridge part to enter its overworld connection', async (
   expect(await findBridgePoint()).not.toBeNull();
 
   await page.evaluate(() => {
-    window.__ONE_RPG_DEBUG__.state.visuals.overworldWater = false;
+    const { state } = window.__ONE_RPG_DEBUG__;
+    const mapState = state.game.overworld.mapStates[state.game.overworld.currentMapId];
+    mapState.debugVisualSettings = { values: { overworldWater: false } };
   });
   await waitFrames();
   expect(await findBridgePoint()).toBeNull();
 
   await page.evaluate(() => {
-    window.__ONE_RPG_DEBUG__.state.visuals.overworldWater = true;
+    const { state } = window.__ONE_RPG_DEBUG__;
+    const mapState = state.game.overworld.mapStates[state.game.overworld.currentMapId];
+    mapState.debugVisualSettings = { values: { overworldWater: true } };
   });
   await waitFrames();
   const bridgePoint = await findBridgePoint();

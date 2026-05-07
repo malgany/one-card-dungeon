@@ -8,9 +8,10 @@ export const stoneGroveMap = {
   id: 'stone-grove',
   name: 'Bosque de pedra',
   size: { width: 10, height: 10 },
+  gridPosition: { x: 3, y: 0 },
   playerStart: { x: 0, y: 5 },
   biome: 'stonefields',
-  defaultTerrain: 'stone',
+  defaultTerrain: 'debugGrass',
   terrainPatches: [
     {
       terrain: 'grass',
@@ -34,9 +35,9 @@ export const stoneGroveMap = {
     {
       id: 'stone-grove-west',
       x: 0,
-      y: 5,
+      y: 4,
       targetMapId: 'open-road',
-      spawn: { x: 8, y: 5 },
+      spawn: { x: 9, y: 5 },
     },
   ],
 };

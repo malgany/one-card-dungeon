@@ -14,6 +14,7 @@ export const openRoadMap = {
   id: 'open-road',
   name: 'Estrada aberta',
   size: { width: 10, height: 10 },
+  gridPosition: { x: 2, y: 0 },
   playerStart: { x: 2, y: 8 },
   biome: 'meadow',
   defaultTerrain: 'grass',
@@ -31,6 +32,13 @@ export const openRoadMap = {
     { id: 'skeleton-mages-0', type: 'skeletonMage', x: 8, y: 6, groupId: 'skeleton-mages' },
   ],
   connections: [
+    {
+      id: 'open-road-west',
+      x: 0,
+      y: 4,
+      targetMapId: 'chao3-grid-1-0',
+      spawn: { x: 9, y: 5 },
+    },
     {
       id: 'open-road-east',
       x: 9,

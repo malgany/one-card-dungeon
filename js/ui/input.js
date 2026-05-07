@@ -1,7 +1,35 @@
 import { BOARD_SIZE, GAME_MODES, STAT_META, PHASES, DEBUG_CONFIG } from '../config/game-data.js';
+import { getOverworldWaterEnabled } from '../config/visual-settings.js';
 import { getCurrentWorldBounds } from '../game/world-state.js';
 
 const TEXTURE_OUTSIDE_BOARD_MULTIPLIER = 2;
+const MODEL_OUTSIDE_BOARD_PADDING = 18;
+const DEBUG_MODEL_LOWER_FLOOR_Y = -0.62;
+const ACTION_SLOT_KEY_CODES = new Map([
+  ['Digit1', 0],
+  ['Digit2', 1],
+  ['Digit3', 2],
+  ['Digit4', 3],
+  ['Digit5', 4],
+  ['Digit6', 5],
+  ['Numpad1', 0],
+  ['Numpad2', 1],
+  ['Numpad3', 2],
+  ['Numpad4', 3],
+  ['Numpad5', 4],
+  ['Numpad6', 5],
+]);
+
+function isTypingTarget(target) {
+  if (!(target instanceof HTMLElement)) return false;
+  const tagName = target.tagName.toLowerCase();
+  return (
+    target.isContentEditable ||
+    tagName === 'input' ||
+    tagName === 'textarea' ||
+    tagName === 'select'
+  );
+}
 
 export function registerCanvasInput({ canvas, state, actions, layout }) {
   function syncMouseFromEvent(event) {
@@ -57,12 +85,33 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     };
   }
 
+  function modelCenterFromPoint(point) {
+    const bounds = currentDebugBounds();
+    const minX = -MODEL_OUTSIDE_BOARD_PADDING;
+    const maxX = bounds.width + MODEL_OUTSIDE_BOARD_PADDING - 1;
+    const minY = -MODEL_OUTSIDE_BOARD_PADDING;
+    const maxY = bounds.height + MODEL_OUTSIDE_BOARD_PADDING - 1;
+    const tileX = Math.round(Math.min(maxX, Math.max(minX, point.x)));
+    const tileY = Math.round(Math.min(maxY, Math.max(minY, point.y)));
+
+    return {
+      x: tileX - bounds.width / 2 + 0.5,
+      z: tileY - bounds.height / 2 + 0.5,
+      outsideStage: tileX < 0 || tileY < 0 || tileX >= bounds.width || tileY >= bounds.height,
+    };
+  }
+
   function moveSelectedDebugPlacement(mouseX, mouseY) {
     const editor = state.debugEditor;
     const placement = editor?.placements?.find((item) => item.id === editor.selectedPlacementId);
+    const upperPoint = state.boardInteraction?.worldPointAtAny?.(layout.getLayout(), mouseX, mouseY);
+    const lowerPoint = placement?.kind === 'texture'
+      ? null
+      : state.boardInteraction?.worldPointAtLower?.(layout.getLayout(), mouseX, mouseY);
+    const upperCenter = upperPoint ? modelCenterFromPoint(upperPoint) : null;
     const point = placement?.kind === 'texture'
-      ? state.boardInteraction?.worldPointAtAny?.(layout.getLayout(), mouseX, mouseY)
-      : state.boardInteraction?.worldPointAt?.(layout.getLayout(), mouseX, mouseY);
+      ? upperPoint
+      : (upperCenter && !upperCenter.outsideStage ? upperPoint : lowerPoint || upperPoint);
     if (!placement || !point) return false;
 
     placement.position = placement.position || { x: 0, y: 0, z: 0 };
@@ -71,8 +120,14 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
       placement.position.x = center.x;
       placement.position.z = center.z;
     } else {
-      placement.position.x = point.worldX;
-      placement.position.z = point.worldZ;
+      const center = modelCenterFromPoint(point);
+      placement.position.x = center.x;
+      placement.position.z = center.z;
+      if (placement.position.y === 0 && center.outsideStage) {
+        placement.position.y = DEBUG_MODEL_LOWER_FLOOR_Y;
+      } else if (placement.position.y === DEBUG_MODEL_LOWER_FLOOR_Y && !center.outsideStage) {
+        placement.position.y = 0;
+      }
     }
     return true;
   }
@@ -175,6 +230,8 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
       return;
     }
 
+    if (state.game.cutscene) return;
+
     if (state.game.activeModal) return;
 
     if (
@@ -216,6 +273,8 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
       state.suppressClick = true;
       return;
     }
+
+    if (state.game.cutscene) return;
 
     if (!state.game.draggingDie) return;
 
@@ -265,7 +324,10 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
       return { activateConnection: true };
     }
 
-    if (state.visuals && state.visuals.overworldWater !== false) {
+    const mapId = state.game.overworld?.currentMapId || null;
+    const runtimeValues = mapId ? state.game.overworld?.mapStates?.[mapId]?.debugVisualSettings?.values : null;
+    const hasWaterSetting = !!state.visuals || typeof runtimeValues?.overworldWater === 'boolean';
+    if (hasWaterSetting && getOverworldWaterEnabled({ mapId, baseValues: state.visuals, runtimeValues })) {
       return { activateConnection: false };
     }
 
@@ -284,6 +346,11 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
       const button = state.game.buttons[index];
       if (!layout.pointInRect(state.mouse.x, state.mouse.y, button)) continue;
       button.onClick();
+      return;
+    }
+
+    if (state.game.cutscene) {
+      actions.advanceCutscene?.();
       return;
     }
 
@@ -351,11 +418,40 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     }
   }
 
+  function handleKeyDown(event) {
+    if (event.repeat || isTypingTarget(event.target)) return;
+    if (state.game.cutscene) {
+      if (event.code === 'Space' || event.code === 'Enter') {
+        event.preventDefault();
+        actions.advanceCutscene?.();
+      }
+      return;
+    }
+    if (state.game.activeModal || state.game.menuOpen) return;
+
+    const slotIndex = ACTION_SLOT_KEY_CODES.get(event.code);
+    if (slotIndex !== undefined) {
+      const attacks = actions.getAvailableAttacks?.(state.game) || [];
+      const attack = attacks[slotIndex];
+      if (!attack) return;
+
+      event.preventDefault();
+      actions.toggleAttackSelection?.(attack.id);
+      return;
+    }
+
+    if (event.code === 'Space') {
+      event.preventDefault();
+      actions.endHeroPhase?.();
+    }
+  }
+
   canvas.addEventListener('mousemove', handleMouseMove);
   canvas.addEventListener('wheel', handleWheel, { passive: false });
   canvas.addEventListener('mousedown', handleMouseDown);
   canvas.addEventListener('mouseup', handleMouseUp);
   canvas.addEventListener('click', handleClick);
+  window.addEventListener('keydown', handleKeyDown);
 
   return () => {
     canvas.removeEventListener('mousemove', handleMouseMove);
@@ -363,5 +459,6 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     canvas.removeEventListener('mousedown', handleMouseDown);
     canvas.removeEventListener('mouseup', handleMouseUp);
     canvas.removeEventListener('click', handleClick);
+    window.removeEventListener('keydown', handleKeyDown);
   };
 }

@@ -5,6 +5,12 @@ import { dijkstra, levelWallsSet, posKey } from '../../js/game/board-logic.js';
 import { CHARACTERS_KEY, SELECTED_CHARACTER_KEY, totalXpForLevel } from '../../js/game/character-progress.js';
 import { createDungeonLegacyGame, createGame, createMonster, createOverworldGame } from '../../js/game/game-factories.js';
 import { getCurrentWorldEnemies, getCurrentWorldMapState } from '../../js/game/world-state.js';
+import {
+  NURSERY_INTRO_ID,
+  NURSERY_INTRO_LINE_GAP,
+  NURSERY_INTRO_MAP_ID,
+  NURSERY_INTRO_MIN_LINE_DURATION,
+} from '../../js/config/cutscenes/nursery-intro.js';
 
 function createActionHarness(game = createDungeonLegacyGame()) {
   const state = { game };
@@ -89,6 +95,84 @@ describe('game actions', () => {
     expect(state.game.heroTurnEndsAt - state.game.heroTurnStartedAt).toBe(TIMING.HERO_TURN_DURATION);
   });
 
+  it('starts the nursery cutscene in the -1,0 map with scripted model actions', () => {
+    const { state, actions } = createActionHarness(createGame());
+
+    expect(actions.startNurseryCutscene()).toBe(true);
+
+    expect(state.game.mode).toBe(GAME_MODES.OVERWORLD);
+    expect(state.game.overworld.currentMapId).toBe(NURSERY_INTRO_MAP_ID);
+    expect(state.game.player).toMatchObject(getWorldMap(NURSERY_INTRO_MAP_ID).playerStart);
+    expect(state.game.busy).toBe(true);
+    expect(state.game.cutscene).toMatchObject({
+      id: NURSERY_INTRO_ID,
+      mapId: NURSERY_INTRO_MAP_ID,
+      currentLineIndex: 0,
+    });
+    expect(state.game.cutscene.lines[0].duration).toBeGreaterThanOrEqual(NURSERY_INTRO_MIN_LINE_DURATION);
+    expect(state.game.animations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'modelAction',
+          entityId: 'player',
+          animation: 'Death_B',
+          cutsceneId: NURSERY_INTRO_ID,
+        }),
+        expect.objectContaining({
+          type: 'modelAction',
+          entityId: 'player',
+          animation: 'Spawn_Ground',
+          cutsceneId: NURSERY_INTRO_ID,
+        }),
+      ]),
+    );
+  });
+
+  it('finishes the nursery cutscene and releases overworld control', () => {
+    const { state, actions } = createActionHarness(createGame());
+
+    actions.startNurseryCutscene();
+    const endsAt = state.game.cutscene.endsAt;
+
+    expect(actions.tickCutscene(endsAt + 1)).toBe(true);
+
+    expect(state.game.cutscene).toBe(null);
+    expect(state.game.busy).toBe(false);
+    expect(state.game.overworld.currentMapId).toBe(NURSERY_INTRO_MAP_ID);
+    expect(state.game.player).toMatchObject(getWorldMap(NURSERY_INTRO_MAP_ID).playerStart);
+    expect(state.game.animations.some((animation) => animation.cutsceneId === NURSERY_INTRO_ID)).toBe(false);
+  });
+
+  it('skips the nursery cutscene and releases overworld control', () => {
+    const { state, actions } = createActionHarness(createGame());
+
+    actions.startNurseryCutscene();
+
+    expect(actions.skipCutscene()).toBe(true);
+    expect(state.game.cutscene).toBe(null);
+    expect(state.game.busy).toBe(false);
+    expect(state.game.overworld.currentMapId).toBe(NURSERY_INTRO_MAP_ID);
+  });
+
+  it('advances the nursery cutscene manually and reschedules future lines', () => {
+    const { state, actions } = createActionHarness(createGame());
+
+    actions.startNurseryCutscene();
+    const cutscene = state.game.cutscene;
+    const now = cutscene.startedAt + 500;
+    const oldNextStart = cutscene.lines[1].startTime;
+    const spawnAction = state.game.animations.find((animation) => animation.animation === 'Spawn_Ground');
+    const oldSpawnStart = spawnAction.startTime;
+
+    expect(actions.advanceCutscene(now)).toBe(true);
+
+    expect(cutscene.currentLineIndex).toBe(1);
+    expect(cutscene.lines[0].endTime).toBe(now);
+    expect(cutscene.lines[1].startTime).toBe(now + NURSERY_INTRO_LINE_GAP);
+    expect(cutscene.lines[1].startTime).toBeLessThan(oldNextStart);
+    expect(spawnAction.startTime).toBeLessThan(oldSpawnStart);
+  });
+
   it('automatically ends the hero turn after 50 seconds and advances to the next turn', () => {
     const game = createDungeonLegacyGame();
     game.monsters = [];
@@ -108,6 +192,39 @@ describe('game actions', () => {
     expect(state.game.banner?.title).not.toBe('Fim da vez');
     expect(state.game.heroTurnStartedAt).not.toBe(null);
     expect(state.game.heroTurnEndsAt - state.game.heroTurnStartedAt).toBe(TIMING.HERO_TURN_DURATION);
+  });
+
+  it('regenerates one health every two seconds while in the overworld', () => {
+    const { state, actions } = createActionHarness(createOverworldGame());
+
+    state.game.player.health = 58;
+    state.game.player.maxHealth = 60;
+
+    expect(actions.tickOverworldHealthRegen(1000)).toBe(false);
+    expect(state.game.player.health).toBe(58);
+    expect(state.game.nextOverworldHealthRegenAt).toBe(3000);
+
+    expect(actions.tickOverworldHealthRegen(2999)).toBe(false);
+    expect(state.game.player.health).toBe(58);
+
+    expect(actions.tickOverworldHealthRegen(3000)).toBe(true);
+    expect(state.game.player.health).toBe(59);
+    expect(state.game.nextOverworldHealthRegenAt).toBe(5000);
+
+    expect(actions.tickOverworldHealthRegen(5000)).toBe(true);
+    expect(state.game.player.health).toBe(60);
+    expect(state.game.nextOverworldHealthRegenAt).toBe(null);
+  });
+
+  it('does not regenerate health outside the overworld', () => {
+    const { state, actions } = createActionHarness(createDungeonLegacyGame());
+
+    state.game.player.health = 50;
+    state.game.player.maxHealth = 60;
+    state.game.nextOverworldHealthRegenAt = 0;
+
+    expect(actions.tickOverworldHealthRegen(10_000)).toBe(false);
+    expect(state.game.player.health).toBe(50);
   });
 
   it('returns reachable player tiles within remaining speed', () => {
@@ -781,6 +898,88 @@ describe('game actions', () => {
     expect(actions.getPlayerAttackTiles().has('2,3')).toBe(false);
   });
 
+  it('plays the bow release animation when the ranger casts Flecha Hirvante', () => {
+    const monster = createMonster('skeletonMinion', 0, 3, 0);
+    monster.hp = 30;
+    const game = createDungeonLegacyGame();
+    game.phase = PHASES.HERO;
+    game.player = {
+      ...game.player,
+      characterType: 'ranger',
+      level: 3,
+      x: 0,
+      y: 5,
+    };
+    game.monsters = [monster];
+    game.apRemaining = 4;
+    game.selectedAttackId = 'rangerVerdantArrow';
+    const { state, actions } = createActionHarness(game);
+
+    expect(actions.attackTile({ x: 0, y: 3 })).toBe(true);
+
+    const playerAction = state.game.animations.find((animation) => {
+      return animation.type === 'modelAction' && animation.entityId === 'player';
+    });
+
+    expect(playerAction).toEqual(expect.objectContaining({
+      animation: 'Ranged_Bow_Release',
+      duration: 1333,
+      sourceX: 0,
+      sourceY: 5,
+      targetX: 0,
+      targetY: 3,
+    }));
+
+    expect(state.game.animations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'projectile',
+        entityId: 'player',
+        model: 'arrowBow',
+        sourceX: 0,
+        sourceY: 5,
+        targetX: 0,
+        targetY: 3,
+        duration: 280,
+      }),
+    ]));
+
+    vi.advanceTimersByTime(TIMING.HERO_ATTACK_WAIT_TIME);
+    expect(state.game.busy).toBe(true);
+
+    vi.advanceTimersByTime(1333 - TIMING.HERO_ATTACK_WAIT_TIME);
+    expect(state.game.busy).toBe(false);
+  });
+
+  it('keeps the ranger basic attack on Throw without spawning an arrow projectile', () => {
+    const monster = createMonster('skeletonMinion', 1, 5, 0);
+    monster.hp = 30;
+    const game = createDungeonLegacyGame();
+    game.phase = PHASES.HERO;
+    game.player = {
+      ...game.player,
+      characterType: 'ranger',
+      level: 3,
+      x: 0,
+      y: 5,
+      rangeBase: 2,
+    };
+    game.monsters = [monster];
+    game.apRemaining = 5;
+    game.selectedAttackId = game.player.attackSlot.id;
+    const { state, actions } = createActionHarness(game);
+
+    expect(actions.attackTile({ x: 1, y: 5 })).toBe(true);
+
+    expect(state.game.animations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'modelAction',
+        entityId: 'player',
+        animation: 'Throw',
+      }),
+    ]));
+    expect(state.game.animations.some((animation) => animation.type === 'projectile')).toBe(false);
+  });
+
   it('applies level rewards and starts the next level', () => {
     const { state, actions } = createActionHarness();
     state.game.phase = PHASES.LEVELUP;
@@ -867,10 +1066,13 @@ describe('game actions', () => {
     state.game.menuOpen = true;
     state.game.buttons = [{ x: 1, y: 1, w: 1, h: 1, onClick() {} }];
     state.game.draggingDie = { dieIndex: 0 };
+    state.game.cutscene = { id: NURSERY_INTRO_ID };
     state.game.levelIndex = 999;
 
     actions.saveGame();
-    expect(JSON.parse(localStorage.getItem(SAVE_KEY)).menuOpen).toBe(false);
+    const savedGame = JSON.parse(localStorage.getItem(SAVE_KEY));
+    expect(savedGame.menuOpen).toBe(false);
+    expect(savedGame.cutscene).toBe(null);
 
     const loaded = {
       levelIndex: 999,
@@ -882,6 +1084,7 @@ describe('game actions', () => {
       draggingDie: { stale: true },
       menuOpen: true,
       busy: true,
+      cutscene: { id: NURSERY_INTRO_ID },
       animations: [{ stale: true }],
       banner: { stale: true },
     };
@@ -911,6 +1114,7 @@ describe('game actions', () => {
     expect(state.game.menuOpen).toBe(false);
     expect(state.game.activeModal).toBe(null);
     expect(state.game.levelUpNotice).toBe(null);
+    expect(state.game.cutscene).toBe(null);
     expect(state.game.busy).toBe(false);
     expect(state.game.animations).toEqual([]);
     expect(state.game.banner.title).toBe('Jogo carregado');

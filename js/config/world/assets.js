@@ -29,6 +29,10 @@ export const WORLD_ASSETS = {
     skeletonMage: './assets/models/skeletons/characters/mage.glb',
     skeletonWarrior: './assets/models/skeletons/characters/warrior.glb',
   },
+  props: {
+    bowWithString: './assets/models/adventurers/props/bow_withString.gltf',
+    arrowBow: './assets/models/adventurers/props/arrow_bow.gltf',
+  },
   animations: {
     rigMedium: {
       general: './assets/models/adventurers/animations/rig-medium/general.glb',

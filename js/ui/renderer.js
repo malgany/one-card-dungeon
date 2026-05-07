@@ -8,6 +8,7 @@ import {
   LEVELS,
   PHASES,
   STAT_META,
+  START_WORLD_MAP_ID,
   WORLD_MAPS,
   WORLD_OBJECT_TYPES,
   XP_RULES,
@@ -28,6 +29,9 @@ import {
   getMapColorValuesForMap,
   normalizeMapColorValues,
 } from '../config/map-colors.js';
+import { getOverworldWaterEnabled } from '../config/visual-settings.js';
+import { activeNurseryIntroLine } from '../config/cutscenes/nursery-intro.js';
+import { readDebugSettings, writeDebugSettings } from '../config/debug-settings.js';
 import { createDrawPrimitives } from './draw-primitives.js';
 import { createThreeBoardView, HERO_DEBUG_ANIMATION_OPTIONS } from './three-board-view.js';
 
@@ -59,6 +63,8 @@ const SPELL_ELEMENT_META = {
   water: { label: 'Água', color: '#3b8fd9' },
 };
 const TEXTURE_OUTSIDE_BOARD_MULTIPLIER = 2;
+const MODEL_OUTSIDE_BOARD_PADDING = 18;
+const DEBUG_MODEL_LOWER_FLOOR_Y = -0.62;
 const DEBUG_PANEL_MARGIN = 12;
 const DEBUG_PANEL_MINIMIZED_Y = 12;
 const DEBUG_PANEL_OPEN_TAB_OVERHANG = 28;
@@ -80,6 +86,42 @@ const DEBUG_COLOR_FIELDS = [
 ];
 const DEBUG_COLOR_DEFAULTS = DEFAULT_MAP_COLOR_VALUES;
 const DEBUG_COLOR_MODEL_STORAGE_KEY = 'one-rpg-debug-color-models';
+const WORLD_GRID_EXITS = {
+  upperLeft: { x: 0, y: 4 },
+  upperRight: { x: 5, y: 0 },
+  lowerRight: { x: 9, y: 5 },
+  lowerLeft: { x: 4, y: 9 },
+};
+const WORLD_GRID_DIRECTIONS = [
+  {
+    id: 'east',
+    dx: 1,
+    dy: 0,
+    sourceExit: WORLD_GRID_EXITS.lowerRight,
+    targetSpawn: WORLD_GRID_EXITS.upperLeft,
+  },
+  {
+    id: 'west',
+    dx: -1,
+    dy: 0,
+    sourceExit: WORLD_GRID_EXITS.upperLeft,
+    targetSpawn: WORLD_GRID_EXITS.lowerRight,
+  },
+  {
+    id: 'north',
+    dx: 0,
+    dy: 1,
+    sourceExit: WORLD_GRID_EXITS.upperRight,
+    targetSpawn: WORLD_GRID_EXITS.lowerLeft,
+  },
+  {
+    id: 'south',
+    dx: 0,
+    dy: -1,
+    sourceExit: WORLD_GRID_EXITS.lowerLeft,
+    targetSpawn: WORLD_GRID_EXITS.upperRight,
+  },
+];
 const DEBUG_HERO_NUMBER_FIELDS = [
   { key: 'level', label: 'Nivel', min: 1 },
   { key: 'health', label: 'Vida atual', min: 0 },
@@ -115,7 +157,8 @@ export function getAnimationEndTime(anim) {
     anim.type === 'floatingText' ||
     anim.type === 'bumpAttack' ||
     anim.type === 'damageShake' ||
-    anim.type === 'modelAction'
+    anim.type === 'modelAction' ||
+    anim.type === 'projectile'
   ) {
     return startTime + Math.max(0, anim.duration || 0);
   }
@@ -125,6 +168,99 @@ export function getAnimationEndTime(anim) {
 
 function isAnimationActive(anim, now) {
   return now < getAnimationEndTime(anim);
+}
+
+export function shouldDrawWorldMinimap(game) {
+  return game?.mode === GAME_MODES.OVERWORLD;
+}
+
+export function getWorldMinimapLayout(currentLayout, bottomInset = 0) {
+  const radius = currentLayout.compact ? 78 : 94;
+  return {
+    radius,
+    cx: currentLayout.sw - radius - 18,
+    cy: currentLayout.sh - radius - 18 - bottomInset,
+    stepX: currentLayout.compact ? 26 : 32,
+    stepY: currentLayout.compact ? 18 : 22,
+    halfW: currentLayout.compact ? 20 : 24,
+    halfH: currentLayout.compact ? 13 : 16,
+  };
+}
+
+function worldGridKey(x, y) {
+  return `${x},${y}`;
+}
+
+function worldMapNeighborIds(mapId, maps = WORLD_MAPS) {
+  if (!mapId || !maps?.[mapId]) return [];
+
+  const neighbors = new Set();
+  Object.values(maps).forEach((map) => {
+    if (!map?.id) return;
+    for (const connection of map.connections || []) {
+      if (!maps[connection.targetMapId]) continue;
+      if (map.id === mapId) neighbors.add(connection.targetMapId);
+      if (connection.targetMapId === mapId) neighbors.add(map.id);
+    }
+  });
+  return [...neighbors];
+}
+
+function reachableWorldMapIds(startMapId, maps = WORLD_MAPS, removedMapId = null) {
+  if (!startMapId || startMapId === removedMapId || !maps?.[startMapId]) return new Set();
+
+  const reached = new Set();
+  const stack = [startMapId];
+  while (stack.length > 0) {
+    const mapId = stack.pop();
+    if (!mapId || mapId === removedMapId || reached.has(mapId) || !maps[mapId]) continue;
+    reached.add(mapId);
+    worldMapNeighborIds(mapId, maps)
+      .filter((neighborId) => neighborId !== removedMapId)
+      .forEach((neighborId) => stack.push(neighborId));
+  }
+  return reached;
+}
+
+export function getWorldMapDeleteStatus(mapId, maps = WORLD_MAPS, startMapId = START_WORLD_MAP_ID) {
+  const map = maps?.[mapId];
+  if (!map) {
+    return { canDelete: false, reason: 'Mapa indisponivel.' };
+  }
+  if (mapId === startMapId) {
+    return { canDelete: false, reason: 'Nao e possivel apagar o mapa inicial.' };
+  }
+  if (!Number.isFinite(map.gridPosition?.x) || !Number.isFinite(map.gridPosition?.y)) {
+    return { canDelete: false, reason: 'Este mapa nao esta na grade.' };
+  }
+
+  const neighbors = worldMapNeighborIds(mapId, maps);
+  if (neighbors.length !== 1) {
+    return { canDelete: false, reason: 'So e possivel apagar mapas em uma ponta.' };
+  }
+
+  const remainingMapIds = Object.keys(maps).filter((id) => id !== mapId);
+  const remainingGridMapIds = remainingMapIds.filter((id) => {
+    const candidate = maps[id];
+    return Number.isFinite(candidate?.gridPosition?.x) && Number.isFinite(candidate?.gridPosition?.y);
+  });
+  const reached = reachableWorldMapIds(startMapId, maps, mapId);
+  const leavesOrphan = remainingGridMapIds.some((id) => !reached.has(id));
+  if (leavesOrphan) {
+    return { canDelete: false, reason: 'Apagar este mapa deixaria sala sem conexao.' };
+  }
+
+  return { canDelete: true, reason: 'Apagar sala selecionada.', fallbackMapId: neighbors[0] };
+}
+
+export function worldGridScreenPosition(origin, gridPosition, originGridPosition, stepX, stepY) {
+  const localX = gridPosition.x - originGridPosition.x;
+  const localY = gridPosition.y - originGridPosition.y;
+
+  return {
+    x: origin.x + (localX + localY) * stepX,
+    y: origin.y + (localX - localY) * stepY,
+  };
 }
 
 export function createRenderer({ canvas, ctx, cardImages, state, actions, layout, onExitToMainMenu = null }) {
@@ -385,6 +521,37 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     if (!Number.isFinite(debugVisualSettings.lastAppliedAt)) debugVisualSettings.lastAppliedAt = 0;
     if (typeof debugVisualSettings.applyError !== 'string') debugVisualSettings.applyError = '';
     return debugVisualSettings;
+  }
+
+  function ensureDebugSettingsState() {
+    if (!state.debugSettings) state.debugSettings = readDebugSettings();
+    state.debugSettings.initialDialogue = state.debugSettings.initialDialogue === true;
+    return state.debugSettings;
+  }
+
+  function setDebugInitialDialogue(enabled) {
+    state.debugSettings = writeDebugSettings({
+      ...ensureDebugSettingsState(),
+      initialDialogue: enabled === true,
+    });
+  }
+
+  function overworldMapVisualSettingsState(mapId = state.game.overworld?.currentMapId || null) {
+    if (state.game.mode !== GAME_MODES.OVERWORLD || !mapId || !state.game.overworld) return null;
+    const mapState = ensureOverworldMapState(state.game.overworld, mapId);
+    if (!mapState) return null;
+    if (!mapState.debugVisualSettings) mapState.debugVisualSettings = { values: {} };
+    if (!mapState.debugVisualSettings.values) mapState.debugVisualSettings.values = {};
+    return mapState.debugVisualSettings;
+  }
+
+  function currentOverworldWaterEnabled() {
+    const mapId = state.game.mode === GAME_MODES.OVERWORLD ? state.game.overworld?.currentMapId || null : null;
+    return getOverworldWaterEnabled({
+      mapId,
+      baseValues: state.visuals,
+      runtimeValues: overworldMapVisualSettingsState(mapId)?.values,
+    });
   }
 
   function normalizeDebugColorValues(values) {
@@ -1845,7 +2012,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       beginStarPath(x + 8, y + 8, 6, 3);
       ctx.fillStyle = UI_THEME.textMuted;
       ctx.fill();
-      draw.drawText('ACOES', x + 20, y + 13, {
+      draw.drawText('AÇÕES', x + 20, y + 13, {
         font: '800 12px Inter, sans-serif',
         color: UI_THEME.textMuted,
       });
@@ -2993,19 +3160,229 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     ctx.restore();
   }
 
+  function wrappedTextLines(text, maxWidth, font) {
+    ctx.save();
+    ctx.font = font;
+
+    const lines = [];
+    const words = String(text || '').split(/\s+/).filter(Boolean);
+    let current = '';
+
+    function pushLongWord(word) {
+      let chunk = '';
+      for (const char of word) {
+        const candidate = `${chunk}${char}`;
+        if (chunk && ctx.measureText(candidate).width > maxWidth) {
+          lines.push(chunk);
+          chunk = char;
+        } else {
+          chunk = candidate;
+        }
+      }
+      current = chunk;
+    }
+
+    for (const word of words) {
+      if (!current) {
+        if (ctx.measureText(word).width > maxWidth) pushLongWord(word);
+        else current = word;
+        continue;
+      }
+
+      const candidate = `${current} ${word}`;
+      if (ctx.measureText(candidate).width <= maxWidth) {
+        current = candidate;
+      } else {
+        lines.push(current);
+        if (ctx.measureText(word).width > maxWidth) pushLongWord(word);
+        else current = word;
+      }
+    }
+
+    if (current) lines.push(current);
+    ctx.restore();
+    return lines;
+  }
+
+  function cutsceneBubbleWidth(viewport, compact, fraction, maxWidth) {
+    const upper = Math.max(180, Math.min(maxWidth, viewport.w - 24));
+    const lower = Math.min(upper, compact ? 258 : 300);
+    return Math.round(clamp(viewport.w * fraction, lower, upper));
+  }
+
+  function cutsceneBubbleMetrics(line, viewport, compact) {
+    const isGod = line.actor === 'god';
+    const width = cutsceneBubbleWidth(viewport, compact, compact ? 0.86 : isGod ? 0.36 : 0.34, isGod ? 470 : 430);
+    const padX = compact ? 16 : 20;
+    const padTop = compact ? 16 : 18;
+    const padBottom = compact ? 15 : 18;
+    const speakerFont = `900 ${compact ? 12 : 13}px Inter, sans-serif`;
+    const textFont = `700 ${compact ? 14 : 15}px Inter, sans-serif`;
+    const lineHeight = compact ? 18 : 20;
+    const lines = wrappedTextLines(line.text, width - padX * 2, textFont);
+    const height = padTop + 14 + 8 + lines.length * lineHeight + padBottom;
+
+    return {
+      height,
+      lineHeight,
+      lines,
+      padBottom,
+      padTop,
+      padX,
+      speakerFont,
+      textFont,
+      width,
+    };
+  }
+
+  function cutsceneSpeakerLabel(line) {
+    if (line.actor !== 'player') return line.speaker;
+    return state.game.player?.name || line.speaker;
+  }
+
+  function drawCutsceneBubble({ line, x, y, metrics, tailTarget, tailSide = 'bottom', alpha }) {
+    const radius = 18;
+    const baseX = clamp(tailTarget.x, x + 34, x + metrics.width - 34);
+    const tailBaseY = tailSide === 'top' ? y + 1 : y + metrics.height - 1;
+    const tailHalf = 13;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.shadowColor = 'rgba(0,0,0,0.24)';
+    ctx.shadowBlur = 18;
+    ctx.shadowOffsetY = 8;
+
+    draw.roundRect(x, y, metrics.width, metrics.height, radius, '#fffdf4', '#171912');
+    ctx.shadowColor = 'transparent';
+
+    ctx.beginPath();
+    ctx.moveTo(baseX - tailHalf, tailBaseY);
+    ctx.lineTo(baseX + tailHalf, tailBaseY);
+    ctx.lineTo(tailTarget.x, tailTarget.y);
+    ctx.closePath();
+    ctx.fillStyle = '#fffdf4';
+    ctx.fill();
+    ctx.strokeStyle = '#171912';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.lineWidth = 2;
+    draw.roundRect(x, y, metrics.width, metrics.height, radius, null, '#171912');
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.font = metrics.speakerFont;
+    ctx.fillStyle = line.actor === 'god' ? '#9a6a12' : '#315a7a';
+    ctx.fillText(cutsceneSpeakerLabel(line), x + metrics.padX, y + metrics.padTop);
+
+    ctx.font = metrics.textFont;
+    ctx.fillStyle = '#171912';
+    const textY = y + metrics.padTop + 22;
+    metrics.lines.forEach((textLine, index) => {
+      ctx.fillText(textLine, x + metrics.padX, textY + index * metrics.lineHeight);
+    });
+
+    ctx.restore();
+  }
+
+  function drawCutsceneSkipButton(currentLayout) {
+    const viewport = threeBoard.getViewport(currentLayout);
+    const compact = !!currentLayout.compact;
+    const buttonW = compact ? 88 : 104;
+    const buttonH = compact ? 32 : 34;
+    const x = viewport.x + viewport.w - buttonW - (compact ? 12 : 18);
+    const y = viewport.y + (compact ? 12 : 18);
+
+    draw.drawButton(x, y, buttonW, buttonH, 'Pular', () => {
+      actions.skipCutscene?.();
+    }, {
+      fill: 'rgba(23,25,18,0.82)',
+      hoverFill: 'rgba(41,41,31,0.94)',
+      stroke: '#f3d79a',
+      font: `900 ${compact ? 11 : 12}px Inter, sans-serif`,
+      radius: 7,
+    });
+  }
+
+  function drawCutsceneSpeechBubbles(currentLayout, now) {
+    const cutscene = state.game.cutscene;
+    const line = activeNurseryIntroLine(cutscene, now);
+
+    const viewport = threeBoard.getViewport(currentLayout);
+    if (!line) {
+      drawCutsceneSkipButton(currentLayout);
+      return;
+    }
+
+    const compact = !!currentLayout.compact;
+    const metrics = cutsceneBubbleMetrics(line, viewport, compact);
+    const alpha = Math.min(
+      1,
+      Math.max(0, (now - line.startTime) / 180),
+      Math.max(0, (line.endTime - now) / 220),
+    );
+
+    if (line.actor === 'player') {
+      const playerPoint = screenPointForTile(currentLayout, state.game.player.x, state.game.player.y, 1.64);
+      const x = clamp(
+        playerPoint.x - metrics.width * 0.48,
+        viewport.x + 12,
+        viewport.x + viewport.w - metrics.width - 12,
+      );
+      const y = clamp(
+        playerPoint.y - metrics.height - (compact ? 24 : 34),
+        viewport.y + 14,
+        viewport.y + viewport.h - metrics.height - 18,
+      );
+
+      drawCutsceneBubble({
+        line,
+        x,
+        y,
+        metrics,
+        tailTarget: { x: playerPoint.x, y: playerPoint.y + 8 },
+        tailSide: 'bottom',
+        alpha,
+      });
+      drawCutsceneSkipButton(currentLayout);
+      return;
+    }
+
+    const x = clamp(
+      viewport.x + viewport.w - metrics.width - (compact ? 16 : 44),
+      viewport.x + 12,
+      viewport.x + viewport.w - metrics.width - 12,
+    );
+    const y = viewport.y + (compact ? 56 : 72);
+    drawCutsceneBubble({
+      line,
+      x,
+      y,
+      metrics,
+      tailTarget: {
+        x: x + metrics.width * 0.36,
+        y: viewport.y + (compact ? 12 : 18),
+      },
+      tailSide: 'top',
+      alpha,
+    });
+    drawCutsceneSkipButton(currentLayout);
+  }
+
   function drawOverworld(currentLayout, now) {
     const game = state.game;
     const overworld = game.overworld;
     if (!overworld) return;
 
+    const cutsceneActive = !!game.cutscene;
     state.game.animations = state.game.animations.filter((anim) => isAnimationActive(anim, now));
 
     const worldMap = getCurrentWorldMap(overworld);
     const bounds = getCurrentWorldBounds(overworld);
     const objects = getCurrentWorldObjects(overworld);
-    const reachable = actions.getOverworldReachableTiles();
-    const hoverTile = layout.hoveredTile();
-    const hoverEnemy = layout.hoveredOverworldEnemy();
+    const reachable = cutsceneActive ? new Map() : actions.getOverworldReachableTiles();
+    const hoverTile = cutsceneActive ? null : layout.hoveredTile();
+    const hoverEnemy = cutsceneActive ? null : layout.hoveredOverworldEnemy();
     const hoverPath = hoverTile && reachable.has(posKey(hoverTile))
       ? reachable.get(posKey(hoverTile)).path
       : null;
@@ -3041,26 +3418,34 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     clearThreeBoardViewport(currentLayout);
 
-    drawMenu(currentLayout);
-    draw.drawButton(currentLayout.sw - 48, 16, 32, 32, '⚙️', () => {
-      state.game.menuOpen = !state.game.menuOpen;
-      state.game.menuView = 'main';
-    }, {
-      fill: UI_THEME.surface0, hoverFill: UI_THEME.surface1, stroke: UI_THEME.border1, font: '16px Inter, sans-serif',
-    });
-    const overworldBottomUi = drawOverworldBottomUI(currentLayout);
-    const compactBottomInset = currentLayout.compact ? overworldBottomUi.h + 16 : 0;
-    drawOverworldChat(currentLayout, compactBottomInset);
-    drawBanner(currentLayout);
- 
-    drawDebugOverlay(currentLayout);
-    drawDebugMinimap(currentLayout, compactBottomInset);
-    drawActiveModal(currentLayout);
- 
+    if (cutsceneActive) {
+      drawCutsceneSpeechBubbles(currentLayout, now);
+      drawDebugOverlay(currentLayout);
+    } else {
+      drawMenu(currentLayout);
+      draw.drawButton(currentLayout.sw - 48, 16, 32, 32, '⚙️', () => {
+        state.game.menuOpen = !state.game.menuOpen;
+        state.game.menuView = 'main';
+      }, {
+        fill: UI_THEME.surface0,
+        hoverFill: UI_THEME.surface1,
+        stroke: UI_THEME.border1,
+        font: '16px Inter, sans-serif',
+      });
+      const overworldBottomUi = drawOverworldBottomUI(currentLayout);
+      const compactBottomInset = currentLayout.compact ? overworldBottomUi.h + 16 : 0;
+      drawOverworldChat(currentLayout, compactBottomInset);
+      drawBanner(currentLayout);
+
+      drawDebugOverlay(currentLayout);
+      drawWorldMinimap(currentLayout, compactBottomInset);
+      drawActiveModal(currentLayout);
+    }
+
     ctx.restore();
     drawMapTransitionOverlay(currentLayout, now);
 
-    canvas.style.cursor = game.activeModal || game.busy
+    canvas.style.cursor = game.activeModal || game.busy || cutsceneActive
       ? 'default'
       : (
           layout.hoveredButton() ||
@@ -3086,6 +3471,8 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     }
 
     if (state.game.mode === GAME_MODES.OVERWORLD) {
+      actions.tickOverworldHealthRegen(now);
+      actions.tickCutscene?.(now);
       threeBoard.setVisible?.(true);
       drawOverworld(currentLayout, now);
       return;
@@ -3594,6 +3981,29 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     };
   }
 
+  function modelCellLimits(bounds) {
+    return {
+      minX: -MODEL_OUTSIDE_BOARD_PADDING,
+      maxX: bounds.width + MODEL_OUTSIDE_BOARD_PADDING - 1,
+      minY: -MODEL_OUTSIDE_BOARD_PADDING,
+      maxY: bounds.height + MODEL_OUTSIDE_BOARD_PADDING - 1,
+    };
+  }
+
+  function modelPositionLimits(bounds) {
+    const limits = modelCellLimits(bounds);
+    return {
+      minX: tileCenterForCell({ x: limits.minX, y: 0 }).x,
+      maxX: tileCenterForCell({ x: limits.maxX, y: 0 }).x,
+      minZ: tileCenterForCell({ x: 0, y: limits.minY }).z,
+      maxZ: tileCenterForCell({ x: 0, y: limits.maxY }).z,
+    };
+  }
+
+  function isEditorCellOutsideStage(cell, bounds = currentEditorBounds()) {
+    return cell.x < 0 || cell.y < 0 || cell.x >= bounds.width || cell.y >= bounds.height;
+  }
+
   function snapDegrees(value, step = 5) {
     return Math.round(value / step) * step;
   }
@@ -3623,20 +4033,61 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     };
   }
 
+  function modelDropTarget(mouseX, mouseY) {
+    const bounds = currentEditorBounds();
+    const limits = modelCellLimits(bounds);
+    const upperPoint = state.boardInteraction?.worldPointAtAny?.(layout.getLayout(), mouseX, mouseY)
+      || state.boardInteraction?.worldPointAt?.(layout.getLayout(), mouseX, mouseY);
+    const lowerPoint = state.boardInteraction?.worldPointAtLower?.(layout.getLayout(), mouseX, mouseY);
+    const upperCell = upperPoint ? { x: upperPoint.x, y: upperPoint.y } : null;
+    const point = upperCell && !isEditorCellOutsideStage(upperCell, bounds)
+      ? upperPoint
+      : lowerPoint || upperPoint;
+    const fallbackCell = state.game.player
+      ? { x: state.game.player.x, y: state.game.player.y }
+      : { x: Math.floor(bounds.width / 2), y: Math.floor(bounds.height / 2) };
+    const cell = point
+      ? {
+        x: clamp(point.x, limits.minX, limits.maxX),
+        y: clamp(point.y, limits.minY, limits.maxY),
+      }
+      : fallbackCell;
+    const snappedCell = {
+      x: Math.round(clamp(cell.x, limits.minX, limits.maxX)),
+      y: Math.round(clamp(cell.y, limits.minY, limits.maxY)),
+    };
+    const center = tileCenterForCell(snappedCell);
+    return {
+      cell: snappedCell,
+      position: {
+        x: center.x,
+        y: isEditorCellOutsideStage(snappedCell, bounds) ? DEBUG_MODEL_LOWER_FLOOR_Y : 0,
+        z: center.z,
+      },
+    };
+  }
+
   function moveDebugPlacementToMouse(placement, mouseX, mouseY) {
     const point = placement?.kind === 'texture'
       ? state.boardInteraction?.worldPointAtAny?.(layout.getLayout(), mouseX, mouseY)
       : state.boardInteraction?.worldPointAt?.(layout.getLayout(), mouseX, mouseY);
-    if (!point || !placement) return false;
+    if (!placement) return false;
 
     placement.position = placement.position || { x: 0, y: 0, z: 0 };
     if (placement.kind === 'texture') {
+      if (!point) return false;
       const target = textureDropTarget(mouseX, mouseY);
       placement.position.x = target.position.x;
       placement.position.z = target.position.z;
     } else {
-      placement.position.x = point.worldX;
-      placement.position.z = point.worldZ;
+      const target = modelDropTarget(mouseX, mouseY);
+      placement.position.x = target.position.x;
+      placement.position.z = target.position.z;
+      if (placement.position.y === 0 && target.position.y === DEBUG_MODEL_LOWER_FLOOR_Y) {
+        placement.position.y = DEBUG_MODEL_LOWER_FLOOR_Y;
+      } else if (placement.position.y === DEBUG_MODEL_LOWER_FLOOR_Y && target.position.y === 0) {
+        placement.position.y = 0;
+      }
     }
     placement.mapId = currentEditorMapId() || placement.mapId;
     return true;
@@ -3664,14 +4115,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const mapId = currentEditorMapId();
     if (!libraryItem || !mapId) return null;
 
-    const point = state.boardInteraction?.worldPointAt?.(layout.getLayout(), mouseX, mouseY);
-    const fallback = state.game.player
-      ? {
-        worldX: state.game.player.x - currentEditorBounds().width / 2 + 0.5,
-        worldZ: state.game.player.y - currentEditorBounds().height / 2 + 0.5,
-      }
-      : { worldX: 0, worldZ: 0 };
-    const drop = point || fallback;
+    const drop = modelDropTarget(mouseX, mouseY);
     const placement = {
       id: `debug-model-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
       kind: 'model',
@@ -3680,7 +4124,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       modelUrl: libraryItem.url,
       modelName: libraryItem.name,
       folder: libraryItem.folder,
-      position: { x: drop.worldX, y: 0, z: drop.worldZ },
+      position: { ...drop.position },
       rotation: { x: 0, y: 0, z: 0 },
       scale: 0.5,
     };
@@ -3891,7 +4335,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       showOutlines: !!state.visuals?.showOutlines,
       showGrid: !!state.visuals?.showGrid,
       overworldOrthographicCamera: !!state.visuals?.overworldOrthographicCamera,
-      overworldWater: state.visuals?.overworldWater !== false,
+      overworldWater: currentOverworldWaterEnabled(),
     };
   }
 
@@ -3905,10 +4349,11 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
 
     try {
+      const mapId = state.game.mode === GAME_MODES.OVERWORLD ? state.game.overworld?.currentMapId || null : null;
       const response = await fetch('/__debug/visual-settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ values }),
+        body: JSON.stringify({ mapId, values }),
       });
       if (!response.ok) throw new Error(await response.text());
 
@@ -4023,6 +4468,126 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     return map.playerStart || { x: 0, y: 0 };
   }
 
+  function cloneGridCell(cell) {
+    return { x: cell.x, y: cell.y };
+  }
+
+  function worldMapsWithGridPositions() {
+    return Object.values(WORLD_MAPS).filter((map) => {
+      return Number.isFinite(map?.gridPosition?.x) && Number.isFinite(map?.gridPosition?.y);
+    });
+  }
+
+  function worldGridIndex(maps = worldMapsWithGridPositions()) {
+    const index = new Map();
+    maps.forEach((map) => {
+      index.set(worldGridKey(map.gridPosition.x, map.gridPosition.y), map);
+    });
+    return index;
+  }
+
+  function worldGridDirectionByDelta(dx, dy) {
+    return WORLD_GRID_DIRECTIONS.find((direction) => direction.dx === dx && direction.dy === dy) || null;
+  }
+
+  function ensureDebugMaps() {
+    if (!state.debugMaps) state.debugMaps = {};
+    const debugMaps = state.debugMaps;
+    if (debugMaps.dirty === undefined) debugMaps.dirty = false;
+    if (!debugMaps.applyStatus) debugMaps.applyStatus = null;
+    if (!Number.isFinite(debugMaps.lastAppliedAt)) debugMaps.lastAppliedAt = 0;
+    if (!Number.isFinite(debugMaps.lastChangedAt)) debugMaps.lastChangedAt = 0;
+    if (typeof debugMaps.applyError !== 'string') debugMaps.applyError = '';
+    return debugMaps;
+  }
+
+  function markDebugMapsDirty() {
+    const debugMaps = ensureDebugMaps();
+    debugMaps.dirty = true;
+    debugMaps.applyStatus = null;
+    debugMaps.applyError = '';
+    debugMaps.lastChangedAt = performance.now();
+  }
+
+  function mapHasConnectionAt(map, cell) {
+    return (map?.connections || []).some((connection) => {
+      return connection.x === cell.x && connection.y === cell.y;
+    });
+  }
+
+  function uniqueDebugMapId(x, y) {
+    const base = `debug-map-${x}-${y}`;
+    if (!WORLD_MAPS[base]) return base;
+
+    let suffix = 2;
+    while (WORLD_MAPS[`${base}-${suffix}`]) suffix += 1;
+    return `${base}-${suffix}`;
+  }
+
+  function ensureMapConnection(map, connection) {
+    if (!map.connections) map.connections = [];
+    const exists = map.connections.some((candidate) => {
+      return (
+        candidate.targetMapId === connection.targetMapId ||
+        (candidate.x === connection.x && candidate.y === connection.y)
+      );
+    });
+    if (!exists) map.connections.push(connection);
+  }
+
+  function createDebugWorldMapFrom(sourceMap, direction) {
+    if (!sourceMap?.gridPosition) return null;
+
+    const targetPosition = {
+      x: sourceMap.gridPosition.x + direction.dx,
+      y: sourceMap.gridPosition.y + direction.dy,
+    };
+    if (worldGridIndex().has(worldGridKey(targetPosition.x, targetPosition.y))) return null;
+    if (mapHasConnectionAt(sourceMap, direction.sourceExit)) return null;
+
+    const reverseDirection = worldGridDirectionByDelta(-direction.dx, -direction.dy);
+    if (!reverseDirection) return null;
+
+    const id = uniqueDebugMapId(targetPosition.x, targetPosition.y);
+    const name = `Campo novo ${targetPosition.x},${targetPosition.y}`;
+    const map = {
+      id,
+      name,
+      size: { width: sourceMap.size?.width || 10, height: sourceMap.size?.height || 10 },
+      gridPosition: targetPosition,
+      playerStart: cloneGridCell(direction.targetSpawn),
+      biome: sourceMap.biome || 'meadow',
+      defaultTerrain: 'debugGrass',
+      terrainPatches: [],
+      objects: [],
+      encounters: [],
+      randomEncounters: true,
+      debugGenerated: true,
+      sourceMapId: sourceMap.id,
+      createdFromDirection: direction.id,
+      connections: [
+        {
+          id: `${id}-back-${sourceMap.id}`,
+          ...cloneGridCell(reverseDirection.sourceExit),
+          targetMapId: sourceMap.id,
+          spawn: cloneGridCell(reverseDirection.targetSpawn),
+        },
+      ],
+    };
+
+    WORLD_MAPS[id] = map;
+    ensureMapConnection(sourceMap, {
+      id: `${sourceMap.id}-${id}`,
+      ...cloneGridCell(direction.sourceExit),
+      targetMapId: id,
+      spawn: cloneGridCell(direction.targetSpawn),
+    });
+    ensureOverworldMapState(state.game.overworld, id);
+    markDebugMapsDirty();
+    actions.setEvent?.(`Debug: sala criada em ${targetPosition.x},${targetPosition.y}.`);
+    return map;
+  }
+
   function debugJumpToMap(mapId) {
     const map = WORLD_MAPS[mapId];
     if (!map) return;
@@ -4053,6 +4618,111 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     game.animations = [];
     game.busy = false;
     actions.setEvent?.(`Debug: entrou em ${map.name} (${spawn.x}, ${spawn.y}).`);
+  }
+
+  function deleteDebugWorldMap(mapId) {
+    const status = getWorldMapDeleteStatus(mapId, WORLD_MAPS, START_WORLD_MAP_ID);
+    if (!status.canDelete) {
+      actions.setEvent?.(`Debug: ${status.reason}`);
+      return false;
+    }
+
+    const deletedMap = WORLD_MAPS[mapId];
+    const fallbackMapId = status.fallbackMapId && WORLD_MAPS[status.fallbackMapId]
+      ? status.fallbackMapId
+      : START_WORLD_MAP_ID;
+
+    Object.values(WORLD_MAPS).forEach((map) => {
+      if (Array.isArray(map.connections)) {
+        map.connections = map.connections.filter((connection) => connection.targetMapId !== mapId);
+      }
+    });
+    delete WORLD_MAPS[mapId];
+
+    if (state.game.overworld?.mapStates) delete state.game.overworld.mapStates[mapId];
+
+    if (state.debugEditor) {
+      state.debugEditor.placements = (state.debugEditor.placements || []).filter((placement) => placement.mapId !== mapId);
+      if (!state.debugEditor.placements.some((placement) => placement.id === state.debugEditor.selectedPlacementId)) {
+        state.debugEditor.selectedPlacementId = null;
+      }
+    }
+
+    if (state.debugCubes) {
+      state.debugCubes.placements = (state.debugCubes.placements || []).filter((cube) => cube.mapId !== mapId);
+      if (!state.debugCubes.placements.some((cube) => cube.id === state.debugCubes.selectedCubeId)) {
+        state.debugCubes.selectedCubeId = null;
+      }
+    }
+
+    if (state.debugColors?.activeMapId === mapId) {
+      state.debugColors.activeMapId = null;
+      state.debugColors.applyStatus = null;
+    }
+
+    if (state.game.overworld?.currentMapId === mapId) {
+      debugJumpToMap(fallbackMapId);
+    }
+    markDebugMapsDirty();
+    actions.setEvent?.(`Debug: sala ${deletedMap?.name || mapId} apagada.`);
+    return true;
+  }
+
+  function worldMapPersistencePayload() {
+    return {
+      maps: worldMapsWithGridPositions().map((map) => ({
+        id: map.id,
+        name: map.name,
+        size: map.size,
+        gridPosition: map.gridPosition,
+        playerStart: map.playerStart,
+        biome: map.biome,
+        defaultTerrain: map.defaultTerrain,
+        terrainPatches: [],
+        objects: [],
+        encounters: [],
+        randomEncounters: map.randomEncounters !== false,
+        debugGenerated: map.debugGenerated === true,
+        sourceMapId: map.sourceMapId || null,
+        createdFromDirection: map.createdFromDirection || null,
+        connections: (map.connections || []).map((connection) => ({
+          id: connection.id,
+          x: connection.x,
+          y: connection.y,
+          targetMapId: connection.targetMapId,
+          spawn: connection.spawn,
+        })),
+      })),
+    };
+  }
+
+  async function applyDebugWorldMapChanges() {
+    const debugMaps = ensureDebugMaps();
+    if (!debugMaps.dirty) {
+      debugMaps.applyStatus = 'idle';
+      debugMaps.lastAppliedAt = performance.now();
+      return;
+    }
+
+    debugMaps.applyStatus = 'pending';
+    debugMaps.applyError = '';
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+
+    try {
+      const response = await fetch('/__debug/world-maps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(worldMapPersistencePayload()),
+      });
+      if (!response.ok) throw new Error(await response.text());
+
+      debugMaps.dirty = false;
+      debugMaps.applyStatus = 'applied';
+      debugMaps.lastAppliedAt = performance.now();
+    } catch (error) {
+      debugMaps.applyStatus = 'failed';
+      debugMaps.applyError = error instanceof Error ? error.message : 'Falha ao aplicar mapas.';
+    }
   }
 
   function drawDebugTab({ x, y, w, label, active, onClick }) {
@@ -4089,8 +4759,8 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     }
   }
 
-  function drawDebugMinimap(currentLayout, bottomInset = 0) {
-    if (!DEBUG_CONFIG.SHOW_STATS || state.game.mode !== GAME_MODES.OVERWORLD) return;
+  function drawWorldMinimap(currentLayout, bottomInset = 0) {
+    if (!shouldDrawWorldMinimap(state.game)) return;
 
     const activeMap = getCurrentWorldMap(state.game.overworld);
     if (!activeMap?.gridPosition) return;
@@ -4098,13 +4768,15 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const maps = Object.values(WORLD_MAPS).filter((map) => map.gridPosition);
     if (maps.length === 0) return;
 
-    const radius = currentLayout.compact ? 78 : 94;
-    const cx = currentLayout.sw - radius - 18;
-    const cy = currentLayout.sh - radius - 18 - bottomInset;
-    const stepX = currentLayout.compact ? 26 : 32;
-    const stepY = currentLayout.compact ? 18 : 22;
-    const halfW = currentLayout.compact ? 20 : 24;
-    const halfH = currentLayout.compact ? 13 : 16;
+    const {
+      radius,
+      cx,
+      cy,
+      stepX,
+      stepY,
+      halfW,
+      halfH,
+    } = getWorldMinimapLayout(currentLayout, bottomInset);
 
     ctx.save();
     ctx.beginPath();
@@ -4126,19 +4798,23 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       .slice()
       .sort((a, b) => (a.gridPosition.x - a.gridPosition.y) - (b.gridPosition.x - b.gridPosition.y))
       .forEach((map) => {
-        const { x, y } = map.gridPosition;
-        const tileCx = cx + (x + y) * stepX;
-        const tileCy = cy + (x - y) * stepY;
+        const position = worldGridScreenPosition(
+          { x: cx, y: cy },
+          map.gridPosition,
+          activeMap.gridPosition,
+          stepX,
+          stepY,
+        );
         const active = map.id === activeMap.id;
         drawMinimapDiamond(
-          tileCx,
-          tileCy,
+          position.x,
+          position.y,
           halfW,
           halfH,
           active ? '#f2c94c' : 'rgba(32,34,25,0.92)',
           active ? '#fff0a6' : 'rgba(111,99,66,0.95)',
         );
-        draw.drawText(`${x},${y}`, tileCx, tileCy + 4, {
+        draw.drawText(`${map.gridPosition.x},${map.gridPosition.y}`, position.x, position.y + 4, {
           align: 'center',
           font: currentLayout.compact ? '900 9px Inter, sans-serif' : '900 10px Inter, sans-serif',
           color: active ? '#221707' : UI_THEME.textMuted,
@@ -4146,6 +4822,331 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       });
 
     ctx.restore();
+  }
+
+  function pointInDiamond(px, py, cx, cy, halfW, halfH) {
+    return Math.abs(px - cx) / halfW + Math.abs(py - cy) / halfH <= 1;
+  }
+
+  function drawDebugMapCreateArrow(rect, angle, active) {
+    const cx = rect.x + rect.w / 2;
+    const cy = rect.y + rect.h / 2;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.shadowColor = 'rgba(0,0,0,0.48)';
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 10, 0, Math.PI * 2);
+    ctx.fillStyle = active ? 'rgba(37,11,8,0.92)' : 'rgba(7,8,7,0.78)';
+    ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.strokeStyle = active ? '#ffd0c8' : 'rgba(185,71,53,0.78)';
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(8, 0);
+    ctx.lineTo(-6, -7);
+    ctx.lineTo(-3, 0);
+    ctx.lineTo(-6, 7);
+    ctx.closePath();
+    ctx.fillStyle = active ? '#e0523f' : 'rgba(185,71,53,0.92)';
+    ctx.fill();
+    ctx.strokeStyle = active ? '#ffd0c8' : 'rgba(242,234,215,0.28)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawDebugMapDeleteButton(rect, enabled, active) {
+    const fill = enabled
+      ? active ? 'rgba(123,45,35,0.96)' : 'rgba(123,45,35,0.82)'
+      : 'rgba(41,33,30,0.72)';
+    const stroke = enabled
+      ? active ? '#ffd0c8' : '#e0523f'
+      : 'rgba(185,71,53,0.42)';
+    const icon = enabled ? '#f2ead7' : 'rgba(242,234,215,0.36)';
+
+    draw.roundRect(rect.x, rect.y, rect.w, rect.h, 5, fill, stroke);
+
+    ctx.save();
+    ctx.strokeStyle = icon;
+    ctx.lineWidth = 1.8;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const cx = rect.x + rect.w / 2;
+    const top = rect.y + 8;
+    ctx.beginPath();
+    ctx.moveTo(cx - 6, top + 3);
+    ctx.lineTo(cx + 6, top + 3);
+    ctx.moveTo(cx - 3, top);
+    ctx.lineTo(cx + 3, top);
+    ctx.moveTo(cx - 5, top + 6);
+    ctx.lineTo(cx - 4, top + 14);
+    ctx.lineTo(cx + 4, top + 14);
+    ctx.lineTo(cx + 5, top + 6);
+    ctx.moveTo(cx - 2, top + 8);
+    ctx.lineTo(cx - 2, top + 12);
+    ctx.moveTo(cx + 2, top + 8);
+    ctx.lineTo(cx + 2, top + 12);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawDebugMapsTab(panelX, panelY, panelW, panelH, cy) {
+    syncDebugHeroOverlay(null);
+
+    const maps = worldMapsWithGridPositions();
+    const mapIndex = worldGridIndex(maps);
+    const currentMapId = state.game.overworld?.currentMapId || null;
+    const mapAreaX = panelX + 16;
+    const mapAreaY = cy + 6;
+    const mapAreaW = panelW - 32;
+    const footerH = 58;
+    const mapAreaH = Math.max(180, panelY + panelH - mapAreaY - footerH);
+    const candidates = [];
+
+    maps.forEach((map) => {
+      WORLD_GRID_DIRECTIONS.forEach((direction) => {
+        const target = {
+          x: map.gridPosition.x + direction.dx,
+          y: map.gridPosition.y + direction.dy,
+        };
+        if (mapIndex.has(worldGridKey(target.x, target.y))) return;
+        if (mapHasConnectionAt(map, direction.sourceExit)) return;
+        candidates.push({ map, direction, target });
+      });
+    });
+
+    const gridPoints = [
+      ...maps.map((map) => map.gridPosition),
+      ...candidates.map((candidate) => candidate.target),
+    ];
+    if (gridPoints.length === 0) {
+      draw.drawText('Nenhum mapa com posicao de grade.', mapAreaX, mapAreaY + 24, {
+        align: 'left',
+        font: 'bold 11px Inter, sans-serif',
+        color: UI_THEME.textMuted,
+      });
+      return;
+    }
+
+    const iso = gridPoints.map((position) => ({
+      x: position.x + position.y,
+      y: position.x - position.y,
+    }));
+    const minIsoX = Math.min(...iso.map((position) => position.x));
+    const maxIsoX = Math.max(...iso.map((position) => position.x));
+    const minIsoY = Math.min(...iso.map((position) => position.y));
+    const maxIsoY = Math.max(...iso.map((position) => position.y));
+    const isoSpanX = Math.max(1, maxIsoX - minIsoX);
+    const isoSpanY = Math.max(1, maxIsoY - minIsoY);
+    const stepX = clamp((mapAreaW - 54) / (isoSpanX + 1), 27, 42);
+    const stepY = clamp((mapAreaH - 52) / (isoSpanY + 1), 18, 28);
+    const halfW = Math.max(18, stepX * 0.72);
+    const halfH = Math.max(12, stepY * 0.74);
+    const centerX = mapAreaX + mapAreaW / 2;
+    const centerY = mapAreaY + mapAreaH / 2 + 4;
+    const originIsoX = (minIsoX + maxIsoX) / 2;
+    const originIsoY = (minIsoY + maxIsoY) / 2;
+
+    function screenFor(position) {
+      const isoX = position.x + position.y;
+      const isoY = position.x - position.y;
+      return {
+        x: centerX + (isoX - originIsoX) * stepX,
+        y: centerY + (isoY - originIsoY) * stepY,
+      };
+    }
+
+    const mapPositions = new Map();
+    maps.forEach((map) => {
+      mapPositions.set(map.id, screenFor(map.gridPosition));
+    });
+
+    const arrowSize = 22;
+    const arrows = candidates.map((candidate) => {
+      const from = mapPositions.get(candidate.map.id);
+      const to = screenFor(candidate.target);
+      return {
+        ...candidate,
+        from,
+        to,
+        angle: Math.atan2(to.y - from.y, to.x - from.x),
+        rect: {
+          x: (from.x + to.x) / 2 - arrowSize / 2,
+          y: (from.y + to.y) / 2 - arrowSize / 2,
+          w: arrowSize,
+          h: arrowSize,
+        },
+      };
+    });
+
+    let hoveredMap = null;
+    for (let index = maps.length - 1; index >= 0; index -= 1) {
+      const map = maps[index];
+      const position = mapPositions.get(map.id);
+      if (pointInDiamond(state.mouse.x, state.mouse.y, position.x, position.y, halfW, halfH + 10)) {
+        hoveredMap = map;
+        break;
+      }
+    }
+    if (!hoveredMap) {
+      const arrow = arrows.find((candidate) => {
+        return layout.pointInRect(state.mouse.x, state.mouse.y, candidate.rect);
+      });
+      if (arrow) hoveredMap = arrow.map;
+    }
+
+    draw.roundRect(mapAreaX, mapAreaY, mapAreaW, mapAreaH, 6, 'rgba(17,19,13,0.62)', UI_THEME.border0);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(mapAreaX + 1, mapAreaY + 1, mapAreaW - 2, mapAreaH - 2);
+    ctx.clip();
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(111,99,66,0.52)';
+    ctx.lineWidth = 2;
+    maps.forEach((map) => {
+      const from = mapPositions.get(map.id);
+      (map.connections || []).forEach((connection) => {
+        const target = WORLD_MAPS[connection.targetMapId];
+        const to = target ? mapPositions.get(target.id) : null;
+        if (!to || map.id > target.id) return;
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+      });
+    });
+    ctx.restore();
+
+    maps
+      .slice()
+      .sort((a, b) => (a.gridPosition.x - a.gridPosition.y) - (b.gridPosition.x - b.gridPosition.y))
+      .forEach((map) => {
+        const position = mapPositions.get(map.id);
+        const active = map.id === currentMapId;
+        const hovered = hoveredMap?.id === map.id;
+        drawMinimapDiamond(
+          position.x,
+          position.y,
+          halfW,
+          halfH,
+          active ? '#f2c94c' : hovered ? 'rgba(63,111,69,0.88)' : 'rgba(32,34,25,0.96)',
+          active ? '#fff0a6' : hovered ? '#b7d8a6' : 'rgba(111,99,66,0.95)',
+        );
+        draw.drawText(`${map.gridPosition.x},${map.gridPosition.y}`, position.x, position.y + 4, {
+          align: 'center',
+          font: '900 10px Inter, sans-serif',
+          color: active ? '#221707' : UI_THEME.text,
+        });
+        state.game.buttons.push({
+          x: position.x - halfW - 8,
+          y: position.y - halfH - 8,
+          w: halfW * 2 + 16,
+          h: halfH * 2 + 28,
+          onClick: () => debugJumpToMap(map.id),
+        });
+      });
+
+    if (hoveredMap) {
+      arrows
+        .filter((arrow) => arrow.map.id === hoveredMap.id)
+        .forEach((arrow) => {
+          const active = layout.pointInRect(state.mouse.x, state.mouse.y, arrow.rect);
+          drawMinimapDiamond(
+            arrow.to.x,
+            arrow.to.y,
+            halfW * 0.78,
+            halfH * 0.78,
+            active ? 'rgba(185,71,53,0.24)' : 'rgba(185,71,53,0.11)',
+            active ? '#e0523f' : 'rgba(185,71,53,0.5)',
+          );
+          drawDebugMapCreateArrow(arrow.rect, arrow.angle, active);
+          state.game.buttons.push({
+            ...arrow.rect,
+            onClick: () => {
+              const created = createDebugWorldMapFrom(arrow.map, arrow.direction);
+              if (created) debugJumpToMap(created.id);
+            },
+          });
+        });
+    }
+
+    ctx.restore();
+
+    const deleteStatus = getWorldMapDeleteStatus(currentMapId, WORLD_MAPS, START_WORLD_MAP_ID);
+    const deleteButton = {
+      x: mapAreaX + mapAreaW - 38,
+      y: mapAreaY + 8,
+      w: 28,
+      h: 28,
+    };
+    const deleteHovered = layout.pointInRect(state.mouse.x, state.mouse.y, deleteButton);
+    drawDebugMapDeleteButton(deleteButton, deleteStatus.canDelete, deleteHovered);
+    state.game.buttons.push({
+      ...deleteButton,
+      onClick: () => deleteDebugWorldMap(currentMapId),
+    });
+
+    const debugMaps = ensureDebugMaps();
+    const applyButtonW = 78;
+    const applyButtonH = 24;
+    const applyButtonX = mapAreaX + mapAreaW - applyButtonW;
+    const applyButtonY = panelY + panelH - 58;
+    if (debugMaps.dirty) {
+      draw.drawButton(applyButtonX, applyButtonY, applyButtonW, applyButtonH, 'Aplicar', applyDebugWorldMapChanges, {
+        fill: UI_THEME.accentDark,
+        hoverFill: UI_THEME.accent,
+        stroke: '#e6c06f',
+        disabled: debugMaps.applyStatus === 'pending',
+        font: '900 10px Inter, sans-serif',
+      });
+    }
+
+    const focusedMap = hoveredMap || maps.find((map) => map.id === currentMapId) || null;
+    const focusedLabel = focusedMap
+      ? `${focusedMap.name} | ${focusedMap.gridPosition.x},${focusedMap.gridPosition.y}`
+      : 'Passe o mouse sobre uma sala.';
+    draw.drawText(focusedLabel, mapAreaX, panelY + panelH - 42, {
+      align: 'left',
+      font: '900 10px Inter, sans-serif',
+      color: focusedMap?.id === currentMapId ? UI_THEME.accent : UI_THEME.textMuted,
+      maxWidth: debugMaps.dirty ? mapAreaW - applyButtonW - 8 : mapAreaW,
+    });
+    draw.drawText('Clique em uma sala para entrar.', mapAreaX, panelY + panelH - 26, {
+      align: 'left',
+      font: '900 10px Inter, sans-serif',
+      color: UI_THEME.textMuted,
+      maxWidth: mapAreaW,
+    });
+    const recentApplyStatus = performance.now() - (debugMaps.lastAppliedAt || 0) < 2200;
+    const statusLine = debugMaps.applyStatus === 'pending'
+      ? 'Aplicando mudanças...'
+      : debugMaps.applyStatus === 'failed'
+        ? debugMaps.applyError || 'Falha ao aplicar mapas.'
+        : debugMaps.applyStatus === 'idle' && recentApplyStatus
+          ? 'Nada para aplicar.'
+          : debugMaps.applyStatus === 'applied' && recentApplyStatus
+            ? 'Mudanças aplicadas.'
+            : null;
+    draw.drawText(deleteHovered ? deleteStatus.reason : statusLine || 'Passe o mouse numa sala: setas vermelhas criam saidas.', mapAreaX, panelY + panelH - 10, {
+      align: 'left',
+      font: '900 9px Inter, sans-serif',
+      color: deleteHovered
+        ? (deleteStatus.canDelete ? UI_THEME.danger : UI_THEME.textDim)
+        : debugMaps.applyStatus === 'failed'
+          ? UI_THEME.danger
+          : statusLine
+            ? UI_THEME.success
+            : UI_THEME.textDim,
+      maxWidth: mapAreaW,
+    });
   }
 
   function drawDebugOverlay(currentLayout) {
@@ -4305,49 +5306,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     cy += 38;
 
     if (activeTab === 'maps') {
-      syncDebugHeroOverlay(null);
-      const mapEntries = Object.values(WORLD_MAPS);
-      const columns = 2;
-      const tileGap = 8;
-      const tileW = (panelW - 32 - tileGap) / columns;
-      const tileH = 58;
-
-      mapEntries.forEach((map, index) => {
-        const col = index % columns;
-        const row = Math.floor(index / columns);
-        const tileX = panelX + 16 + col * (tileW + tileGap);
-        const tileY = cy + row * (tileH + tileGap);
-        const activeMap = state.game.overworld?.currentMapId === map.id;
-
-        draw.roundRect(
-          tileX,
-          tileY,
-          tileW,
-          tileH,
-          6,
-          activeMap ? 'rgba(63,111,69,0.82)' : UI_THEME.surface1,
-          activeMap ? UI_THEME.success : UI_THEME.border1,
-        );
-        draw.drawText(map.name, tileX + 8, tileY + 20, {
-          align: 'left',
-          font: '900 11px Inter, sans-serif',
-          color: UI_THEME.text,
-          maxWidth: tileW - 16,
-        });
-        draw.drawText(`${map.size.width}x${map.size.height}`, tileX + 8, tileY + 42, {
-          align: 'left',
-          font: 'bold 10px Inter, sans-serif',
-          color: activeMap ? '#d8f3dc' : UI_THEME.textDim,
-        });
-
-        state.game.buttons.push({
-          x: tileX,
-          y: tileY,
-          w: tileW,
-          h: tileH,
-          onClick: () => debugJumpToMap(map.id),
-        });
-      });
+      drawDebugMapsTab(panelX, panelY, panelW, panelH, cy);
       return;
     }
 
@@ -4607,6 +5566,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       }
 
       const bounds = currentEditorBounds();
+      const modelLimits = modelPositionLimits(bounds);
       const position = placement.position || { x: 0, y: 0, z: 0 };
       const rotation = placement.rotation || { x: 0, y: 0, z: 0 };
       placement.position = position;
@@ -4674,15 +5634,15 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
           {
             label: 'X',
             value: position.x,
-            min: -bounds.width / 2,
-            max: bounds.width / 2,
+            min: modelLimits.minX,
+            max: modelLimits.maxX,
             formatValue: (value) => value.toFixed(2),
             onChange: (value) => { position.x = value; },
           },
           {
             label: 'Y altura',
             value: position.y,
-            min: 0,
+            min: DEBUG_MODEL_LOWER_FLOOR_Y,
             max: 6,
             formatValue: (value) => value.toFixed(2),
             onChange: (value) => { position.y = value; },
@@ -4690,8 +5650,8 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
           {
             label: 'Z',
             value: position.z,
-            min: -bounds.height / 2,
-            max: bounds.height / 2,
+            min: modelLimits.minZ,
+            max: modelLimits.maxZ,
             formatValue: (value) => value.toFixed(2),
             onChange: (value) => { position.z = value; },
           },
@@ -5218,6 +6178,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     syncDebugHeroOverlay(null);
 
     const debugVisualSettings = ensureDebugVisualSettingsState();
+    const debugSettings = ensureDebugSettingsState();
     const controls = [
       { label: 'Exposicao', key: 'exposure', min: 0.1, max: 3.0, digits: 2 },
       { label: 'Luz ambiente', key: 'ambientIntensity', min: 0, max: 3.0, digits: 2 },
@@ -5297,9 +6258,26 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       y: cy,
       w: panelW - 32,
       label: 'Água',
-      checked: state.visuals.overworldWater !== false,
+      checked: currentOverworldWaterEnabled(),
       onChange: () => {
+        const mapVisualSettings = overworldMapVisualSettingsState();
+        if (mapVisualSettings) {
+          mapVisualSettings.values.overworldWater = !currentOverworldWaterEnabled();
+          return;
+        }
         state.visuals.overworldWater = !(state.visuals.overworldWater !== false);
+      },
+    });
+
+    cy += 34;
+    drawDebugToggle({
+      x: panelX + 16,
+      y: cy,
+      w: panelW - 32,
+      label: 'Diálogo inicial',
+      checked: debugSettings.initialDialogue,
+      onChange: () => {
+        setDebugInitialDialogue(!debugSettings.initialDialogue);
       },
     });
 
