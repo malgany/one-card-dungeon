@@ -1,23 +1,24 @@
-import { WORLD_ASSETS } from './assets.js';
-
 export const TERRAIN_TYPES = {
   grass: {
     id: 'grass',
     name: 'Grama',
-    texture: WORLD_ASSETS.terrain.grass,
+    texture: null,
     color: '#3f7d46',
+    procedural: 'mapColors',
   },
   stone: {
     id: 'stone',
     name: 'Pedra',
-    texture: WORLD_ASSETS.terrain.stone,
-    color: '#6b7280',
+    texture: null,
+    color: '#4b3a4e',
+    procedural: 'mapColors',
   },
   chao3: {
     id: 'chao3',
     name: 'Chao 3',
-    texture: WORLD_ASSETS.terrain.chao3,
-    color: '#6f7f62',
+    texture: null,
+    color: '#733c50',
+    procedural: 'mapColors',
   },
   debugBlue: {
     id: 'debugBlue',
@@ -29,8 +30,16 @@ export const TERRAIN_TYPES = {
   debugGrass: {
     id: 'debugGrass',
     name: 'Grama teste',
-    texture: WORLD_ASSETS.terrain.debugGrassTile,
+    texture: null,
     color: '#7dbf55',
+    procedural: 'mapColors',
+  },
+  corrupted: {
+    id: 'corrupted',
+    name: 'Solo corrompido',
+    texture: null,
+    color: '#451329',
+    procedural: 'mapColors',
   },
   dirt: {
     id: 'dirt',

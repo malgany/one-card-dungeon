@@ -31,9 +31,8 @@ const MENU_ASSETS = {
   logo: '/assets/ui/menu/logo.png',
 };
 
-const INTRO_ASSET_VERSION = '2026-05-05-16x9-sound-v3';
+const INTRO_ASSET_VERSION = '2026-05-06-webp-q90-v1';
 const INTRO_SCENE_BASE = '/assets/cenas-inicio/';
-const INTRO_SCENE_NAME = 'ChatGPT Image 5 de mai. de 2026, 15_00_38';
 const INTRO_SCENE_DURATION = 4500;
 const INTRO_END_BLACKOUT_DURATION = 2000;
 const INTRO_TRANSITION_DURATION = 560;
@@ -69,7 +68,7 @@ const INTRO_CAMERA_PATHS = [
   { startX: 16, startY: -6, endX: -12, endY: 6, focusX: '52%', focusY: '51%' },
 ];
 const INTRO_SCENES = INTRO_CAMERA_PATHS.map((path, index) => {
-  const filename = `${INTRO_SCENE_NAME} (${index + 1}).png`;
+  const filename = `scene-${String(index + 1).padStart(2, '0')}.webp`;
   return {
     ...path,
     image: versionedAssetUrl(`${INTRO_SCENE_BASE}${encodeURI(filename)}`),
@@ -766,7 +765,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     }
 
     createReturnScreen = 'home';
-    renderIntro(continueStartFlow);
+    renderCreate();
   }
 
   function renderIntro(afterFinish = continueStartFlow) {
@@ -993,6 +992,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
 
   function createAndPlay() {
     if (characters.length >= MAX_CHARACTERS) return;
+    const shouldPlayIntro = characters.length === 0;
 
     const activeType = getCharacterType(activeTypeId);
     const input = menuRoot.querySelector('[name="characterName"]');
@@ -1015,6 +1015,12 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     characters = [...characters, character].slice(0, MAX_CHARACTERS);
     selectedCharacterId = character.id;
     saveCharacters(characters);
+
+    if (shouldPlayIntro) {
+      renderIntro(() => playCharacter(character, { startNurseryIntro: true }));
+      return;
+    }
+
     playCharacter(character, { startNurseryIntro: true });
   }
 

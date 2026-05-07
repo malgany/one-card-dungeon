@@ -23,6 +23,9 @@ const state = {
   game: createGame(),
   mouse: { x: 0, y: 0 },
   suppressClick: false,
+  worldMapModal: {
+    showHeroPath: false,
+  },
   debugZoom: 1.15,
   debugPanelOpen: false,
   debugPanelPosition: { x: 12, y: 56 },
@@ -68,6 +71,20 @@ const state = {
 
 const cardImages = loadCardImages();
 const actions = createGameActions(state);
+actions.loadGame({ silent: true });
+
+function autoSaveCurrentGame() {
+  actions.autoSaveGame?.();
+}
+
+function autoSaveWhenHidden() {
+  if (document.visibilityState === 'hidden') autoSaveCurrentGame();
+}
+
+window.addEventListener('pagehide', autoSaveCurrentGame);
+window.addEventListener('beforeunload', autoSaveCurrentGame);
+document.addEventListener('visibilitychange', autoSaveWhenHidden);
+
 const layout = createLayoutTools({ canvas, ctx, state });
 const menuFlow = createMenuFlow({ state, actions });
 const renderer = createRenderer({
@@ -97,6 +114,9 @@ if (import.meta.hot) {
     menuFlow.dispose?.();
     unregisterCanvasInput?.();
     window.removeEventListener('resize', layout.resize);
+    window.removeEventListener('pagehide', autoSaveCurrentGame);
+    window.removeEventListener('beforeunload', autoSaveCurrentGame);
+    document.removeEventListener('visibilitychange', autoSaveWhenHidden);
     if (window.__ONE_RPG_DEBUG__?.state === state) delete window.__ONE_RPG_DEBUG__;
   });
 }

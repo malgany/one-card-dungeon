@@ -38,6 +38,7 @@ export const WORLD_ASSETS = {
       general: './assets/models/adventurers/animations/rig-medium/general.glb',
       movementBasic: './assets/models/adventurers/animations/rig-medium/movement-basic.glb',
       combatRanged: './assets/models/KayKit_Character_Animations_1.1/Animations/gltf/Rig_Medium/Rig_Medium_CombatRanged.glb',
+      combatMelee: './assets/models/KayKit_Character_Animations_1.1/Animations/gltf/Rig_Medium/Rig_Medium_CombatMelee.glb',
     },
     skeletons: {
       rigMedium: {

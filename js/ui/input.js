@@ -235,7 +235,6 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     if (state.game.activeModal) return;
 
     if (
-      DEBUG_CONFIG.SHOW_STATS &&
       state.debugPanelOpen &&
       state.debugPanelTab === 'editor' &&
       !pointInDebugPanel() &&
@@ -427,6 +426,15 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
       }
       return;
     }
+
+    if (event.code === 'KeyM' && state.game.mode === GAME_MODES.OVERWORLD) {
+      const toggled = actions.toggleWorldMapModal?.();
+      if (toggled) {
+        event.preventDefault();
+        return;
+      }
+    }
+
     if (state.game.activeModal || state.game.menuOpen) return;
 
     const slotIndex = ACTION_SLOT_KEY_CODES.get(event.code);

@@ -106,18 +106,34 @@ const PLAYER_MODELS = {
   mage: {
     ...PLAYER_MODEL_BASE,
     modelUrl: WORLD_ASSETS.characters.mage,
+    hiddenModelParts: ['Mage_Hat', 'Mage_Cape'],
+    animations: [
+      ...PLAYER_MODEL_BASE.animations,
+      WORLD_ASSETS.animations.rigMedium.combatRanged,
+    ],
   },
   barbarian: {
     ...PLAYER_MODEL_BASE,
     modelUrl: WORLD_ASSETS.characters.barbarian,
+    hiddenModelParts: ['Barbarian_BearHat'],
+    animations: [
+      ...PLAYER_MODEL_BASE.animations,
+      WORLD_ASSETS.animations.rigMedium.combatMelee,
+    ],
   },
   knight: {
     ...PLAYER_MODEL_BASE,
     modelUrl: WORLD_ASSETS.characters.knight,
+    hiddenModelParts: ['Knight_Cape', 'Knight_Helmet', 'Knight_HelmetVisor'],
+    animations: [
+      ...PLAYER_MODEL_BASE.animations,
+      WORLD_ASSETS.animations.rigMedium.combatMelee,
+    ],
   },
   ranger: {
     ...PLAYER_MODEL_BASE,
     modelUrl: WORLD_ASSETS.characters.ranger,
+    hiddenModelParts: ['Ranger_Cape', 'Ranger_Quiver'],
     equipment: [
       {
         id: 'bow',
@@ -156,6 +172,11 @@ const PLAYER_MODELS = {
   rogue: {
     ...PLAYER_MODEL_BASE,
     modelUrl: WORLD_ASSETS.characters.rogue,
+    hiddenModelParts: ['Rogue_Cape', 'RogueHooded_Cape', 'RogueHooded_Mask'],
+    animations: [
+      ...PLAYER_MODEL_BASE.animations,
+      WORLD_ASSETS.animations.rigMedium.combatRanged,
+    ],
   },
 };
 const DEFAULT_PLAYER_MODEL = PLAYER_MODELS.mage;
@@ -189,6 +210,15 @@ const UNIT_MODELS = {
   skeletonWarrior: {
     ...SKELETON_MODEL_BASE,
     modelUrl: WORLD_ASSETS.characters.skeletonWarrior,
+  },
+  specter: {
+    ...SKELETON_MODEL_BASE,
+    modelUrl: WORLD_ASSETS.characters.skeletonMage,
+  },
+  boss: {
+    ...SKELETON_MODEL_BASE,
+    modelUrl: WORLD_ASSETS.characters.skeletonWarrior,
+    scale: 0.5,
   },
 };
 export const HERO_DEBUG_ANIMATION_OPTIONS = [
@@ -324,6 +354,13 @@ function unitTypeKey(unit, isPlayer) {
 
   const typeId = playerModelKey(unit);
   return `player:${typeId}:${paletteSignature(typeId, unit?.characterPalette)}`;
+}
+
+function unitVisualScale(unit, isPlayer) {
+  if (isPlayer) return 1;
+  const scale = Number(unit?.visualScale);
+  if (!Number.isFinite(scale)) return 1;
+  return THREE.MathUtils.clamp(scale, 0.86, 1.22);
 }
 
 function modelConfigForUnit(unit, isPlayer) {
@@ -1578,7 +1615,7 @@ export function createThreeBoardView({ state }) {
       return !!groundMaterial.map;
     }
 
-    const useProceduralGrass = terrain.id === 'grass' || terrain.id === 'debugGrass';
+    const useProceduralGrass = terrain.procedural === 'mapColors' || terrain.id === 'grass' || terrain.id === 'debugGrass';
     const groundTexture = useProceduralGrass ? activeProceduralGrassTexture : textureFor(terrain.texture);
     if (groundTexture) {
       groundTexture.wrapS = THREE.RepeatWrapping;
@@ -1990,6 +2027,20 @@ export function createThreeBoardView({ state }) {
     return match;
   }
 
+  function hideModelParts(model, partNames) {
+    const hiddenParts = (Array.isArray(partNames) ? partNames : [partNames])
+      .filter(Boolean)
+      .map(normalizedObjectName);
+    if (hiddenParts.length === 0) return;
+
+    const hiddenPartSet = new Set(hiddenParts);
+    model.traverse((object) => {
+      if (hiddenPartSet.has(normalizedObjectName(object.name))) {
+        object.visible = false;
+      }
+    });
+  }
+
   function attachModelEquipment(group, model, modelConfig, entityId) {
     const equipmentList = Array.isArray(modelConfig.equipment) ? modelConfig.equipment : [];
     if (equipmentList.length === 0) return;
@@ -2144,6 +2195,7 @@ export function createThreeBoardView({ state }) {
         typeId: isPlayer ? playerModelKey(unit) : null,
         palette: isPlayer ? unit?.characterPalette : null,
       });
+      if (isPlayer) hideModelParts(model, modelConfig.hiddenModelParts);
       group.add(model);
       attachModelEquipment(group, model, modelConfig, entityId);
 
@@ -2663,6 +2715,183 @@ export function createThreeBoardView({ state }) {
     return null;
   }
 
+  function createFireBucketProjectile() {
+    const group = new THREE.Group();
+    const fireMaterial = new THREE.MeshStandardMaterial({
+      color: 0xff7a1a,
+      emissive: 0xff3d00,
+      emissiveIntensity: 2.2,
+      roughness: 0.28,
+    });
+    const emberMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffd166,
+      emissive: 0xff8a00,
+      emissiveIntensity: 1.8,
+      roughness: 0.35,
+    });
+
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.14, 18, 14), fireMaterial);
+    core.position.y = 0.02;
+    group.add(core);
+
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.34, 14), emberMaterial);
+    flame.position.y = 0.22;
+    flame.rotation.x = Math.PI;
+    group.add(flame);
+
+    [[-0.13, 0.05, -0.05], [0.12, 0.11, 0.04], [0.02, -0.02, 0.12]].forEach(([x, y, z], index) => {
+      const ember = new THREE.Mesh(new THREE.SphereGeometry(0.055 - index * 0.006, 10, 8), emberMaterial);
+      ember.position.set(x, y, z);
+      group.add(ember);
+    });
+
+    const light = new THREE.PointLight(0xff7a1a, 0.85, 2.4);
+    light.position.y = 0.15;
+    group.add(light);
+    group.userData.projectileMotion = 'fireBucket';
+    return group;
+  }
+
+  function createStoneLanceProjectile() {
+    const group = new THREE.Group();
+    const stoneMaterial = new THREE.MeshStandardMaterial({
+      color: 0x7f7464,
+      roughness: 0.88,
+      metalness: 0.02,
+    });
+    const darkStoneMaterial = new THREE.MeshStandardMaterial({
+      color: 0x4e463d,
+      roughness: 0.92,
+    });
+
+    const shaft = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.58, 5), stoneMaterial);
+    shaft.rotation.x = Math.PI / 2;
+    shaft.position.z = 0.08;
+    group.add(shaft);
+
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.07, 0.34, 5), darkStoneMaterial);
+    core.rotation.x = Math.PI / 2;
+    core.position.z = -0.14;
+    group.add(core);
+
+    group.userData.projectileMotion = 'stoneLance';
+    return group;
+  }
+
+  function createRollingBoulderProjectile() {
+    const group = new THREE.Group();
+    const rockMaterial = new THREE.MeshStandardMaterial({
+      color: 0x6d6255,
+      roughness: 0.95,
+      metalness: 0.01,
+    });
+    const dustMaterial = new THREE.MeshStandardMaterial({
+      color: 0xb09a7a,
+      transparent: true,
+      opacity: 0.34,
+      roughness: 1,
+    });
+
+    const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 1), rockMaterial);
+    rock.userData.spin = true;
+    group.add(rock);
+
+    [[-0.19, -0.08, -0.1], [0.19, -0.09, -0.02], [0.04, -0.07, 0.16]].forEach(([x, y, z]) => {
+      const dust = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), dustMaterial);
+      dust.position.set(x, y, z);
+      dust.scale.set(1.35, 0.42, 1);
+      group.add(dust);
+    });
+
+    group.userData.projectileMotion = 'rollingBoulder';
+    return group;
+  }
+
+  function createTideDaggerProjectile() {
+    const group = new THREE.Group();
+    const waterMaterial = new THREE.MeshStandardMaterial({
+      color: 0x59c6ff,
+      emissive: 0x1d82d1,
+      emissiveIntensity: 1.2,
+      transparent: true,
+      opacity: 0.72,
+      roughness: 0.18,
+      metalness: 0.05,
+    });
+    const foamMaterial = new THREE.MeshStandardMaterial({
+      color: 0xd9f7ff,
+      emissive: 0x5ccfff,
+      emissiveIntensity: 0.75,
+      transparent: true,
+      opacity: 0.58,
+      roughness: 0.2,
+    });
+
+    const blade = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.62, 4), waterMaterial);
+    blade.rotation.x = Math.PI / 2;
+    blade.position.z = 0.08;
+    group.add(blade);
+
+    const wake = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.015, 8, 24), foamMaterial);
+    wake.rotation.x = Math.PI / 2;
+    wake.position.z = -0.16;
+    group.add(wake);
+
+    const light = new THREE.PointLight(0x4dbdff, 0.45, 1.8);
+    light.position.y = 0.05;
+    group.add(light);
+    group.userData.projectileMotion = 'tideDagger';
+    return group;
+  }
+
+  function createProceduralProjectile(animation) {
+    if (animation.model === 'fireBucket') return createFireBucketProjectile();
+    if (animation.model === 'stoneLance') return createStoneLanceProjectile();
+    if (animation.model === 'rollingBoulder') return createRollingBoulderProjectile();
+    if (animation.model === 'tideDagger') return createTideDaggerProjectile();
+    return null;
+  }
+
+  function projectileHeight(animation, progress) {
+    if (animation.model === 'fireBucket') return 0.56 + Math.sin(progress * Math.PI) * 0.58;
+    if (animation.model === 'stoneLance') return 0.42 + Math.sin(progress * Math.PI) * 0.08;
+    if (animation.model === 'rollingBoulder') return 0.28 + Math.sin(progress * Math.PI) * 0.07;
+    if (animation.model === 'tideDagger') return 0.52 + Math.sin(progress * Math.PI * 2) * 0.05;
+    return 0.48 + Math.sin(progress * Math.PI) * 0.22;
+  }
+
+  function updateProjectileVisual(group, animation, progress, angle) {
+    group.rotation.set(0, angle, 0);
+
+    if (animation.model === 'fireBucket') {
+      group.rotation.y = angle + progress * Math.PI * 5;
+      const light = group.getObjectByProperty('type', 'PointLight');
+      if (light) light.intensity = 0.65 + Math.sin(progress * Math.PI) * 0.55;
+      return;
+    }
+
+    if (animation.model === 'stoneLance') {
+      group.rotation.set(-0.22, angle, 0);
+      return;
+    }
+
+    if (animation.model === 'rollingBoulder') {
+      let rock = null;
+      group.traverse((child) => {
+        if (!rock && child.userData.spin) rock = child;
+      });
+      if (rock) {
+        rock.rotation.x = progress * Math.PI * 8;
+        rock.rotation.z = progress * Math.PI * 2;
+      }
+      return;
+    }
+
+    if (animation.model === 'tideDagger') {
+      group.rotation.z = Math.sin(progress * Math.PI * 2) * 0.16;
+    }
+  }
+
   function createProjectileMesh(animation, key) {
     const group = new THREE.Group();
     group.visible = false;
@@ -2670,7 +2899,14 @@ export function createThreeBoardView({ state }) {
     projectileGroup.add(group);
 
     const modelUrl = projectileModelUrl(animation);
-    if (!modelUrl) return group;
+    if (!modelUrl) {
+      const proceduralProjectile = createProceduralProjectile(animation);
+      if (proceduralProjectile) {
+        group.add(proceduralProjectile);
+        group.visible = true;
+      }
+      return group;
+    }
 
     loadGltfAsset(modelUrl).then(async (gltf) => {
       if (projectileMeshes.get(key) !== group) return;
@@ -2710,10 +2946,10 @@ export function createThreeBoardView({ state }) {
       const target = tileCenter(animation.targetX, animation.targetY, currentBoard.width, currentBoard.height);
       const x = THREE.MathUtils.lerp(source.x, target.x, progress);
       const z = THREE.MathUtils.lerp(source.z, target.z, progress);
-      const arc = Math.sin(progress * Math.PI) * 0.22;
+      const angle = Math.atan2(target.x - source.x, target.z - source.z);
 
-      group.position.set(x, 0.48 + arc, z);
-      group.rotation.y = Math.atan2(target.x - source.x, target.z - source.z);
+      group.position.set(x, projectileHeight(animation, progress), z);
+      updateProjectileVisual(group, animation, progress, angle);
       group.visible = group.children.length > 0;
     });
 
@@ -2751,6 +2987,7 @@ export function createThreeBoardView({ state }) {
     const bump = bumpOffset(unit, entityId, animations, now);
     const center = tileCenter(drawX, drawY, currentBoard.width, currentBoard.height);
     group.position.set(center.x + bump.x, 0.02, center.z + bump.z);
+    group.scale.setScalar(unitVisualScale(unit, isPlayer));
     group.userData.tileX = unit.x;
     group.userData.tileY = unit.y;
     group.userData.drawX = drawX;

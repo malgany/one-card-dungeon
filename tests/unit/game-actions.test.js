@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BOARD_SIZE, GAME_MODES, LEVELS, PHASES, SAVE_KEY, TIMING, getWorldMap } from '../../js/config/game-data.js';
+import { BOARD_SIZE, GAME_MODES, LEVELS, PHASES, SAVE_KEY, START_WORLD_MAP_ID, TIMING, getWorldMap } from '../../js/config/game-data.js';
 import { createGameActions } from '../../js/game/game-actions.js';
 import { dijkstra, levelWallsSet, posKey } from '../../js/game/board-logic.js';
 import { CHARACTERS_KEY, SELECTED_CHARACTER_KEY, totalXpForLevel } from '../../js/game/character-progress.js';
@@ -22,6 +22,14 @@ function monsterDeathFinishDelay(damage = 1) {
     (damage > 0 ? TIMING.ATTACK_BUMP_DURATION + TIMING.PLAYER_DAMAGE_ANIMATION : 0)
     + TIMING.MONSTER_DEATH_ANIMATION
     + TIMING.MONSTER_DEFEAT_EXIT_PAUSE
+  );
+}
+
+function playerDefeatFinishDelay(damage = 1) {
+  return (
+    (damage > 0 ? TIMING.ATTACK_BUMP_DURATION + TIMING.PLAYER_DAMAGE_ANIMATION : 0)
+    + TIMING.PLAYER_DEATH_ANIMATION
+    + TIMING.PLAYER_DEFEAT_EXIT_PAUSE
   );
 }
 
@@ -64,6 +72,89 @@ function hasClosedWallCorner(walls) {
 
   return false;
 }
+
+const LEVEL_3_CLASS_SPELLS = [
+  {
+    characterType: 'mage',
+    spellId: 'mageFireBucket',
+    characteristic: 'fire',
+    baseDamage: 11,
+    apCost: 4,
+    rangeLabel: '2~5',
+    player: { x: 0, y: 5 },
+    reachable: ['0,3', '1,4', '5,5'],
+    unreachable: ['0,4', '5,0'],
+    target: { x: 0, y: 3 },
+    animation: 'Ranged_Magic_Shoot',
+    duration: 933,
+    projectileModel: 'fireBucket',
+    projectileDuration: 420,
+  },
+  {
+    characterType: 'knight',
+    spellId: 'knightStoneLance',
+    characteristic: 'earth',
+    baseDamage: 13,
+    apCost: 5,
+    rangeLabel: '1~3',
+    player: { x: 2, y: 2 },
+    reachable: ['2,1', '2,5', '5,2'],
+    unreachable: ['3,3'],
+    target: { x: 2, y: 1 },
+    animation: 'Melee_1H_Attack_Chop',
+    duration: 1067,
+    projectileModel: 'stoneLance',
+    projectileDuration: 260,
+  },
+  {
+    characterType: 'barbarian',
+    spellId: 'barbarianBoulderHurl',
+    characteristic: 'earth',
+    baseDamage: 14,
+    apCost: 5,
+    rangeLabel: '2~4',
+    player: { x: 0, y: 5 },
+    reachable: ['0,3', '2,5'],
+    unreachable: ['0,4', '5,5'],
+    target: { x: 0, y: 3 },
+    animation: 'Melee_2H_Attack_Chop',
+    duration: 1633,
+    projectileModel: 'rollingBoulder',
+    projectileDuration: 520,
+  },
+  {
+    characterType: 'ranger',
+    spellId: 'rangerVerdantArrow',
+    characteristic: 'air',
+    baseDamage: 10,
+    apCost: 4,
+    rangeLabel: '2~6',
+    player: { x: 0, y: 5 },
+    reachable: ['0,3', '2,5'],
+    unreachable: ['0,4', '2,3'],
+    target: { x: 0, y: 3 },
+    animation: 'Ranged_Bow_Release',
+    duration: 1333,
+    projectileModel: 'arrowBow',
+    projectileDuration: 280,
+  },
+  {
+    characterType: 'rogue',
+    spellId: 'rogueTideDagger',
+    characteristic: 'water',
+    baseDamage: 9,
+    apCost: 4,
+    rangeLabel: '2~5',
+    player: { x: 2, y: 2 },
+    reachable: ['4,4', '2,5', '5,2'],
+    unreachable: ['3,3', '4,3'],
+    target: { x: 4, y: 4 },
+    animation: 'Ranged_1H_Shoot',
+    duration: 1067,
+    projectileModel: 'tideDagger',
+    projectileDuration: 260,
+  },
+];
 
 describe('game actions', () => {
   beforeEach(() => {
@@ -549,7 +640,7 @@ describe('game actions', () => {
     vi.advanceTimersByTime(TIMING.OVERWORLD_MAP_FADE_IN);
 
     expect(state.game.overworld.currentMapId).toBe('stone-grove');
-    expect(state.game.player).toMatchObject({ x: 1, y: 5, facing: { x: 1, y: 0 } });
+    expect(state.game.player).toMatchObject({ x: 1, y: 4, facing: { x: 1, y: 0 } });
     expect(getCurrentWorldMapState(state.game.overworld).enemies.length).toBeGreaterThan(0);
     expect(state.game.busy).toBe(true);
 
@@ -559,10 +650,26 @@ describe('game actions', () => {
     expect(state.game.busy).toBe(false);
 
     expect(actions.moveOverworldPlayer({ x: 3, y: 3 })).toBe(false);
-    expect(state.game.player).toMatchObject({ x: 1, y: 5 });
+    expect(state.game.player).toMatchObject({ x: 1, y: 4 });
   });
 
   it('enters chao grid maps one tile inside the destination ramp', () => {
+    const game = createOverworldGame(getWorldMap('chao3-start'));
+    const { state, actions } = createActionHarness(game);
+
+    actions.moveOverworldPlayer({ x: 9, y: 5 });
+    const movement = state.game.animations.find((anim) => anim.type === 'movement' && anim.entityId === 'player');
+
+    vi.advanceTimersByTime(movement.totalDuration);
+    finishOverworldMapTransition();
+
+    expect(state.game.overworld.currentMapId).toBe('chao3-grid-1-0');
+    expect(state.game.overworld.heroPath).toEqual(['chao3-start', 'chao3-grid-1-0']);
+    expect(state.game.player).toMatchObject({ x: 1, y: 4, facing: { x: 1, y: 0 } });
+    expect(state.game.busy).toBe(false);
+  });
+
+  it('blocks returning from the start map to the nursery and shows player speech', () => {
     const game = createOverworldGame(getWorldMap('chao3-start'));
     const { state, actions } = createActionHarness(game);
 
@@ -570,11 +677,19 @@ describe('game actions', () => {
     const movement = state.game.animations.find((anim) => anim.type === 'movement' && anim.entityId === 'player');
 
     vi.advanceTimersByTime(movement.totalDuration);
-    finishOverworldMapTransition();
 
-    expect(state.game.overworld.currentMapId).toBe('chao3-grid--1-0');
-    expect(state.game.player).toMatchObject({ x: 8, y: 5, facing: { x: -1, y: 0 } });
+    expect(state.game.overworld.currentMapId).toBe('chao3-start');
+    expect(state.game.player).toMatchObject({ x: 0, y: 4 });
+    expect(state.game.mapTransition).toBe(null);
     expect(state.game.busy).toBe(false);
+    expect(state.game.lastEvent).toBe('algo está bloqueando o caminho');
+    expect(state.game.animations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'speechBubble',
+        entityId: 'player',
+        text: 'algo está bloqueando o caminho',
+      }),
+    ]));
   });
 
   it('can stand on a water-mode connection tile without changing maps', () => {
@@ -594,19 +709,19 @@ describe('game actions', () => {
 
   it('activates a bridge connection when already standing on its entry tile', () => {
     const game = createOverworldGame(getWorldMap('chao3-start'));
-    game.player.x = 0;
-    game.player.y = 4;
+    game.player.x = 9;
+    game.player.y = 5;
     const { state, actions } = createActionHarness(game);
 
-    actions.moveOverworldPlayer({ x: 0, y: 4 }, { activateConnection: true });
+    actions.moveOverworldPlayer({ x: 9, y: 5 }, { activateConnection: true });
     const movement = state.game.animations.find((anim) => anim.type === 'movement' && anim.entityId === 'player');
 
     expect(movement.totalDuration).toBe(0);
     vi.advanceTimersByTime(0);
     finishOverworldMapTransition();
 
-    expect(state.game.overworld.currentMapId).toBe('chao3-grid--1-0');
-    expect(state.game.player).toMatchObject({ x: 8, y: 5, facing: { x: -1, y: 0 } });
+    expect(state.game.overworld.currentMapId).toBe('chao3-grid-1-0');
+    expect(state.game.player).toMatchObject({ x: 1, y: 4, facing: { x: 1, y: 0 } });
     expect(state.game.busy).toBe(false);
   });
 
@@ -672,6 +787,55 @@ describe('game actions', () => {
     expect(getCurrentWorldEnemies(state.game.overworld).some((enemy) => enemy.groupId === targetGroupId)).toBe(false);
     expect(state.game.phase).toBe(PHASES.HERO);
     expect(state.game.player.experience).toBe(target.xp);
+  });
+
+  it('returns to map 0,0 with zero health after losing overworld combat', () => {
+    const game = createOverworldGame(getWorldMap('open-road'));
+    const { state, actions } = createActionHarness(game);
+    const target = getCurrentWorldEnemies(state.game.overworld)[0];
+    const targetGroupId = target.groupId;
+
+    actions.startOverworldEncounter(target.id);
+
+    const monster = {
+      ...state.game.monsters[0],
+      x: 0,
+      y: 4,
+      attack: 99,
+      range: 1,
+      speed: 0,
+    };
+    state.game.monsters = [monster];
+    state.game.player = {
+      ...state.game.player,
+      x: 0,
+      y: 5,
+      health: 1,
+      defenseBase: 0,
+    };
+    state.game.turnQueue = ['player', monster.id];
+    state.game.phase = PHASES.HERO;
+    state.game.busy = false;
+
+    actions.endHeroPhase();
+    vi.advanceTimersByTime(500);
+    vi.advanceTimersByTime(1);
+    vi.advanceTimersByTime(playerDefeatFinishDelay());
+
+    const startMap = getWorldMap(START_WORLD_MAP_ID);
+    expect(startMap.gridPosition).toEqual({ x: 0, y: 0 });
+    expect(state.game.mode).toBe(GAME_MODES.OVERWORLD);
+    expect(state.game.overworld.currentMapId).toBe(START_WORLD_MAP_ID);
+    expect(state.game.player).toMatchObject({
+      ...startMap.playerStart,
+      health: 0,
+    });
+    expect(state.game.phase).toBe(PHASES.HERO);
+    expect(state.game.monsters).toEqual([]);
+    expect(state.game.combatContext).toBe(null);
+    expect(state.game.combatWalls).toBe(null);
+    expect(state.game.overworld.mapStates['open-road'].enemies.some((enemy) => enemy.groupId === targetGroupId)).toBe(true);
+    expect(state.game.banner.title).toBe('Derrota');
   });
 
   it('grants XP, levels up on the growing curve, and preserves overflow', () => {
@@ -849,135 +1013,165 @@ describe('game actions', () => {
     expect(actions.allocateCharacteristic('water')).toBe(false);
   });
 
-  it('locks the ranger spell until level 3 and keeps it out of the combat palette', () => {
-    const { state, actions } = createActionHarness(createGame());
-    state.game.player.characterType = 'ranger';
+  it('locks level 3 class spells until level 3 and keeps them out of the combat palette', () => {
+    for (const spellCase of LEVEL_3_CLASS_SPELLS) {
+      const { state, actions } = createActionHarness(createGame());
+      state.game.player.characterType = spellCase.characterType;
 
-    expect(actions.getPlayerSpellbook(state.game.player).map((spell) => ({
-      id: spell.id,
-      locked: spell.locked,
-      unlockLevel: spell.unlockLevel,
-    }))).toEqual([
-      { id: 'strike', locked: false, unlockLevel: 1 },
-      { id: 'rangerVerdantArrow', locked: true, unlockLevel: 3 },
-    ]);
-    expect(actions.getAvailableAttacks(state.game).map((attack) => attack.id)).toEqual(['strike']);
+      expect(actions.getPlayerSpellbook(state.game.player).map((spell) => ({
+        id: spell.id,
+        locked: spell.locked,
+        unlockLevel: spell.unlockLevel,
+      }))).toEqual([
+        { id: 'strike', locked: false, unlockLevel: 1 },
+        { id: spellCase.spellId, locked: true, unlockLevel: 3 },
+      ]);
+      expect(actions.getAvailableAttacks(state.game).map((attack) => attack.id)).toEqual(['strike']);
 
-    state.game.player.level = 3;
+      state.game.player.level = 3;
 
-    expect(actions.getPlayerSpellbook(state.game.player)[1].locked).toBe(false);
-    expect(actions.getAvailableAttacks(state.game).map((attack) => attack.id)).toEqual(['strike', 'rangerVerdantArrow']);
+      expect(actions.getPlayerSpellbook(state.game.player)[1].locked).toBe(false);
+      expect(actions.getAvailableAttacks(state.game).map((attack) => attack.id)).toEqual(['strike', spellCase.spellId]);
+    }
   });
 
-  it('uses air bonus and cross range for the ranger spell without changing Golpe', () => {
+  it('uses elemental bonuses and class range patterns without changing Golpe', () => {
+    for (const spellCase of LEVEL_3_CLASS_SPELLS) {
+      const game = createDungeonLegacyGame();
+      game.phase = PHASES.HERO;
+      game.combatWalls = [];
+      game.player = {
+        ...game.player,
+        characterType: spellCase.characterType,
+        level: 3,
+        x: spellCase.player.x,
+        y: spellCase.player.y,
+        characteristics: {
+          ...game.player.characteristics,
+          [spellCase.characteristic]: 2,
+        },
+      };
+      game.monsters = [];
+      game.apRemaining = spellCase.apCost;
+      game.selectedAttackId = spellCase.spellId;
+      const { actions } = createActionHarness(game);
+      const spell = actions.getAvailableAttacks(game).find((attack) => attack.id === spellCase.spellId);
+      const attackTiles = actions.getPlayerAttackTiles();
+
+      expect(actions.getAttackDamage(spell)).toBe(spellCase.baseDamage + 2);
+      expect(actions.getAttackDamage(game.player.attackSlot)).toBe(10);
+      expect(actions.getAttackRangeLabel(spell)).toBe(spellCase.rangeLabel);
+      spellCase.reachable.forEach((key) => expect(attackTiles.has(key)).toBe(true));
+      spellCase.unreachable.forEach((key) => expect(attackTiles.has(key)).toBe(false));
+    }
+  });
+
+  it('blocks rogue diagonal water spell when line of sight is blocked', () => {
     const game = createDungeonLegacyGame();
     game.phase = PHASES.HERO;
+    game.combatWalls = [[3, 3]];
     game.player = {
       ...game.player,
-      characterType: 'ranger',
+      characterType: 'rogue',
       level: 3,
-      x: 0,
-      y: 5,
-      characteristics: {
-        ...game.player.characteristics,
-        air: 2,
-      },
+      x: 2,
+      y: 2,
     };
     game.monsters = [];
     game.apRemaining = 4;
-    game.selectedAttackId = 'rangerVerdantArrow';
+    game.selectedAttackId = 'rogueTideDagger';
     const { actions } = createActionHarness(game);
-    const spell = actions.getAvailableAttacks(game).find((attack) => attack.id === 'rangerVerdantArrow');
 
-    expect(actions.getAttackDamage(spell)).toBe(12);
-    expect(actions.getAttackDamage(game.player.attackSlot)).toBe(10);
-    expect(actions.getAttackRangeLabel(spell)).toBe('2~6');
-    expect(actions.getPlayerAttackTiles().has('0,4')).toBe(false);
-    expect(actions.getPlayerAttackTiles().has('0,3')).toBe(true);
+    expect(actions.getPlayerAttackTiles().has('4,4')).toBe(false);
     expect(actions.getPlayerAttackTiles().has('2,5')).toBe(true);
-    expect(actions.getPlayerAttackTiles().has('2,3')).toBe(false);
   });
 
-  it('plays the bow release animation when the ranger casts Flecha Hirvante', () => {
-    const monster = createMonster('skeletonMinion', 0, 3, 0);
-    monster.hp = 30;
-    const game = createDungeonLegacyGame();
-    game.phase = PHASES.HERO;
-    game.player = {
-      ...game.player,
-      characterType: 'ranger',
-      level: 3,
-      x: 0,
-      y: 5,
-    };
-    game.monsters = [monster];
-    game.apRemaining = 4;
-    game.selectedAttackId = 'rangerVerdantArrow';
-    const { state, actions } = createActionHarness(game);
+  it('plays class spell animations and projectiles', () => {
+    for (const spellCase of LEVEL_3_CLASS_SPELLS) {
+      const monster = createMonster('skeletonMinion', spellCase.target.x, spellCase.target.y, 0);
+      monster.hp = 30;
+      const game = createDungeonLegacyGame();
+      game.phase = PHASES.HERO;
+      game.combatWalls = [];
+      game.player = {
+        ...game.player,
+        characterType: spellCase.characterType,
+        level: 3,
+        x: spellCase.player.x,
+        y: spellCase.player.y,
+      };
+      game.monsters = [monster];
+      game.apRemaining = spellCase.apCost;
+      game.selectedAttackId = spellCase.spellId;
+      const { state, actions } = createActionHarness(game);
 
-    expect(actions.attackTile({ x: 0, y: 3 })).toBe(true);
+      expect(actions.attackTile(spellCase.target)).toBe(true);
 
-    const playerAction = state.game.animations.find((animation) => {
-      return animation.type === 'modelAction' && animation.entityId === 'player';
-    });
+      const playerAction = state.game.animations.find((animation) => {
+        return animation.type === 'modelAction' && animation.entityId === 'player';
+      });
 
-    expect(playerAction).toEqual(expect.objectContaining({
-      animation: 'Ranged_Bow_Release',
-      duration: 1333,
-      sourceX: 0,
-      sourceY: 5,
-      targetX: 0,
-      targetY: 3,
-    }));
+      expect(playerAction).toEqual(expect.objectContaining({
+        animation: spellCase.animation,
+        duration: spellCase.duration,
+        sourceX: spellCase.player.x,
+        sourceY: spellCase.player.y,
+        targetX: spellCase.target.x,
+        targetY: spellCase.target.y,
+      }));
 
-    expect(state.game.animations).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        type: 'projectile',
-        entityId: 'player',
-        model: 'arrowBow',
-        sourceX: 0,
-        sourceY: 5,
-        targetX: 0,
-        targetY: 3,
-        duration: 280,
-      }),
-    ]));
+      expect(state.game.animations).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'projectile',
+          entityId: 'player',
+          model: spellCase.projectileModel,
+          sourceX: spellCase.player.x,
+          sourceY: spellCase.player.y,
+          targetX: spellCase.target.x,
+          targetY: spellCase.target.y,
+          duration: spellCase.projectileDuration,
+        }),
+      ]));
 
-    vi.advanceTimersByTime(TIMING.HERO_ATTACK_WAIT_TIME);
-    expect(state.game.busy).toBe(true);
-
-    vi.advanceTimersByTime(1333 - TIMING.HERO_ATTACK_WAIT_TIME);
-    expect(state.game.busy).toBe(false);
+      vi.advanceTimersByTime(Math.max(TIMING.HERO_ATTACK_WAIT_TIME, spellCase.duration));
+      expect(state.game.busy).toBe(false);
+      vi.clearAllTimers();
+    }
   });
 
-  it('keeps the ranger basic attack on Throw without spawning an arrow projectile', () => {
-    const monster = createMonster('skeletonMinion', 1, 5, 0);
-    monster.hp = 30;
-    const game = createDungeonLegacyGame();
-    game.phase = PHASES.HERO;
-    game.player = {
-      ...game.player,
-      characterType: 'ranger',
-      level: 3,
-      x: 0,
-      y: 5,
-      rangeBase: 2,
-    };
-    game.monsters = [monster];
-    game.apRemaining = 5;
-    game.selectedAttackId = game.player.attackSlot.id;
-    const { state, actions } = createActionHarness(game);
+  it('keeps basic attacks on Throw without spawning class spell projectiles', () => {
+    for (const { characterType } of LEVEL_3_CLASS_SPELLS) {
+      const monster = createMonster('skeletonMinion', 1, 5, 0);
+      monster.hp = 30;
+      const game = createDungeonLegacyGame();
+      game.phase = PHASES.HERO;
+      game.combatWalls = [];
+      game.player = {
+        ...game.player,
+        characterType,
+        level: 3,
+        x: 0,
+        y: 5,
+        rangeBase: 2,
+      };
+      game.monsters = [monster];
+      game.apRemaining = 5;
+      game.selectedAttackId = game.player.attackSlot.id;
+      const { state, actions } = createActionHarness(game);
 
-    expect(actions.attackTile({ x: 1, y: 5 })).toBe(true);
+      expect(actions.attackTile({ x: 1, y: 5 })).toBe(true);
 
-    expect(state.game.animations).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        type: 'modelAction',
-        entityId: 'player',
-        animation: 'Throw',
-      }),
-    ]));
-    expect(state.game.animations.some((animation) => animation.type === 'projectile')).toBe(false);
+      expect(state.game.animations).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          type: 'modelAction',
+          entityId: 'player',
+          animation: 'Throw',
+        }),
+      ]));
+      expect(state.game.animations.some((animation) => animation.type === 'projectile')).toBe(false);
+      vi.advanceTimersByTime(TIMING.PLAYER_ATTACK_ANIMATION);
+      vi.clearAllTimers();
+    }
   });
 
   it('applies level rewards and starts the next level', () => {
@@ -1118,5 +1312,28 @@ describe('game actions', () => {
     expect(state.game.busy).toBe(false);
     expect(state.game.animations).toEqual([]);
     expect(state.game.banner.title).toBe('Jogo carregado');
+  });
+
+  it('silently saves and reloads the overworld map position', () => {
+    const { state, actions } = createActionHarness(createOverworldGame(getWorldMap('open-road')));
+    state.game.player.x = 6;
+    state.game.player.y = 7;
+    state.game.player.facing = { x: 1, y: 0 };
+    state.game.menuOpen = true;
+
+    expect(actions.saveGame({ silent: true })).toBe(true);
+    expect(state.game.menuOpen).toBe(true);
+
+    state.game = createGame();
+    expect(actions.loadGame({ silent: true })).toBe(true);
+
+    expect(state.game.mode).toBe(GAME_MODES.OVERWORLD);
+    expect(state.game.overworld.currentMapId).toBe('open-road');
+    expect(state.game.player).toMatchObject({
+      x: 6,
+      y: 7,
+      facing: { x: 1, y: 0 },
+    });
+    expect(state.game.banner).toBe(null);
   });
 });

@@ -30,6 +30,11 @@ describe('map color config', () => {
 
     expect(whiteModel.values).not.toBe(MAP_COLOR_VALUES_BY_MAP['chao3-grid-0-1']);
     expect(whiteModel.values.top1).toBe('#ffffff');
-    expect(whiteModel.values.side1).toBe('#1ae8ff');
+    expect(MAP_COLOR_VALUES_BY_MAP['chao3-grid-0-1'].top1).toBe('#55c95a');
+  });
+
+  it('derives palettes for generated grid layers', () => {
+    expect(getMapColorValuesForMap('chao3-grid-2-1').top1).toBe('#80866f');
+    expect(getMapColorValuesForMap('chao3-grid-7-0').water1).toBe('#f25c05');
   });
 });

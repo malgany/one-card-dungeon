@@ -51,6 +51,16 @@ describe('renderer animation helpers', () => {
     expect(getAnimationEndTime(animation)).toBe(780);
   });
 
+  it('keeps speech bubble animations alive for their explicit duration', () => {
+    const animation = {
+      type: 'speechBubble',
+      startTime: 100,
+      duration: 2200,
+    };
+
+    expect(getAnimationEndTime(animation)).toBe(2300);
+  });
+
   it('shows the world minimap in overworld mode without requiring debug UI', () => {
     expect(shouldDrawWorldMinimap({ mode: GAME_MODES.OVERWORLD })).toBe(true);
     expect(shouldDrawWorldMinimap({ mode: GAME_MODES.COMBAT })).toBe(false);

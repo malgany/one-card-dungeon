@@ -8,6 +8,7 @@ import {
   MONSTER_TEMPLATES,
   PHASES,
   SAVE_KEY,
+  START_WORLD_MAP_ID,
   SPELL_DEFINITIONS,
   SPELL_ELEMENTS,
   TIMING,
@@ -43,6 +44,7 @@ import {
   createOverworldGame,
   ensureOverworldMapState,
   levelMonsters,
+  leveledMonsterStats,
   overworldEnemies,
 } from './game-factories.js';
 import {
@@ -70,10 +72,58 @@ import {
 
 let heroTurnTimeoutId = null;
 const PLAYER_ATTACK_ANIMATION = 'Throw';
-const RANGER_VERDANT_ARROW_ANIMATION = 'Ranged_Bow_Release';
-const RANGER_VERDANT_ARROW_ANIMATION_DURATION = 1333;
-const RANGER_VERDANT_ARROW_PROJECTILE_START = 620;
-const RANGER_VERDANT_ARROW_PROJECTILE_DURATION = 280;
+const PLAYER_SPELL_MODEL_ACTIONS = Object.freeze({
+  mageFireBucket: {
+    animation: 'Ranged_Magic_Shoot',
+    duration: 933,
+    impactDelay: 780,
+    projectile: {
+      model: 'fireBucket',
+      startDelay: 360,
+      duration: 420,
+    },
+  },
+  knightStoneLance: {
+    animation: 'Melee_1H_Attack_Chop',
+    duration: 1067,
+    impactDelay: 690,
+    projectile: {
+      model: 'stoneLance',
+      startDelay: 430,
+      duration: 260,
+    },
+  },
+  barbarianBoulderHurl: {
+    animation: 'Melee_2H_Attack_Chop',
+    duration: 1633,
+    impactDelay: 1140,
+    projectile: {
+      model: 'rollingBoulder',
+      startDelay: 620,
+      duration: 520,
+    },
+  },
+  rangerVerdantArrow: {
+    animation: 'Ranged_Bow_Release',
+    duration: 1333,
+    impactDelay: 900,
+    projectile: {
+      model: 'arrowBow',
+      startDelay: 620,
+      duration: 280,
+    },
+  },
+  rogueTideDagger: {
+    animation: 'Ranged_1H_Shoot',
+    duration: 1067,
+    impactDelay: 690,
+    projectile: {
+      model: 'tideDagger',
+      startDelay: 430,
+      duration: 260,
+    },
+  },
+});
 const OVERWORLD_COMBAT_WALL_COUNT = 3;
 const COMBAT_WALL_GENERATION_ATTEMPTS = 80;
 const COMBAT_ARENA_BOUNDS = { width: BOARD_SIZE, height: BOARD_SIZE };
@@ -83,6 +133,7 @@ const NURSERY_GESTURE_ANIMATION = 'Interact';
 const NURSERY_FALLEN_ANIMATION = 'Death_B';
 const NURSERY_WAKE_ANIMATION_DURATION = 1300;
 const NURSERY_GESTURE_ANIMATION_DURATION = 1300;
+const OVERWORLD_BLOCKED_CONNECTION_SPEECH_DURATION = 2200;
 
 function mapBounds(map) {
   return {
@@ -135,6 +186,14 @@ function overworldMapTransitionDuration() {
 
 function shouldActivateOverworldConnection(options = {}) {
   return options.activateConnection !== false;
+}
+
+function connectionBlockedMessage(connection) {
+  if (!connection) return null;
+  if (typeof connection.blockedMessage === 'string' && connection.blockedMessage.trim()) {
+    return connection.blockedMessage;
+  }
+  return connection.blocked ? 'algo está bloqueando o caminho' : null;
 }
 
 function lineUsesGestureAnimation(line) {
@@ -390,16 +449,11 @@ function spellBookForPlayer(player) {
 }
 
 function playerAttackModelActionFor(attack) {
-  if (attack?.id === 'rangerVerdantArrow') {
+  const spellAction = PLAYER_SPELL_MODEL_ACTIONS[attack?.id];
+  if (spellAction) {
     return {
-      animation: RANGER_VERDANT_ARROW_ANIMATION,
-      duration: RANGER_VERDANT_ARROW_ANIMATION_DURATION,
-      impactDelay: RANGER_VERDANT_ARROW_PROJECTILE_START + RANGER_VERDANT_ARROW_PROJECTILE_DURATION,
-      projectile: {
-        model: 'arrowBow',
-        startDelay: RANGER_VERDANT_ARROW_PROJECTILE_START,
-        duration: RANGER_VERDANT_ARROW_PROJECTILE_DURATION,
-      },
+      ...spellAction,
+      projectile: spellAction.projectile ? { ...spellAction.projectile } : null,
     };
   }
 
@@ -495,6 +549,31 @@ export function createGameActions(state) {
     });
   }
 
+  function normalizeOverworldHeroPath(overworld) {
+    if (!overworld) return [];
+
+    const heroPath = Array.isArray(overworld.heroPath)
+      ? overworld.heroPath.filter((mapId) => typeof mapId === 'string' && !!getWorldMap(mapId))
+      : [];
+    if (typeof overworld.currentMapId === 'string' && getWorldMap(overworld.currentMapId)) {
+      if (heroPath.length === 0 || heroPath[heroPath.length - 1] !== overworld.currentMapId) {
+        heroPath.push(overworld.currentMapId);
+      }
+    }
+
+    overworld.heroPath = heroPath.slice(-500);
+    return overworld.heroPath;
+  }
+
+  function recordOverworldHeroMapVisit(overworld, mapId) {
+    if (!overworld || typeof mapId !== 'string' || !getWorldMap(mapId)) return [];
+
+    const heroPath = normalizeOverworldHeroPath(overworld);
+    if (heroPath[heroPath.length - 1] !== mapId) heroPath.push(mapId);
+    overworld.heroPath = heroPath.slice(-500);
+    return overworld.heroPath;
+  }
+
   function clearCutsceneAnimations(game = getGame()) {
     game.animations = (game.animations || []).filter((animation) => {
       return animation.cutsceneId !== NURSERY_INTRO_ID;
@@ -514,6 +593,25 @@ export function createGameActions(state) {
     nextGame.busy = false;
     setGame(nextGame);
     setEvent(`Entrou em ${map.name}.`);
+    return true;
+  }
+
+  function showPlayerSpeech(text, duration = OVERWORLD_BLOCKED_CONNECTION_SPEECH_DURATION) {
+    const game = getGame();
+    if (!text || !game?.player) return false;
+
+    game.animations = (game.animations || []).filter((animation) => {
+      return animation.type !== 'speechBubble' || animation.entityId !== 'player';
+    });
+    game.animations.push({
+      type: 'speechBubble',
+      entityId: 'player',
+      x: game.player.x,
+      y: game.player.y,
+      text,
+      startTime: performance.now(),
+      duration,
+    });
     return true;
   }
 
@@ -589,6 +687,7 @@ export function createGameActions(state) {
     game.mapTransition = null;
     game.banner = null;
     game.busy = true;
+    recordOverworldHeroMapVisit(game.overworld, map.id);
 
     const cutscene = createNurseryIntroCutscene(performance.now());
     game.cutscene = cutscene;
@@ -749,6 +848,16 @@ export function createGameActions(state) {
     const dx = Math.abs(targetCell.x - game.player.x);
     const dy = Math.abs(targetCell.y - game.player.y);
 
+    if (attack?.pattern === ATTACK_PATTERNS.LINE_8) {
+      const isStraight = dx === 0 || dy === 0;
+      const isDiagonal = dx === dy;
+      if (!isStraight && !isDiagonal) return false;
+
+      const rangeCost = Math.max(dx, dy);
+      if (rangeCost < minRange || rangeCost > maxRange) return false;
+      return hasLineOfSight(game.player, targetCell, walls, blockers);
+    }
+
     if (attack?.pattern === ATTACK_PATTERNS.CROSS) {
       const rangeCost = dx + dy;
       if (dx !== 0 && dy !== 0) return false;
@@ -797,6 +906,46 @@ export function createGameActions(state) {
     const game = getGame();
     game.menuOpen = false;
     game.activeModal = 'spells';
+  }
+
+  function ensureWorldMapModalState() {
+    if (!state.worldMapModal) state.worldMapModal = {};
+    if (typeof state.worldMapModal.showHeroPath !== 'boolean') {
+      state.worldMapModal.showHeroPath = false;
+    }
+    return state.worldMapModal;
+  }
+
+  function openWorldMapModal() {
+    const game = getGame();
+    if (!isOverworldMode(game)) return false;
+
+    game.menuOpen = false;
+    game.activeModal = 'worldMap';
+    ensureWorldMapModalState().showHeroPath = false;
+    normalizeOverworldHeroPath(game.overworld);
+    return true;
+  }
+
+  function toggleWorldMapModal() {
+    const game = getGame();
+    if (game.activeModal === 'worldMap') {
+      closeActiveModal();
+      return true;
+    }
+
+    if (game.activeModal || game.menuOpen || game.cutscene) return false;
+    return openWorldMapModal();
+  }
+
+  function toggleWorldMapHeroPath() {
+    const game = getGame();
+    if (game.activeModal !== 'worldMap') return false;
+
+    const worldMapModal = ensureWorldMapModalState();
+    worldMapModal.showHeroPath = !worldMapModal.showHeroPath;
+    normalizeOverworldHeroPath(game.overworld);
+    return true;
   }
 
   function closeActiveModal() {
@@ -1389,6 +1538,14 @@ export function createGameActions(state) {
         return;
       }
 
+      const blockedMessage = connectionBlockedMessage(connection);
+      if (blockedMessage) {
+        game.busy = false;
+        setEvent(blockedMessage);
+        showPlayerSpeech(blockedMessage);
+        return;
+      }
+
       const targetMap = getWorldMap(connection.targetMapId);
       const targetState = ensureOverworldMapState(game.overworld, connection.targetMapId);
       if (!targetMap || !targetState) {
@@ -1412,6 +1569,7 @@ export function createGameActions(state) {
 
         const entry = entryFromConnectionSpawn(connection.spawn, targetMap);
         game.overworld.currentMapId = targetMap.id;
+        recordOverworldHeroMapVisit(game.overworld, targetMap.id);
         game.player.x = entry.x;
         game.player.y = entry.y;
         game.player.facing = entry.facing;
@@ -1531,6 +1689,53 @@ export function createGameActions(state) {
     showBanner('Vitória', 'Grupo removido do mapa aberto.', 2000, null, {
       cardKey: 'player',
       accent: '#34d399',
+    });
+    return true;
+  }
+
+  function completeOverworldDefeat() {
+    const game = getGame();
+    const context = game.combatContext;
+    if (!context || context.origin !== GAME_MODES.OVERWORLD) return false;
+
+    if (heroTurnTimeoutId !== null) {
+      window.clearTimeout(heroTurnTimeoutId);
+      heroTurnTimeoutId = null;
+    }
+    game.heroTurnStartedAt = null;
+    game.heroTurnEndsAt = null;
+
+    const map = getWorldMap(START_WORLD_MAP_ID);
+    if (game.overworld && map) {
+      ensureOverworldMapState(game.overworld, map.id);
+      game.overworld.currentMapId = map.id;
+      recordOverworldHeroMapVisit(game.overworld, map.id);
+    }
+
+    game.mode = GAME_MODES.OVERWORLD;
+    game.phase = PHASES.HERO;
+    game.nextOverworldHealthRegenAt = null;
+    game.player.health = 0;
+    game.player.x = map?.playerStart?.x ?? 0;
+    game.player.y = map?.playerStart?.y ?? 0;
+    game.player.facing = { x: 0, y: 1 };
+    game.monsters = [];
+    game.combatContext = null;
+    game.combatWalls = null;
+    game.turnQueue = ['player'];
+    game.turnCount = 0;
+    game.speedRemaining = game.player.speedBase;
+    game.apRemaining = game.player.apMax;
+    game.selectedEntity = null;
+    game.selectedAttackId = null;
+    game.animations = [];
+    game.busy = false;
+
+    setEvent('Seu aventureiro caiu e voltou ao mapa 0,0 sem vida.');
+    syncGameMusic(game);
+    showBanner('Derrota', 'Voce voltou ao mapa 0,0 sem vida.', 2000, null, {
+      cardKey: 'player',
+      accent: '#b94735',
     });
     return true;
   }
@@ -1865,10 +2070,16 @@ export function createGameActions(state) {
       if (rangeCost <= monster.range && hasLineOfSight(monster, game.player, walls, blockers)) {
         const totalDefense = game.player.defenseBase;
         const damage = getMitigatedDamage(monster.attack, totalDefense);
+        const lifeSteal = Math.max(0, Number(monster.lifeSteal) || 0);
+        const drained = damage > 0
+          ? Math.min(lifeSteal, Math.max(0, monster.maxHp - monster.hp))
+          : 0;
         const attackStartTime = performance.now();
         game.player.health = Math.max(0, game.player.health - damage);
+        if (drained > 0) monster.hp += drained;
 
-        setEvent(`${monster.name} atacou! ATQ ${monster.attack} - DEF ${totalDefense} = ${damage} dano.`);
+        const drainText = drained > 0 ? ` Sugou ${drained} vida.` : '';
+        setEvent(`${monster.name} atacou! ATQ ${monster.attack} - DEF ${totalDefense} = ${damage} dano.${drainText}`);
         
         game.animations.push({
           type: 'bumpAttack',
@@ -1916,6 +2127,18 @@ export function createGameActions(state) {
           duration: 1200
         });
 
+        if (drained > 0) {
+          game.animations.push({
+            type: 'floatingText',
+            x: monster.x,
+            y: monster.y,
+            text: `+${drained}`,
+            color: '#34d399',
+            startTime: attackStartTime + 220,
+            duration: 1200
+          });
+        }
+
         if (game.player.health <= 0) {
           if (heroTurnTimeoutId !== null) {
             window.clearTimeout(heroTurnTimeoutId);
@@ -1948,6 +2171,11 @@ export function createGameActions(state) {
             const currentGame = getGame();
             if (currentGame !== game || !isCombatMode(currentGame) || currentGame.phase === PHASES.WON) return;
             if (currentGame.player.health > 0) return;
+
+            if (currentGame.combatContext?.origin === GAME_MODES.OVERWORLD) {
+              completeOverworldDefeat();
+              return;
+            }
 
             currentGame.phase = PHASES.LOST;
             currentGame.busy = false;
@@ -2030,46 +2258,59 @@ export function createGameActions(state) {
     startHeroTurn(`Nível ${nextLevel.id}. ${game.player.apMax} AP, ${game.player.speedBase} movimento.`);
   }
 
-  function saveGame() {
+  function savedGameSnapshot(game) {
+    const safeOverworld = game.overworld
+      ? {
+        ...game.overworld,
+        mapStates: Object.fromEntries(Object.entries(game.overworld.mapStates || {}).map(([mapId, mapState]) => {
+          return [mapId, {
+            ...mapState,
+            nextRespawnAt: null,
+            respawnTimerId: null,
+          }];
+        })),
+      }
+      : null;
+
+    return {
+      ...game,
+      overworld: safeOverworld,
+      buttons: [],
+      diceRects: [],
+      dropZones: [],
+      draggingDie: null,
+      draggingControl: null,
+      selectedAttackId: null,
+      cutscene: null,
+      mapTransition: null,
+      menuOpen: false,
+      menuView: 'main',
+      activeModal: null,
+      levelUpNotice: null,
+    };
+  }
+
+  function saveGame(options = {}) {
     const game = getGame();
+    const silent = options?.silent === true;
 
     try {
-      const safeOverworld = game.overworld
-        ? {
-          ...game.overworld,
-          mapStates: Object.fromEntries(Object.entries(game.overworld.mapStates || {}).map(([mapId, mapState]) => {
-            return [mapId, {
-              ...mapState,
-              nextRespawnAt: null,
-              respawnTimerId: null,
-            }];
-          })),
-        }
-        : null;
-      const safeGame = {
-        ...game,
-        overworld: safeOverworld,
-        buttons: [],
-        diceRects: [],
-        dropZones: [],
-        draggingDie: null,
-        draggingControl: null,
-        selectedAttackId: null,
-        cutscene: null,
-        mapTransition: null,
-        menuOpen: false,
-        menuView: 'main',
-        activeModal: null,
-        levelUpNotice: null,
-      };
-
-      localStorage.setItem(SAVE_KEY, JSON.stringify(safeGame));
-      game.menuOpen = false;
-      game.activeModal = null;
-      showBanner('Jogo salvo', 'Progresso salvo neste navegador.', 2000);
+      localStorage.setItem(SAVE_KEY, JSON.stringify(savedGameSnapshot(game)));
+      if (!silent) {
+        game.menuOpen = false;
+        game.activeModal = null;
+        showBanner('Jogo salvo', 'Progresso salvo neste navegador.', 2000);
+      }
+      return true;
     } catch {
+      if (silent) return false;
       showBanner('Erro', 'Não foi possível salvar.', 2000);
+      return false;
     }
+  }
+
+  function autoSaveGame() {
+    return saveGame({ silent: true });
   }
 
   function normalizeLoadedEnemyUnit(unit) {
@@ -2078,6 +2319,9 @@ export function createGameActions(state) {
     const type = normalizeMonsterType(unit.type);
     const template = MONSTER_TEMPLATES[type];
     if (!template) return unit;
+    const mapLevel = unit.mapId ? getWorldMap(unit.mapId)?.enemyLevel : null;
+    const level = Math.max(1, Math.floor(Number(unit.level ?? mapLevel) || 1));
+    const stats = leveledMonsterStats(type, level);
 
     return {
       ...unit,
@@ -2087,13 +2331,16 @@ export function createGameActions(state) {
       type,
       groupId: normalizeEncounterGroupId(unit.groupId),
       overworldEnemyId: normalizeMonsterId(unit.overworldEnemyId),
-      hp: Number.isFinite(unit.hp) ? unit.hp : template.hp,
-      maxHp: Number.isFinite(unit.maxHp) ? unit.maxHp : template.hp,
-      attack: Number.isFinite(unit.attack) ? unit.attack : template.attack,
-      defense: Number.isFinite(unit.defense) ? unit.defense : template.defense,
-      range: Number.isFinite(unit.range) ? unit.range : template.range,
-      speed: Number.isFinite(unit.speed) ? unit.speed : template.speed,
-      xp: Number.isFinite(unit.xp) ? unit.xp : template.xp,
+      level: stats.level,
+      hp: Number.isFinite(unit.hp) ? unit.hp : stats.hp,
+      maxHp: Number.isFinite(unit.maxHp) ? unit.maxHp : stats.maxHp,
+      attack: Number.isFinite(unit.attack) ? unit.attack : stats.attack,
+      defense: Number.isFinite(unit.defense) ? unit.defense : stats.defense,
+      range: Number.isFinite(unit.range) ? unit.range : stats.range,
+      speed: Number.isFinite(unit.speed) ? unit.speed : stats.speed,
+      xp: Number.isFinite(unit.xp) ? unit.xp : stats.xp,
+      lifeSteal: Number.isFinite(unit.lifeSteal) ? unit.lifeSteal : stats.lifeSteal,
+      visualScale: Number.isFinite(unit.visualScale) ? unit.visualScale : stats.visualScale,
       xpGranted: unit.xpGranted === true,
       name: template.name,
       emoji: template.emoji,
@@ -2128,6 +2375,9 @@ export function createGameActions(state) {
     const currentMapId = loadedOverworld.currentMapId || loadedOverworld.mapId || fallbackOverworld.currentMapId;
     const normalized = {
       currentMapId,
+      heroPath: Array.isArray(loadedOverworld.heroPath)
+        ? loadedOverworld.heroPath.filter((mapId) => typeof mapId === 'string' && !!getWorldMap(mapId))
+        : [],
       mapStates: {
         ...(fallbackOverworld.mapStates || {}),
       },
@@ -2167,6 +2417,7 @@ export function createGameActions(state) {
       ensureOverworldMapState(normalized, normalized.currentMapId);
     }
 
+    normalizeOverworldHeroPath(normalized);
     return normalized;
   }
 
@@ -2279,19 +2530,25 @@ export function createGameActions(state) {
     return normalized;
   }
 
-  function loadGame() {
+  function loadGame(options = {}) {
+    const silent = options?.silent === true;
+
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (!raw) {
+        if (silent) return false;
         showBanner('Sem save', 'Nenhum jogo salvo encontrado.', 2000);
-        return;
+        return false;
       }
 
       setGame(normalizeLoadedGame(JSON.parse(raw)));
       scheduleEmptyOverworldRespawns();
-      showBanner('Jogo carregado', 'Continue sua aventura.', 2000);
+      if (!silent) showBanner('Jogo carregado', 'Continue sua aventura.', 2000);
+      return true;
     } catch {
+      if (silent) return false;
       showBanner('Erro', 'Não foi possível carregar.', 2000);
+      return false;
     }
   }
 
@@ -2333,6 +2590,7 @@ export function createGameActions(state) {
     assignedStatForDie,
     attackMonster,
     attackTile,
+    autoSaveGame,
     advanceCutscene,
     closeActiveModal,
     confirmEnergy,
@@ -2369,6 +2627,7 @@ export function createGameActions(state) {
     showBanner,
     openCharacteristicsModal,
     openSpellsModal,
+    openWorldMapModal,
     startHeroTurn,
     startEnergyTurn,
     startNurseryCutscene,
@@ -2377,5 +2636,7 @@ export function createGameActions(state) {
     tickCutscene,
     tickOverworldHealthRegen,
     toggleAttackSelection,
+    toggleWorldMapHeroPath,
+    toggleWorldMapModal,
   };
 }

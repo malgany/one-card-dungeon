@@ -44,9 +44,55 @@ export const SPELL_ELEMENTS = {
 export const ATTACK_PATTERNS = {
   PATH: 'path',
   CROSS: 'cross',
+  LINE_8: 'line8',
 };
 
 export const SPELL_DEFINITIONS = {
+  mage: [
+    {
+      id: 'mageFireBucket',
+      name: 'Balde de Fogo',
+      element: SPELL_ELEMENTS.FIRE,
+      apCost: 4,
+      damage: 11,
+      lifeSteal: 0,
+      minRange: 2,
+      maxRange: 5,
+      pattern: ATTACK_PATTERNS.PATH,
+      unlockLevel: 3,
+      iconKey: 'characteristicFire',
+    },
+  ],
+  knight: [
+    {
+      id: 'knightStoneLance',
+      name: 'Lança de Pedra',
+      element: SPELL_ELEMENTS.EARTH,
+      apCost: 5,
+      damage: 13,
+      lifeSteal: 0,
+      minRange: 1,
+      maxRange: 3,
+      pattern: ATTACK_PATTERNS.CROSS,
+      unlockLevel: 3,
+      iconKey: 'characteristicEarth',
+    },
+  ],
+  barbarian: [
+    {
+      id: 'barbarianBoulderHurl',
+      name: 'Rocha Brutal',
+      element: SPELL_ELEMENTS.EARTH,
+      apCost: 5,
+      damage: 14,
+      lifeSteal: 0,
+      minRange: 2,
+      maxRange: 4,
+      pattern: ATTACK_PATTERNS.PATH,
+      unlockLevel: 3,
+      iconKey: 'characteristicEarth',
+    },
+  ],
   ranger: [
     {
       id: 'rangerVerdantArrow',
@@ -60,6 +106,21 @@ export const SPELL_DEFINITIONS = {
       pattern: ATTACK_PATTERNS.CROSS,
       unlockLevel: 3,
       iconKey: 'spellVerdantArrow',
+    },
+  ],
+  rogue: [
+    {
+      id: 'rogueTideDagger',
+      name: 'Adaga da Maré',
+      element: SPELL_ELEMENTS.WATER,
+      apCost: 4,
+      damage: 9,
+      lifeSteal: 0,
+      minRange: 2,
+      maxRange: 5,
+      pattern: ATTACK_PATTERNS.LINE_8,
+      unlockLevel: 3,
+      iconKey: 'characteristicWater',
     },
   ],
 };

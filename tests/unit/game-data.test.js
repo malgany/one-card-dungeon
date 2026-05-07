@@ -54,19 +54,73 @@ describe('game data', () => {
     });
   });
 
-  it('defines the ranger level 3 air spell', () => {
-    expect(SPELL_DEFINITIONS.ranger[0]).toMatchObject({
-      id: 'rangerVerdantArrow',
-      name: 'Flecha Hirvante',
-      element: SPELL_ELEMENTS.AIR,
-      apCost: 4,
-      damage: 10,
-      minRange: 2,
-      maxRange: 6,
-      pattern: ATTACK_PATTERNS.CROSS,
-      unlockLevel: 3,
-      iconKey: 'spellVerdantArrow',
-    });
+  it('defines level 3 class spells', () => {
+    const expectedSpells = {
+      mage: {
+        id: 'mageFireBucket',
+        name: 'Balde de Fogo',
+        element: SPELL_ELEMENTS.FIRE,
+        apCost: 4,
+        damage: 11,
+        minRange: 2,
+        maxRange: 5,
+        pattern: ATTACK_PATTERNS.PATH,
+        iconKey: 'characteristicFire',
+      },
+      knight: {
+        id: 'knightStoneLance',
+        name: 'Lança de Pedra',
+        element: SPELL_ELEMENTS.EARTH,
+        apCost: 5,
+        damage: 13,
+        minRange: 1,
+        maxRange: 3,
+        pattern: ATTACK_PATTERNS.CROSS,
+        iconKey: 'characteristicEarth',
+      },
+      barbarian: {
+        id: 'barbarianBoulderHurl',
+        name: 'Rocha Brutal',
+        element: SPELL_ELEMENTS.EARTH,
+        apCost: 5,
+        damage: 14,
+        minRange: 2,
+        maxRange: 4,
+        pattern: ATTACK_PATTERNS.PATH,
+        iconKey: 'characteristicEarth',
+      },
+      ranger: {
+        id: 'rangerVerdantArrow',
+        name: 'Flecha Hirvante',
+        element: SPELL_ELEMENTS.AIR,
+        apCost: 4,
+        damage: 10,
+        minRange: 2,
+        maxRange: 6,
+        pattern: ATTACK_PATTERNS.CROSS,
+        iconKey: 'spellVerdantArrow',
+      },
+      rogue: {
+        id: 'rogueTideDagger',
+        name: 'Adaga da Maré',
+        element: SPELL_ELEMENTS.WATER,
+        apCost: 4,
+        damage: 9,
+        minRange: 2,
+        maxRange: 5,
+        pattern: ATTACK_PATTERNS.LINE_8,
+        iconKey: 'characteristicWater',
+      },
+    };
+
+    for (const [characterType, expectedSpell] of Object.entries(expectedSpells)) {
+      expect(SPELL_DEFINITIONS[characterType][0]).toMatchObject({
+        ...expectedSpell,
+        lifeSteal: 0,
+        unlockLevel: 3,
+      });
+    }
+
     expect(CARD_SOURCES.spellVerdantArrow).toBe('./assets/ui/actions/ranger-verdant-arrow.png');
   });
 
@@ -192,6 +246,28 @@ describe('game data', () => {
         expect.objectContaining({ targetMapId: 'open-road', x: 0, y: 4 }),
       ]),
     );
+  });
+
+  it('builds a connected generated grid around the start while keeping the nursery isolated', () => {
+    const generatedGridMaps = Object.values(WORLD_MAPS).filter((map) => {
+      return map.id.startsWith('chao3-grid-') && map.id !== NURSERY_INTRO_MAP_ID;
+    });
+
+    expect(generatedGridMaps.length).toBeGreaterThanOrEqual(10);
+    expect(getWorldMap('chao3-grid-0-1').connections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ targetMapId: 'chao3-start' }),
+        expect.objectContaining({ targetMapId: 'chao3-grid-1-1' }),
+      ]),
+    );
+    expect(getWorldMap('chao3-grid-7-0')).toMatchObject({
+      gridPosition: { x: 7, y: 0 },
+      enemyLevel: 7,
+      dangerDistance: 7,
+    });
+    expect(getWorldMap('chao3-grid--2-0').connections.some((connection) => {
+      return connection.targetMapId === NURSERY_INTRO_MAP_ID;
+    })).toBe(false);
   });
 
   it('configures the nursery room as a safe intro scene with a non-blocking passage', () => {

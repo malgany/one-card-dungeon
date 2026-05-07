@@ -1,13 +1,20 @@
 import { expect, test } from '@playwright/test';
 
-async function switchDebugGameToMap(page, mapId) {
-  await page.evaluate(async (targetMapId) => {
-    const [{ GAME_MODES, getWorldMap }, { createOverworldMapState }] = await Promise.all([
+async function switchDebugGameToMap(page, mapId, options = {}) {
+  await page.evaluate(async ({ targetMapId, enemyEncounters }) => {
+    const [{ GAME_MODES, getWorldMap }, { createOverworldEnemy, createOverworldMapState }] = await Promise.all([
       import('/js/config/game-data.js'),
       import('/js/game/game-factories.js'),
     ]);
     const debug = window.__ONE_RPG_DEBUG__;
     const map = getWorldMap(targetMapId);
+    const mapState = createOverworldMapState(map);
+
+    if (Array.isArray(enemyEncounters)) {
+      mapState.enemies = enemyEncounters.map((encounter, index) => {
+        return createOverworldEnemy(encounter, index, map.id);
+      });
+    }
 
     debug.state.game.mode = GAME_MODES.OVERWORLD;
     debug.state.game.player.x = map.playerStart.x;
@@ -17,8 +24,8 @@ async function switchDebugGameToMap(page, mapId) {
     debug.state.game.busy = false;
     debug.state.game.animations = [];
     debug.state.game.overworld.currentMapId = map.id;
-    debug.state.game.overworld.mapStates[map.id] = createOverworldMapState(map);
-  }, mapId);
+    debug.state.game.overworld.mapStates[map.id] = mapState;
+  }, { targetMapId: mapId, enemyEncounters: options.enemyEncounters });
 }
 
 test('loads and renders the canvas game without console errors', async ({ page }) => {
@@ -118,6 +125,17 @@ test('opens character creation when no character exists', async ({ page }) => {
   await expect(page.locator('.menu-home-panel')).toBeVisible();
 
   await page.locator('.menu-home-panel .menu-primary-button').click();
+  await expect(page.locator('.menu-screen--create')).toBeVisible();
+  await expect(page.locator('.menu-intro-screen')).toHaveCount(0);
+
+  await page.getByPlaceholder('Nome do personagem').fill('Aria');
+  await page.locator('[data-menu-action="choose-type"][data-type-id="knight"]').click();
+  await page.locator('[data-palette-color-input][data-slot-id="r4c2"]').evaluate((input) => {
+    input.value = '#00ff88';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.locator('.menu-create-form .menu-primary-button').click();
+
   await expect(page.locator('.menu-intro-screen')).toBeVisible();
   await expect(page.locator('[data-intro-progress-dot]')).toHaveCount(8);
   await expect.poll(async () => {
@@ -129,7 +147,7 @@ test('opens character creation when no character exists', async ({ page }) => {
       await image.decode().catch(() => null);
       return `${image.naturalWidth}x${image.naturalHeight}`;
     });
-  }).toBe('1672x941');
+  }).toBe('1600x900');
   await page.waitForFunction(() => {
     return document.querySelectorAll('[data-intro-progress-dot]')[1]?.classList.contains('is-active');
   });
@@ -146,21 +164,12 @@ test('opens character creation when no character exists', async ({ page }) => {
   expect(intro12PlayCount).toBe(1);
   expect(introMusicPlayCount).toBe(1);
   await page.getByRole('button', { name: 'Pular' }).click();
-  await expect(page.locator('.menu-screen--create')).toBeVisible();
   const introMusicPauseCount = await page.evaluate(() => {
     return window.__ONE_RPG_AUDIO_EVENTS__.filter((event) => {
       return event.type === 'pause' && event.src.includes('Black%20Vault%20Pulse.mp3');
     }).length;
   });
   expect(introMusicPauseCount).toBe(1);
-
-  await page.getByPlaceholder('Nome do personagem').fill('Aria');
-  await page.locator('[data-menu-action="choose-type"][data-type-id="knight"]').click();
-  await page.locator('[data-palette-color-input][data-slot-id="r4c2"]').evaluate((input) => {
-    input.value = '#00ff88';
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  await page.locator('.menu-create-form .menu-primary-button').click();
 
   await expect(page.locator('#menu-root')).toBeHidden();
   await page.waitForFunction(() => {
@@ -267,6 +276,8 @@ test('edits grouped mage palette slots together', async ({ page }) => {
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
   await page.locator('.menu-create-form .menu-primary-button').click();
+  await expect(page.locator('.menu-intro-screen')).toBeVisible();
+  await page.getByRole('button', { name: 'Pular' }).click();
 
   await expect(page.locator('#menu-root')).toBeHidden();
   await page.waitForFunction(() => {
@@ -460,7 +471,11 @@ test('opens flattened in-game menu actions', async ({ page }) => {
 test('moves from overworld into combat and returns after victory', async ({ page }) => {
   await page.goto('/');
   await page.waitForFunction(() => window.__ONE_RPG_DEBUG__?.state?.game?.mode === 'overworld');
-  await switchDebugGameToMap(page, 'open-road');
+  await switchDebugGameToMap(page, 'open-road', {
+    enemyEncounters: [
+      { id: 'e2e-skeleton-minion-0', type: 'skeletonMinion', x: 4, y: 4, groupId: 'e2e-skeleton-minion' },
+    ],
+  });
 
   await page.evaluate(() => {
     window.__ONE_RPG_DEBUG__.actions.moveOverworldPlayer({ x: 2, y: 9 });
@@ -497,7 +512,7 @@ test('moves from overworld into combat and returns after victory', async ({ page
 test('moves between connected overworld chunks', async ({ page }) => {
   await page.goto('/');
   await page.waitForFunction(() => window.__ONE_RPG_DEBUG__?.state?.game?.mode === 'overworld');
-  await switchDebugGameToMap(page, 'open-road');
+  await switchDebugGameToMap(page, 'open-road', { enemyEncounters: [] });
 
   await page.evaluate(() => {
     const { state, actions } = window.__ONE_RPG_DEBUG__;
@@ -512,8 +527,49 @@ test('moves between connected overworld chunks', async ({ page }) => {
       game.mode === 'overworld' &&
       game.overworld.currentMapId === 'stone-grove' &&
       game.player.x === 1 &&
-      game.player.y === 5 &&
+      game.player.y === 4 &&
       !game.busy
+    );
+  });
+});
+
+test('restores saved overworld map position after reload', async ({ page }) => {
+  await page.addInitScript(() => {
+    const character = {
+      id: 'reload-position-character',
+      name: 'Doran',
+      type: 'ranger',
+      typeLabel: 'Patrulheiro',
+      color: '#112233',
+      palette: { version: 1, slots: {} },
+      image: '/assets/characters/ranger.png',
+      createdAt: Date.now(),
+    };
+    window.localStorage.setItem('one-rpg-characters-v1', JSON.stringify([character]));
+    window.localStorage.setItem('one-rpg-selected-character-v1', character.id);
+  });
+
+  await page.goto('/');
+  await page.waitForFunction(() => window.__ONE_RPG_DEBUG__?.state?.game?.player?.name === 'Doran');
+  await switchDebugGameToMap(page, 'open-road');
+  await page.evaluate(() => {
+    const { state } = window.__ONE_RPG_DEBUG__;
+    state.game.player.x = 6;
+    state.game.player.y = 7;
+    state.game.player.facing = { x: 1, y: 0 };
+  });
+
+  await page.reload();
+  await page.waitForFunction(() => {
+    const game = window.__ONE_RPG_DEBUG__?.state?.game;
+    return (
+      game?.player?.name === 'Doran' &&
+      game.mode === 'overworld' &&
+      game.overworld.currentMapId === 'open-road' &&
+      game.player.x === 6 &&
+      game.player.y === 7 &&
+      game.player.facing?.x === 1 &&
+      game.player.facing?.y === 0
     );
   });
 });
@@ -536,14 +592,14 @@ test('clicks any visible bridge part to enter its overworld connection', async (
   await page.goto('/');
   await expect(page.locator('#menu-root')).toBeHidden();
   await page.waitForFunction(() => window.__ONE_RPG_DEBUG__?.state?.game?.mode === 'overworld');
-  await switchDebugGameToMap(page, 'chao3-start');
+  await switchDebugGameToMap(page, 'open-road');
 
   await page.evaluate(async () => {
     const { PHASES } = await import('/js/config/game-data.js');
     const { ensureOverworldMapState } = await import('/js/game/game-factories.js');
     const { state } = window.__ONE_RPG_DEBUG__;
     state.game.phase = PHASES.HERO;
-    state.game.player.x = 4;
+    state.game.player.x = 8;
     state.game.player.y = 5;
     state.game.player.facing = { x: 0, y: -1 };
     state.game.busy = false;
@@ -561,22 +617,25 @@ test('clicks any visible bridge part to enter its overworld connection', async (
     }
   }
 
-  async function findBridgePoint() {
-    return page.evaluate(() => {
+  async function findBridgePoint(targetTile = null) {
+    return page.evaluate((target) => {
       const debug = window.__ONE_RPG_DEBUG__;
       const currentLayout = debug.layout.getLayout();
 
       for (let y = 0; y < currentLayout.sh; y += 6) {
         for (let x = 0; x < currentLayout.sw; x += 6) {
           const point = debug.state.boardInteraction?.worldPointAt?.(currentLayout, x, y);
-          if (point?.kind === 'connectionBridge') {
+          if (
+            point?.kind === 'connectionBridge' &&
+            (!target || (point.x === target.x && point.y === target.y))
+          ) {
             return { screenX: x, screenY: y, tile: { x: point.x, y: point.y } };
           }
         }
       }
 
       return null;
-    });
+    }, targetTile);
   }
 
   await waitFrames();
@@ -596,15 +655,15 @@ test('clicks any visible bridge part to enter its overworld connection', async (
     mapState.debugVisualSettings = { values: { overworldWater: true } };
   });
   await waitFrames();
-  const bridgePoint = await findBridgePoint();
+  const bridgePoint = await findBridgePoint({ x: 9, y: 5 });
 
   expect(bridgePoint).not.toBeNull();
   await page.mouse.click(bridgePoint.screenX, bridgePoint.screenY);
 
   await page.waitForFunction(() => {
     const game = window.__ONE_RPG_DEBUG__.state.game;
-    return game.mode === 'overworld' && game.overworld.currentMapId !== 'chao3-start' && !game.busy;
+    return game.mode === 'overworld' && game.overworld.currentMapId === 'stone-grove' && !game.busy;
   });
 
-  expect(await page.evaluate(() => window.__ONE_RPG_DEBUG__.state.game.overworld.currentMapId)).not.toBe('chao3-start');
+  expect(await page.evaluate(() => window.__ONE_RPG_DEBUG__.state.game.overworld.currentMapId)).toBe('stone-grove');
 });

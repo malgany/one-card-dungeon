@@ -155,6 +155,7 @@ export function getAnimationEndTime(anim) {
 
   if (
     anim.type === 'floatingText' ||
+    anim.type === 'speechBubble' ||
     anim.type === 'bumpAttack' ||
     anim.type === 'damageShake' ||
     anim.type === 'modelAction' ||
@@ -176,14 +177,16 @@ export function shouldDrawWorldMinimap(game) {
 
 export function getWorldMinimapLayout(currentLayout, bottomInset = 0) {
   const radius = currentLayout.compact ? 78 : 94;
+  const stepX = currentLayout.compact ? 22 : 27;
+  const stepY = currentLayout.compact ? 15 : 18;
   return {
     radius,
     cx: currentLayout.sw - radius - 18,
     cy: currentLayout.sh - radius - 18 - bottomInset,
-    stepX: currentLayout.compact ? 26 : 32,
-    stepY: currentLayout.compact ? 18 : 22,
-    halfW: currentLayout.compact ? 20 : 24,
-    halfH: currentLayout.compact ? 13 : 16,
+    stepX,
+    stepY,
+    halfW: stepX + 0.6,
+    halfH: stepY + 0.6,
   };
 }
 
@@ -2412,6 +2415,89 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     ctx.restore();
   }
 
+  function drawPathRangeIcon(x, y, size, color, disabled = false) {
+    const nodes = [
+      [0.16, 0.72],
+      [0.42, 0.72],
+      [0.42, 0.46],
+      [0.66, 0.46],
+      [0.66, 0.22],
+      [0.84, 0.22],
+    ];
+    const nodeSize = Math.max(3, Math.floor(size * 0.18));
+
+    ctx.save();
+    ctx.globalAlpha = disabled ? 0.62 : 1;
+    ctx.strokeStyle = disabled ? UI_THEME.textDim : color;
+    ctx.fillStyle = disabled ? UI_THEME.textDim : color;
+    ctx.lineWidth = Math.max(2, Math.floor(size * 0.11));
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    nodes.forEach(([nx, ny], index) => {
+      const px = x + nx * size;
+      const py = y + ny * size;
+      if (index === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    });
+    ctx.stroke();
+    nodes.forEach(([nx, ny]) => {
+      draw.roundRect(
+        x + nx * size - nodeSize / 2,
+        y + ny * size - nodeSize / 2,
+        nodeSize,
+        nodeSize,
+        Math.max(1, Math.floor(nodeSize * 0.24)),
+        ctx.fillStyle,
+        null,
+      );
+    });
+    ctx.restore();
+  }
+
+  function drawLine8RangeIcon(x, y, size, color, disabled = false) {
+    const center = { x: x + size / 2, y: y + size / 2 };
+    const pad = Math.max(3, Math.floor(size * 0.16));
+    const dot = Math.max(3, Math.floor(size * 0.16));
+    const endpoints = [
+      [x + size / 2, y + pad],
+      [x + size - pad, y + pad],
+      [x + size - pad, y + size / 2],
+      [x + size - pad, y + size - pad],
+      [x + size / 2, y + size - pad],
+      [x + pad, y + size - pad],
+      [x + pad, y + size / 2],
+      [x + pad, y + pad],
+    ];
+
+    ctx.save();
+    ctx.globalAlpha = disabled ? 0.62 : 1;
+    ctx.strokeStyle = disabled ? UI_THEME.textDim : color;
+    ctx.fillStyle = disabled ? UI_THEME.textDim : color;
+    ctx.lineWidth = Math.max(2, Math.floor(size * 0.1));
+    ctx.lineCap = 'round';
+    endpoints.forEach(([ex, ey]) => {
+      ctx.beginPath();
+      ctx.moveTo(center.x, center.y);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+    });
+    draw.roundRect(center.x - dot / 2, center.y - dot / 2, dot, dot, Math.max(1, dot / 3), ctx.fillStyle, null);
+    ctx.restore();
+  }
+
+  function drawRangePatternIcon(pattern, x, y, size, color, disabled = false) {
+    if (pattern === ATTACK_PATTERNS.CROSS) {
+      drawCrossRangeIcon(x, y, size, color, disabled);
+      return;
+    }
+    if (pattern === ATTACK_PATTERNS.LINE_8) {
+      drawLine8RangeIcon(x, y, size, color, disabled);
+      return;
+    }
+    drawPathRangeIcon(x, y, size, color, disabled);
+  }
+
   function drawSpellsModal(currentLayout) {
     const game = state.game;
     const compact = currentLayout.compact;
@@ -2421,6 +2507,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       const damage = actions.getAttackDamage(spell, game.player);
       const range = actions.getAttackRangeLabel(spell, game.player);
       const cross = spell.pattern === ATTACK_PATTERNS.CROSS;
+      const line8 = spell.pattern === ATTACK_PATTERNS.LINE_8;
 
       return {
         ...spell,
@@ -2429,8 +2516,13 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         damage,
         range,
         cross,
+        rangePattern: cross ? ATTACK_PATTERNS.CROSS : line8 ? ATTACK_PATTERNS.LINE_8 : ATTACK_PATTERNS.PATH,
         value: `${elementMeta.label} | ${spell.apCost} AP | ${damage} dano`,
-        detail: cross ? `Alcance ${range} | em cruz` : `Alcance ${range}`,
+        detail: cross
+          ? `Alcance ${range} | em cruz`
+          : line8
+            ? `Alcance ${range} | linha/diagonal`
+            : `Alcance ${range}`,
       };
     });
     const modalW = Math.min(currentLayout.sw - 24, compact ? 430 : 620);
@@ -2492,7 +2584,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       const smallIcon = Math.min(rowH - 14, 56);
       const iconX = x + pad + 8;
       const textX = iconX + smallIcon + 14;
-      const rangeChipW = spell.cross ? 78 : 0;
+      const rangeChipW = 84;
       const rangeChipX = x + pad + rowW - rangeChipW - 12;
       const textMaxW = rowW - smallIcon - 34 - rangeChipW;
       const titleColor = spell.locked ? UI_THEME.textDim : UI_THEME.text;
@@ -2525,15 +2617,21 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         maxWidth: textMaxW,
       });
 
-      if (spell.cross) {
-        draw.roundRect(rangeChipX, rowY + (rowH - 34) / 2, rangeChipW, 34, 7, 'rgba(7,8,7,0.36)', spell.locked ? 'rgba(143,135,115,0.32)' : 'rgba(108,171,79,0.45)');
-        drawCrossRangeIcon(rangeChipX + 8, rowY + (rowH - 22) / 2, 22, spell.color, spell.locked);
-        draw.drawText(spell.range, rangeChipX + 53, rowY + rowH / 2 + 4, {
-          align: 'center',
-          font: '900 12px Inter, sans-serif',
-          color: spell.locked ? UI_THEME.textDim : UI_THEME.text,
-        });
-      }
+      draw.roundRect(
+        rangeChipX,
+        rowY + (rowH - 34) / 2,
+        rangeChipW,
+        34,
+        7,
+        'rgba(7,8,7,0.36)',
+        spell.locked ? 'rgba(143,135,115,0.32)' : 'rgba(108,171,79,0.45)',
+      );
+      drawRangePatternIcon(spell.rangePattern, rangeChipX + 8, rowY + (rowH - 22) / 2, 22, spell.color, spell.locked);
+      draw.drawText(spell.range, rangeChipX + 57, rowY + rowH / 2 + 4, {
+        align: 'center',
+        font: '900 12px Inter, sans-serif',
+        color: spell.locked ? UI_THEME.textDim : UI_THEME.text,
+      });
     });
   }
 
@@ -2579,9 +2677,179 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     });
   }
 
+  function drawWorldMapHeroPath(mapPositions, heroPath, lineWidth) {
+    const points = Array.isArray(heroPath)
+      ? heroPath.map((mapId) => mapPositions.get(mapId)).filter(Boolean)
+      : [];
+    if (points.length < 2) return;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(7,8,7,0.72)';
+    ctx.lineWidth = lineWidth + 3;
+    ctx.beginPath();
+    points.forEach((point, index) => {
+      if (index === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    });
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.82)';
+    ctx.lineWidth = lineWidth;
+    ctx.beginPath();
+    points.forEach((point, index) => {
+      if (index === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    });
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawWorldMapHeroPathToggle(rect, enabled) {
+    const hovered = layout.pointInRect(state.mouse.x, state.mouse.y, rect);
+    const fill = enabled
+      ? (hovered ? '#4f8f4f' : UI_THEME.successDark)
+      : (hovered ? UI_THEME.surface2 : UI_THEME.surface1);
+    const knobSize = rect.h - 8;
+    const trackW = 40;
+    const trackX = rect.x + 8;
+    const knobX = enabled
+      ? trackX + trackW - knobSize - 2
+      : trackX + 2;
+    const labelX = trackX + trackW + 9;
+
+    draw.roundRect(rect.x, rect.y, rect.w, rect.h, 7, fill, enabled ? '#b7d8a6' : UI_THEME.border1);
+    draw.roundRect(trackX, rect.y + 6, trackW, rect.h - 12, (rect.h - 12) / 2, 'rgba(7,8,7,0.42)', null);
+    draw.roundRect(knobX, rect.y + 4, knobSize, knobSize, knobSize / 2, enabled ? '#f2ead7' : UI_THEME.textDim, null);
+    draw.drawText('Caminho do heroi', labelX, rect.y + rect.h / 2 + 4, {
+      font: '900 11px Inter, sans-serif',
+      color: enabled ? '#ffffff' : UI_THEME.textMuted,
+      maxWidth: rect.w - (labelX - rect.x) - 6,
+    });
+    state.game.buttons.push({ ...rect, onClick: actions.toggleWorldMapHeroPath });
+  }
+
+  function drawWorldMapModal(currentLayout) {
+    const game = state.game;
+    const activeMap = getCurrentWorldMap(game.overworld);
+    const maps = worldMapsWithGridPositions();
+    const compact = currentLayout.compact;
+    const modalW = Math.min(currentLayout.sw - 24, compact ? 520 : 920);
+    const modalH = Math.min(currentLayout.sh - 24, compact ? currentLayout.sh - 24 : 680);
+    const x = Math.round((currentLayout.sw - modalW) / 2);
+    const y = Math.round((currentLayout.sh - modalH) / 2);
+    const pad = compact ? 14 : 18;
+    const headerH = compact ? 54 : 58;
+    const closeSize = 30;
+    const toggleW = compact ? 144 : 166;
+    const toggleRect = {
+      x: x + modalW - pad - closeSize - 10 - toggleW,
+      y: y + 12,
+      w: toggleW,
+      h: 30,
+    };
+    const mapAreaX = x + pad;
+    const mapAreaY = y + headerH;
+    const mapAreaW = modalW - pad * 2;
+    const mapAreaH = modalH - headerH - pad;
+
+    drawModalBackdrop(currentLayout);
+    draw.roundRect(x, y, modalW, modalH, 10, UI_THEME.overlay, UI_THEME.border1);
+    draw.drawText('Mapa', x + pad, y + 33, {
+      font: '900 20px Inter, sans-serif',
+      color: UI_THEME.text,
+      maxWidth: Math.max(80, toggleRect.x - x - pad - 10),
+    });
+    draw.drawButton(x + modalW - pad - closeSize, y + 12, closeSize, 28, 'X', actions.closeActiveModal, {
+      fill: UI_THEME.surface1,
+      hoverFill: UI_THEME.surface2,
+      stroke: UI_THEME.border1,
+      font: '900 13px Inter, sans-serif',
+    });
+    drawWorldMapHeroPathToggle(toggleRect, state.worldMapModal?.showHeroPath === true);
+
+    draw.roundRect(mapAreaX, mapAreaY, mapAreaW, mapAreaH, 8, 'rgba(7,8,7,0.28)', 'rgba(111,99,66,0.46)');
+    if (maps.length === 0 || !activeMap?.gridPosition) {
+      draw.drawText('Nenhum mapa com posicao de grade.', mapAreaX + mapAreaW / 2, mapAreaY + mapAreaH / 2 + 4, {
+        align: 'center',
+        font: '900 12px Inter, sans-serif',
+        color: UI_THEME.textMuted,
+      });
+      return;
+    }
+
+    const iso = maps.map((map) => ({
+      x: map.gridPosition.x + map.gridPosition.y,
+      y: map.gridPosition.x - map.gridPosition.y,
+    }));
+    const minIsoX = Math.min(...iso.map((position) => position.x));
+    const maxIsoX = Math.max(...iso.map((position) => position.x));
+    const minIsoY = Math.min(...iso.map((position) => position.y));
+    const maxIsoY = Math.max(...iso.map((position) => position.y));
+    const isoSpanX = Math.max(1, maxIsoX - minIsoX);
+    const isoSpanY = Math.max(1, maxIsoY - minIsoY);
+    const stepX = Math.max(8, Math.min(compact ? 30 : 42, (mapAreaW - 18) / (isoSpanX + 2)));
+    const stepY = Math.max(6, Math.min(compact ? 22 : 28, (mapAreaH - 18) / (isoSpanY + 2)));
+    const halfW = stepX + 0.6;
+    const halfH = stepY + 0.6;
+    const centerX = mapAreaX + mapAreaW / 2;
+    const centerY = mapAreaY + mapAreaH / 2;
+    const originIsoX = (minIsoX + maxIsoX) / 2;
+    const originIsoY = (minIsoY + maxIsoY) / 2;
+
+    function screenFor(position) {
+      const isoX = position.x + position.y;
+      const isoY = position.x - position.y;
+      return {
+        x: centerX + (isoX - originIsoX) * stepX,
+        y: centerY + (isoY - originIsoY) * stepY,
+      };
+    }
+
+    const mapPositions = new Map();
+    maps.forEach((map) => {
+      mapPositions.set(map.id, screenFor(map.gridPosition));
+    });
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(mapAreaX + 1, mapAreaY + 1, mapAreaW - 2, mapAreaH - 2);
+    ctx.clip();
+
+    maps
+      .slice()
+      .sort((a, b) => (a.gridPosition.x - a.gridPosition.y) - (b.gridPosition.x - b.gridPosition.y))
+      .forEach((map) => {
+        const position = mapPositions.get(map.id);
+        const active = map.id === activeMap.id;
+        drawMinimapDiamond(
+          position.x,
+          position.y,
+          halfW,
+          halfH,
+          mapColorValues(map.id).top1,
+          active ? 'rgba(255,255,255,0.92)' : null,
+        );
+      });
+
+    if (state.worldMapModal?.showHeroPath === true) {
+      drawWorldMapHeroPath(mapPositions, game.overworld?.heroPath, Math.max(2.4, Math.min(5, halfH * 0.2)));
+    }
+
+    const activePosition = mapPositions.get(activeMap.id);
+    if (activePosition) drawHeroMapMarker(activePosition.x, activePosition.y, Math.max(22, Math.min(34, halfH * 1.55)));
+    ctx.restore();
+  }
+
   function drawActiveModal(currentLayout) {
     if (!state.game.activeModal) return;
     state.game.buttons = [];
+
+    if (state.game.activeModal === 'worldMap') {
+      drawWorldMapModal(currentLayout);
+      return;
+    }
 
     if (state.game.activeModal === 'characteristics') {
       drawCharacteristicsModal(currentLayout);
@@ -2836,6 +3104,9 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const attackLine = totals.attackLifeSteal > 0
       ? `Ataque ${totals.attack} | suga ${totals.attackLifeSteal}`
       : `Ataque ${totals.attack}`;
+    const monsterAttackLine = monster?.lifeSteal > 0
+      ? `Ataque ${monster.attack} | suga ${monster.lifeSteal}`
+      : `Ataque ${monster?.attack}`;
     const lines = playerSelected
       ? [
           `Vida ${game.player.health}/${game.player.maxHealth}`,
@@ -2846,8 +3117,9 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
           `Alcance ${totals.range}`,
         ]
       : [
+          `Nível ${monster.level || 1}`,
           `Vida ${monster.hp}/${monster.maxHp}`,
-          `Ataque ${monster.attack}`,
+          monsterAttackLine,
           `Defesa ${monster.defense}`,
           `Alcance ${monster.range}`,
           `Velocidade ${monster.speed}`,
@@ -2856,7 +3128,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const cardW = 110;
     const cardH = 146;
     const width = currentLayout.leftW - 32;
-    const height = playerSelected ? 224 : 200;
+    const height = playerSelected ? 224 : 222;
     let x = currentLayout.leftX + 16;
     let y = currentLayout.leftY + currentLayout.leftH - height - 16;
 
@@ -3304,6 +3576,65 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     });
   }
 
+  function drawSpeechBubbleAnimations(currentLayout, now) {
+    const viewport = threeBoard.getViewport(currentLayout);
+
+    state.game.animations.forEach((anim) => {
+      if (anim.type !== 'speechBubble' || now < anim.startTime) return;
+
+      const progress = Math.max(0, Math.min(1, (now - anim.startTime) / Math.max(1, anim.duration)));
+      const alpha = Math.min(1, progress / 0.12, (1 - progress) / 0.16);
+      if (alpha <= 0) return;
+
+      const compact = !!currentLayout.compact;
+      const textFont = `800 ${compact ? 13 : 14}px Inter, sans-serif`;
+      const padX = compact ? 14 : 16;
+      const padY = compact ? 10 : 12;
+      const maxWidth = Math.min(compact ? 260 : 320, viewport.w - 24);
+      const lines = wrappedTextLines(anim.text, maxWidth - padX * 2, textFont);
+      const lineHeight = compact ? 17 : 19;
+      ctx.font = textFont;
+      const width = Math.min(
+        maxWidth,
+        Math.max(150, ...lines.map((line) => ctx.measureText(line).width + padX * 2)),
+      );
+      const height = padY * 2 + lines.length * lineHeight;
+      const point = screenPointForTile(currentLayout, anim.x, anim.y, 1.66);
+      const x = clamp(point.x - width / 2, viewport.x + 12, viewport.x + viewport.w - width - 12);
+      const y = clamp(point.y - height - (compact ? 20 : 28), viewport.y + 12, viewport.y + viewport.h - height - 12);
+      const tailX = clamp(point.x, x + 30, x + width - 30);
+      const tailY = y + height - 1;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.shadowColor = 'rgba(0,0,0,0.22)';
+      ctx.shadowBlur = 14;
+      ctx.shadowOffsetY = 6;
+      draw.roundRect(x, y, width, height, 14, '#fffdf4', '#171912');
+      ctx.shadowColor = 'transparent';
+
+      ctx.beginPath();
+      ctx.moveTo(tailX - 10, tailY);
+      ctx.lineTo(tailX + 10, tailY);
+      ctx.lineTo(point.x, point.y + 7);
+      ctx.closePath();
+      ctx.fillStyle = '#fffdf4';
+      ctx.fill();
+      ctx.strokeStyle = '#171912';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.font = textFont;
+      ctx.fillStyle = '#171912';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      lines.forEach((line, index) => {
+        ctx.fillText(line, x + padX, y + padY + index * lineHeight);
+      });
+      ctx.restore();
+    });
+  }
+
   function drawCutsceneSpeechBubbles(currentLayout, now) {
     const cutscene = state.game.cutscene;
     const line = activeNurseryIntroLine(cutscene, now);
@@ -3417,6 +3748,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     ctx.fillRect(0, 0, currentLayout.sw, currentLayout.sh);
 
     clearThreeBoardViewport(currentLayout);
+    drawSpeechBubbleAnimations(currentLayout, now);
 
     if (cutsceneActive) {
       drawCutsceneSpeechBubbles(currentLayout, now);
@@ -3439,6 +3771,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
       drawDebugOverlay(currentLayout);
       drawWorldMinimap(currentLayout, compactBottomInset);
+      drawCurrentWorldCoordinate(currentLayout);
       drawActiveModal(currentLayout);
     }
 
@@ -4759,6 +5092,61 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     }
   }
 
+  function drawHeroMapMarker(cx, cy, size = 18) {
+    const headRadius = size * 0.2;
+    const headY = cy - size * 0.28;
+    const bodyTopY = cy - size * 0.08;
+    const bodyBottomY = cy + size * 0.48;
+    const bodyTopHalf = size * 0.13;
+    const bodyBottomHalf = size * 0.28;
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.56)';
+    ctx.shadowBlur = Math.max(3, size * 0.18);
+    ctx.shadowOffsetY = Math.max(1, size * 0.06);
+    ctx.fillStyle = '#f2ead7';
+    ctx.strokeStyle = 'rgba(7,8,7,0.92)';
+    ctx.lineWidth = Math.max(1.2, size * 0.08);
+    ctx.lineJoin = 'round';
+
+    ctx.beginPath();
+    ctx.moveTo(cx - bodyTopHalf, bodyTopY);
+    ctx.lineTo(cx + bodyTopHalf, bodyTopY);
+    ctx.lineTo(cx + bodyBottomHalf, bodyBottomY);
+    ctx.lineTo(cx - bodyBottomHalf, bodyBottomY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(cx, headY, headRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function worldMapCoordinateText(map) {
+    if (!Number.isFinite(map?.gridPosition?.x) || !Number.isFinite(map?.gridPosition?.y)) return '';
+    return `[${map.gridPosition.x},${map.gridPosition.y}]`;
+  }
+
+  function drawCurrentWorldCoordinate() {
+    const activeMap = getCurrentWorldMap(state.game.overworld);
+    const text = worldMapCoordinateText(activeMap);
+    if (!text) return;
+
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.82)';
+    ctx.shadowBlur = 5;
+    ctx.shadowOffsetX = 1;
+    ctx.shadowOffsetY = 2;
+    draw.drawText(text, 16, 31, {
+      font: '900 17px Inter, sans-serif',
+      color: '#ffffff',
+    });
+    ctx.restore();
+  }
+
   function drawWorldMinimap(currentLayout, bottomInset = 0) {
     if (!shouldDrawWorldMinimap(state.game)) return;
 
@@ -4794,6 +5182,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     ctx.lineWidth = 1;
     ctx.stroke();
 
+    let activePosition = null;
     maps
       .slice()
       .sort((a, b) => (a.gridPosition.x - a.gridPosition.y) - (b.gridPosition.x - b.gridPosition.y))
@@ -4806,22 +5195,31 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
           stepY,
         );
         const active = map.id === activeMap.id;
+        if (active) activePosition = position;
+        const fill = mapColorValues(map.id).top1;
         drawMinimapDiamond(
           position.x,
           position.y,
           halfW,
           halfH,
-          active ? '#f2c94c' : 'rgba(32,34,25,0.92)',
-          active ? '#fff0a6' : 'rgba(111,99,66,0.95)',
+          fill,
+          active ? 'rgba(255,255,255,0.9)' : null,
         );
-        draw.drawText(`${map.gridPosition.x},${map.gridPosition.y}`, position.x, position.y + 4, {
-          align: 'center',
-          font: currentLayout.compact ? '900 9px Inter, sans-serif' : '900 10px Inter, sans-serif',
-          color: active ? '#221707' : UI_THEME.textMuted,
-        });
       });
 
+    if (activePosition) {
+      drawHeroMapMarker(activePosition.x, activePosition.y, currentLayout.compact ? 18 : 21);
+    }
+
     ctx.restore();
+
+    state.game.buttons.push({
+      x: cx - radius,
+      y: cy - radius,
+      w: radius * 2,
+      h: radius * 2,
+      onClick: actions.openWorldMapModal,
+    });
   }
 
   function pointInDiamond(px, py, cx, cy, halfW, halfH) {

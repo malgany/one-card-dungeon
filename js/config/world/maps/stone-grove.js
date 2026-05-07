@@ -1,3 +1,5 @@
+import { createChao3GridConnections } from './chao3-start.js';
+
 const stoneCells = [
   [3, 3], [4, 3], [5, 3],
   [2, 6], [3, 6],
@@ -32,12 +34,8 @@ export const stoneGroveMap = {
     { id: 'skeleton-warrior-watch-0', type: 'skeletonWarrior', x: 8, y: 2, groupId: 'skeleton-warrior-watch' },
   ],
   connections: [
-    {
-      id: 'stone-grove-west',
-      x: 0,
-      y: 4,
-      targetMapId: 'open-road',
-      spawn: { x: 9, y: 5 },
-    },
+    ...createChao3GridConnections({ x: 3, y: 0 }),
   ],
+  enemyLevel: 3,
+  dangerDistance: 3,
 };

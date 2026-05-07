@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GAME_MODES, LEVELS, MONSTER_TEMPLATES, PHASES, START_WORLD_MAP_ID, getWorldMap } from '../../js/config/game-data.js';
 import {
   createOverworldMapState,
+  createCombatMonsterFromEnemy,
   createDungeonLegacyGame,
   createGame,
   createMonster,
@@ -88,6 +89,33 @@ describe('game factories', () => {
     expect(createOverworldMapState(emptyMap).enemies).toEqual([]);
   });
 
+  it('scales overworld enemy level and group size by map distance', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.99);
+    const farMap = getWorldMap('chao3-grid-7-0');
+    const enemies = overworldEnemies(farMap);
+    const largestGroup = Math.max(
+      ...Object.values(enemies.reduce((counts, enemy) => {
+        counts[enemy.groupId] = (counts[enemy.groupId] || 0) + 1;
+        return counts;
+      }, {})),
+    );
+    const combatMonster = createCombatMonsterFromEnemy(enemies[0], 5, 0, 0);
+
+    expect(enemies.length).toBe(5);
+    expect(largestGroup).toBeGreaterThan(1);
+    expect(enemies[0].level).toBe(7);
+    expect(enemies[0].attack).toBeGreaterThan(MONSTER_TEMPLATES[enemies[0].type].attack);
+    expect(enemies[0].lifeSteal).toBeGreaterThan(0);
+    expect(enemies[0].visualScale).toBeGreaterThan(1);
+    expect(combatMonster).toMatchObject({
+      id: enemies[0].id,
+      level: enemies[0].level,
+      attack: enemies[0].attack,
+      lifeSteal: enemies[0].lifeSteal,
+      visualScale: enemies[0].visualScale,
+    });
+  });
+
   it('normalizes legacy monster inputs', () => {
     expect(createMonster('spider', 4, 0, 0)).toMatchObject({
       id: 'skeletonMinion-0-4-0',
@@ -137,6 +165,7 @@ describe('game factories', () => {
     });
     expect(game.phase).toBe(PHASES.HERO);
     expect(game.overworld.currentMapId).toBe(startMap.id);
+    expect(game.overworld.heroPath).toEqual([startMap.id]);
     expect(game.overworld.mapStates[startMap.id]).toBeDefined();
     expect(startMap.id).toBe(START_WORLD_MAP_ID);
     expect(startMapState.enemies.map((enemy) => enemy.type)).toEqual(['skeletonMinion', 'skeletonMinion']);
