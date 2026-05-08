@@ -52,7 +52,7 @@ test('loads and renders the canvas game without console errors', async ({ page }
     const game = window.__ONE_RPG_DEBUG__.state.game;
     return game.overworld.mapStates[game.overworld.currentMapId].enemies.length;
   });
-  expect(enemyCount).toBeGreaterThanOrEqual(2);
+  expect(enemyCount).toBeGreaterThanOrEqual(1);
   expect(enemyCount).toBeLessThanOrEqual(5);
 
   const box = await canvas.boundingBox();

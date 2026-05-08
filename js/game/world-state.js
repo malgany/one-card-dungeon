@@ -27,6 +27,10 @@ export function getCurrentWorldEnemies(overworld) {
   return getCurrentWorldMapState(overworld)?.enemies || overworld?.enemies || [];
 }
 
+export function getCurrentWorldPickups(overworld) {
+  return getCurrentWorldMapState(overworld)?.pickups || [];
+}
+
 export function getCurrentWorldObjects(overworld) {
   const map = getCurrentWorldMap(overworld);
   const mapState = getCurrentWorldMapState(overworld);

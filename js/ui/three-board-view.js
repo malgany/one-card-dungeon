@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BOARD_SIZE, CARD_SOURCES, DEBUG_CONFIG, GAME_MODES, TERRAIN_TYPES, WORLD_ASSETS, WORLD_OBJECT_TYPES } from '../config/game-data.js';
-import { getCurrentWorldEnemies, getCurrentWorldMap } from '../game/world-state.js';
+import { getCurrentWorldEnemies, getCurrentWorldMap, getCurrentWorldPickups } from '../game/world-state.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { paletteSignature } from '../config/character-palettes.js';
@@ -1221,6 +1221,7 @@ export function createThreeBoardView({ state }) {
   const wallMeshes = new Map();
   const objectMeshes = new Map();
   const unitMeshes = new Map();
+  const pickupMeshes = new Map();
   const projectileMeshes = new Map();
   const debugEditorMeshes = new Map();
   const wallGeometry = new THREE.BoxGeometry(0.9, 0.54, 0.9);
@@ -1475,6 +1476,8 @@ export function createThreeBoardView({ state }) {
   const dummy = new THREE.Object3D();
   const pathArrowGroup = new THREE.Group();
   scene.add(pathArrowGroup);
+  const pickupGroup = new THREE.Group();
+  boardGroup.add(pickupGroup);
   const projectileGroup = new THREE.Group();
   scene.add(projectileGroup);
 
@@ -2960,6 +2963,181 @@ export function createThreeBoardView({ state }) {
     }
   }
 
+  function isGoldenPickup(kind) {
+    return kind === 'goldenApple' || kind === 'goldenBread';
+  }
+
+  function pickupMaterial(kind, part = 'body') {
+    const golden = isGoldenPickup(kind);
+    const cacheKey = `pickup:${kind}:${part}`;
+    if (materialCache.has(cacheKey)) return materialCache.get(cacheKey);
+
+    let color = '#b94735';
+    let roughness = 0.78;
+    let metalness = 0.02;
+    let emissive = '#000000';
+    let emissiveIntensity = 0;
+
+    if (kind === 'bread' || kind === 'goldenBread') color = '#b77a38';
+    if (part === 'stem') color = golden ? '#8d6b19' : '#5a341e';
+    if (part === 'leaf') color = golden ? '#f5d45d' : '#4d8f3c';
+    if (part === 'score') color = golden ? '#fff0a0' : '#8f5528';
+    if (part === 'shadow') color = '#000000';
+
+    if (golden && part !== 'shadow') {
+      color = part === 'score' ? '#fff0a0' : '#facc15';
+      roughness = 0.42;
+      metalness = 0.18;
+      emissive = '#9f6b08';
+      emissiveIntensity = 0.22;
+    }
+
+    const material = part === 'shadow'
+      ? new THREE.MeshBasicMaterial({
+        color: colorFromHex(color),
+        transparent: true,
+        opacity: 0.22,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      })
+      : new THREE.MeshStandardMaterial({
+        color: colorFromHex(color),
+        roughness,
+        metalness,
+        emissive: colorFromHex(emissive),
+        emissiveIntensity,
+      });
+
+    materialCache.set(cacheKey, material);
+    return material;
+  }
+
+  function pickupGeometry(kind, part = 'body') {
+    const cacheKey = `pickup:${kind}:${part}:geometry`;
+    if (geometryCache.has(cacheKey)) return geometryCache.get(cacheKey);
+
+    let geometry;
+    if (part === 'shadow') {
+      geometry = new THREE.CircleGeometry(0.28, 24);
+    } else if (part === 'stem') {
+      geometry = new THREE.CylinderGeometry(0.018, 0.026, 0.12, 8);
+    } else if (part === 'leaf') {
+      geometry = new THREE.ConeGeometry(0.052, 0.1, 8);
+    } else if (part === 'score') {
+      geometry = new THREE.BoxGeometry(0.025, 0.018, 0.22);
+    } else {
+      geometry = new THREE.SphereGeometry(kind === 'apple' || kind === 'goldenApple' ? 0.18 : 0.22, 20, 14);
+    }
+
+    geometryCache.set(cacheKey, geometry);
+    return geometry;
+  }
+
+  function addPickupShadow(group) {
+    const shadow = new THREE.Mesh(pickupGeometry('shadow', 'shadow'), pickupMaterial('shadow', 'shadow'));
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.y = 0.018;
+    shadow.renderOrder = 4;
+    group.add(shadow);
+  }
+
+  function createApplePickupMesh(kind) {
+    const group = new THREE.Group();
+    addPickupShadow(group);
+
+    const body = new THREE.Mesh(pickupGeometry(kind, 'body'), pickupMaterial(kind));
+    body.position.y = 0.19;
+    body.scale.set(1, 0.92, 1);
+    body.castShadow = true;
+    body.receiveShadow = true;
+    group.add(body);
+
+    const stem = new THREE.Mesh(pickupGeometry(kind, 'stem'), pickupMaterial(kind, 'stem'));
+    stem.position.set(0.018, 0.36, 0.006);
+    stem.rotation.z = -0.22;
+    stem.castShadow = true;
+    group.add(stem);
+
+    const leaf = new THREE.Mesh(pickupGeometry(kind, 'leaf'), pickupMaterial(kind, 'leaf'));
+    leaf.position.set(0.08, 0.35, 0.01);
+    leaf.rotation.set(0.9, 0, -0.75);
+    leaf.scale.set(1.1, 0.65, 0.7);
+    leaf.castShadow = true;
+    group.add(leaf);
+
+    return group;
+  }
+
+  function createBreadPickupMesh(kind) {
+    const group = new THREE.Group();
+    addPickupShadow(group);
+
+    const loaf = new THREE.Mesh(pickupGeometry(kind, 'body'), pickupMaterial(kind));
+    loaf.position.y = 0.16;
+    loaf.scale.set(1.35, 0.55, 0.78);
+    loaf.castShadow = true;
+    loaf.receiveShadow = true;
+    group.add(loaf);
+
+    [-0.12, 0, 0.12].forEach((offset) => {
+      const score = new THREE.Mesh(pickupGeometry(kind, 'score'), pickupMaterial(kind, 'score'));
+      score.position.set(offset, 0.27, 0.02);
+      score.rotation.set(0.22, 0, -0.72);
+      score.castShadow = true;
+      group.add(score);
+    });
+
+    return group;
+  }
+
+  function createPickupMesh(pickup) {
+    const kind = pickup?.kind || 'apple';
+    const group = kind === 'bread' || kind === 'goldenBread'
+      ? createBreadPickupMesh(kind)
+      : createApplePickupMesh(kind);
+    group.userData.kind = kind;
+    return group;
+  }
+
+  function updatePickups(now) {
+    const pickups = state.game.mode === GAME_MODES.OVERWORLD
+      ? getCurrentWorldPickups(state.game.overworld)
+      : [];
+    const activeIds = new Set();
+
+    for (const pickup of pickups) {
+      const id = pickup.id || `${pickup.kind}:${pickup.x},${pickup.y}`;
+      activeIds.add(id);
+
+      let group = pickupMeshes.get(id);
+      if (group && group.userData.kind !== pickup.kind) {
+        pickupGroup.remove(group);
+        pickupMeshes.delete(id);
+        group = null;
+      }
+
+      if (!group) {
+        group = createPickupMesh(pickup);
+        pickupMeshes.set(id, group);
+        pickupGroup.add(group);
+      }
+
+      const center = tileCenter(pickup.x, pickup.y, currentBoard.width, currentBoard.height);
+      const phase = now * 0.004 + pickup.x * 0.73 + pickup.y * 0.41;
+      const bob = Math.sin(phase) * 0.024;
+      group.position.set(center.x, bob, center.z);
+      group.rotation.y = isGoldenPickup(pickup.kind)
+        ? now * 0.0015
+        : Math.sin(phase * 0.5) * 0.08;
+    }
+
+    for (const [id, group] of pickupMeshes.entries()) {
+      if (activeIds.has(id)) continue;
+      pickupGroup.remove(group);
+      pickupMeshes.delete(id);
+    }
+  }
+
   function updateUnit(unit, entityId, isPlayer, now) {
     const modelConfig = modelConfigForUnit(unit, isPlayer);
     let group = unitMeshes.get(entityId);
@@ -3577,6 +3755,7 @@ export function createThreeBoardView({ state }) {
 
       updateWalls(walls);
       updateWorldObjects(objects);
+      updatePickups(now);
       updateDebugEditorModels();
       updateDebugCubes();
       updateHighlights({

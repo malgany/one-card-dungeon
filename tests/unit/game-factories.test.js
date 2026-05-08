@@ -71,14 +71,14 @@ describe('game factories', () => {
       xp: MONSTER_TEMPLATES.skeletonMinion.xp,
       xpGranted: false,
     });
-    expect(generatedEnemies.length).toBeGreaterThanOrEqual(2);
+    expect(generatedEnemies.length).toBeGreaterThanOrEqual(1);
     expect(generatedEnemies.length).toBeLessThanOrEqual(5);
     expect(generatedEnemies[0]).toMatchObject({
       id: 'overworld-open-road-open-road-spawn-0-0-0',
       type: 'skeletonMinion',
       groupId: 'open-road-spawn-0-0',
     });
-    expect(createOverworldMapState(startMap).enemies.length).toBeGreaterThanOrEqual(2);
+    expect(createOverworldMapState(startMap).enemies.length).toBeGreaterThanOrEqual(1);
   });
 
   it('allows maps to disable random overworld enemies', () => {
@@ -168,7 +168,8 @@ describe('game factories', () => {
     expect(game.overworld.heroPath).toEqual([startMap.id]);
     expect(game.overworld.mapStates[startMap.id]).toBeDefined();
     expect(startMap.id).toBe(START_WORLD_MAP_ID);
-    expect(startMapState.enemies.map((enemy) => enemy.type)).toEqual(['skeletonMinion', 'skeletonMinion']);
+    expect(startMapState.enemies).toHaveLength(1);
+    expect(startMapState.enemies.every((enemy) => enemy.type === 'skeletonMinion')).toBe(true);
     expect(game.monsters).toEqual([]);
     expect(game.turnQueue).toEqual(['player']);
     expect(game.banner.title).toBe(startMap.name);

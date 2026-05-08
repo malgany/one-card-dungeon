@@ -3805,6 +3805,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     if (state.game.mode === GAME_MODES.OVERWORLD) {
       actions.tickOverworldHealthRegen(now);
+      actions.tickOverworldEnemyWander?.(now);
       actions.tickCutscene?.(now);
       threeBoard.setVisible?.(true);
       drawOverworld(currentLayout, now);

@@ -14,11 +14,11 @@ import {
   normalizeMonsterType,
 } from '../config/game-data.js';
 
-const OVERWORLD_SPAWN_MIN = 2;
+const OVERWORLD_SPAWN_MIN = 1;
 const OVERWORLD_SPAWN_MAX = 5;
 const FALLBACK_OVERWORLD_ENEMY_TYPES = ['skeletonMinion', 'skeletonWarrior', 'skeletonRogue', 'skeletonMage'];
 const OVERWORLD_MAX_ENEMY_LEVEL = 8;
-const OVERWORLD_MIN_ENEMY_SCALE = 0.92;
+const OVERWORLD_MIN_ENEMY_SCALE = 0.86;
 const OVERWORLD_MAX_ENEMY_SCALE = 1.2;
 
 function randomInt(min, max) {
@@ -132,6 +132,15 @@ function randomGroupSize(map, remaining) {
   if (level >= 5 && remaining >= 3 && roll > 0.82) return 3;
   if (level >= 2 && roll > 0.62) return 2;
   return 1;
+}
+
+function randomOverworldEnemyCount() {
+  const roll = Math.random();
+  if (roll < 0.08) return 1;
+  if (roll < 0.28) return 2;
+  if (roll < 0.6) return 3;
+  if (roll < 0.9) return 4;
+  return 5;
 }
 
 function randomSpawnCell(map, occupied) {
@@ -289,7 +298,7 @@ export function levelMonsters(level) {
 export function overworldEnemies(map, wave = 0) {
   if (map?.randomEncounters === false) return [];
 
-  const count = randomInt(OVERWORLD_SPAWN_MIN, OVERWORLD_SPAWN_MAX);
+  const count = Math.max(OVERWORLD_SPAWN_MIN, Math.min(OVERWORLD_SPAWN_MAX, randomOverworldEnemyCount()));
   const pool = spawnPoolForMap(map);
   const occupied = spawnBlockedKeys(map);
   const enemies = [];
@@ -327,6 +336,9 @@ export function createOverworldMapState(map) {
     enemies: overworldEnemies(map, 0),
     enemyWave: 1,
     nextRespawnAt: null,
+    pendingRespawnEnemies: [],
+    pickups: [],
+    pickupCounter: 0,
     removedObjectIds: [],
     debugColors: null,
   };

@@ -4,7 +4,7 @@ import { createGameActions } from '../../js/game/game-actions.js';
 import { dijkstra, levelWallsSet, posKey } from '../../js/game/board-logic.js';
 import { CHARACTERS_KEY, SELECTED_CHARACTER_KEY, totalXpForLevel } from '../../js/game/character-progress.js';
 import { createDungeonLegacyGame, createGame, createMonster, createOverworldGame } from '../../js/game/game-factories.js';
-import { getCurrentWorldEnemies, getCurrentWorldMapState } from '../../js/game/world-state.js';
+import { getCurrentWorldEnemies, getCurrentWorldMapState, getCurrentWorldPickups } from '../../js/game/world-state.js';
 import {
   NURSERY_INTRO_ID,
   NURSERY_INTRO_LINE_GAP,
@@ -973,8 +973,41 @@ describe('game actions', () => {
     expect(mapState.enemies).toEqual([]);
 
     vi.advanceTimersByTime(1);
-    expect(mapState.enemies.length).toBeGreaterThanOrEqual(2);
+    expect(mapState.enemies.length).toBeGreaterThanOrEqual(1);
     expect(mapState.enemies.length).toBeLessThanOrEqual(5);
+  });
+
+  it('respawns cleared overworld enemies one at a time with a variable wave size', () => {
+    Math.random.mockReturnValue(0.5);
+    const savedGame = createOverworldGame(getWorldMap('open-road'));
+    const savedMapState = getCurrentWorldMapState(savedGame.overworld);
+    savedMapState.enemies = [];
+    savedMapState.enemyWave = 4;
+    localStorage.setItem(SAVE_KEY, JSON.stringify(savedGame));
+
+    const { state, actions } = createActionHarness(createOverworldGame(getWorldMap('open-road')));
+
+    actions.loadGame();
+
+    const loadedMapState = getCurrentWorldMapState(state.game.overworld);
+    expect(loadedMapState.enemies).toEqual([]);
+    expect(loadedMapState.pendingRespawnEnemies).toHaveLength(3);
+
+    const firstDelay = TIMING.OVERWORLD_ENEMY_RESPAWN_MIN
+      + (TIMING.OVERWORLD_ENEMY_RESPAWN_MAX - TIMING.OVERWORLD_ENEMY_RESPAWN_MIN) * 0.5;
+    vi.advanceTimersByTime(firstDelay);
+    expect(loadedMapState.enemies).toHaveLength(1);
+    expect(loadedMapState.pendingRespawnEnemies).toHaveLength(2);
+
+    const staggerDelay = TIMING.OVERWORLD_ENEMY_RESPAWN_STAGGER_MIN
+      + (TIMING.OVERWORLD_ENEMY_RESPAWN_STAGGER_MAX - TIMING.OVERWORLD_ENEMY_RESPAWN_STAGGER_MIN) * 0.5;
+    vi.advanceTimersByTime(staggerDelay);
+    expect(loadedMapState.enemies).toHaveLength(2);
+
+    vi.advanceTimersByTime(staggerDelay);
+    expect(loadedMapState.enemies).toHaveLength(3);
+    expect(loadedMapState.pendingRespawnEnemies).toHaveLength(0);
+    expect(loadedMapState.enemyWave).toBe(5);
   });
 
   it('schedules a respawn when loading an empty overworld map', () => {
@@ -993,9 +1026,70 @@ describe('game actions', () => {
     expect(loadedMapState.nextRespawnAt).not.toBe(null);
 
     vi.advanceTimersByTime(TIMING.OVERWORLD_ENEMY_RESPAWN_MIN);
-    expect(loadedMapState.enemies.length).toBeGreaterThanOrEqual(2);
+    expect(loadedMapState.enemies.length).toBeGreaterThanOrEqual(1);
     expect(loadedMapState.enemies.length).toBeLessThanOrEqual(5);
     expect(loadedMapState.enemyWave).toBe(5);
+  });
+
+  it('wanders overworld enemies after their personal idle delay', () => {
+    const game = createOverworldGame(getWorldMap('open-road'));
+    const { state, actions } = createActionHarness(game);
+    const mapState = getCurrentWorldMapState(state.game.overworld);
+    const enemy = mapState.enemies[0];
+    mapState.enemies = [enemy];
+    enemy.x = 4;
+    enemy.y = 4;
+
+    expect(actions.tickOverworldEnemyWander(0)).toBe(false);
+    expect(enemy).toMatchObject({ x: 4, y: 4 });
+
+    expect(actions.tickOverworldEnemyWander(TIMING.OVERWORLD_ENEMY_WANDER_MIN)).toBe(true);
+    expect(enemy).not.toMatchObject({ x: 4, y: 4 });
+    expect(state.game.animations).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'movement',
+        entityId: enemy.id,
+      }),
+    ]));
+  });
+
+  it('collects overworld food pickups by moving onto them', () => {
+    const game = createOverworldGame(getWorldMap('open-road'));
+    const { state, actions } = createActionHarness(game);
+    const mapState = getCurrentWorldMapState(state.game.overworld);
+    mapState.enemies = [];
+    mapState.pickups = [
+      { id: 'apple-high-health', kind: 'apple', x: 2, y: 9 },
+      { id: 'apple-low-health', kind: 'apple', x: 3, y: 9 },
+      { id: 'bread-low-health', kind: 'bread', x: 5, y: 9 },
+      { id: 'golden-low-health', kind: 'goldenBread', x: 6, y: 9 },
+    ];
+
+    function moveAndFinish(target) {
+      actions.moveOverworldPlayer(target);
+      const movement = state.game.animations[state.game.animations.length - 1];
+      vi.advanceTimersByTime(movement.totalDuration);
+    }
+
+    state.game.player.health = 20;
+    moveAndFinish({ x: 2, y: 9 });
+    expect(state.game.player.health).toBe(20);
+    expect(getCurrentWorldPickups(state.game.overworld).some((pickup) => pickup.id === 'apple-high-health')).toBe(true);
+
+    state.game.player.health = 5;
+    moveAndFinish({ x: 3, y: 9 });
+    expect(state.game.player.health).toBe(15);
+    expect(getCurrentWorldPickups(state.game.overworld).some((pickup) => pickup.id === 'apple-low-health')).toBe(false);
+
+    state.game.player.health = 20;
+    moveAndFinish({ x: 5, y: 9 });
+    expect(state.game.player.health).toBe(30);
+    expect(getCurrentWorldPickups(state.game.overworld).some((pickup) => pickup.id === 'bread-low-health')).toBe(false);
+
+    state.game.player.health = 1;
+    moveAndFinish({ x: 6, y: 9 });
+    expect(state.game.player.health).toBe(state.game.player.maxHealth);
+    expect(getCurrentWorldPickups(state.game.overworld).some((pickup) => pickup.id === 'golden-low-health')).toBe(false);
   });
 
   it('allocates life and elemental characteristics without buffing neutral strike', () => {

@@ -58,6 +58,7 @@ import {
   getCurrentWorldEnemies,
   getCurrentWorldMap,
   getCurrentWorldMapState,
+  getCurrentWorldPickups,
   getWorldConnectionAt,
   getWorldObjectBlockedKeys,
 } from './world-state.js';
@@ -134,6 +135,16 @@ const NURSERY_FALLEN_ANIMATION = 'Death_B';
 const NURSERY_WAKE_ANIMATION_DURATION = 1300;
 const NURSERY_GESTURE_ANIMATION_DURATION = 1300;
 const OVERWORLD_BLOCKED_CONNECTION_SPEECH_DURATION = 2200;
+const OVERWORLD_ENEMY_WANDER_MIN_COST = 1.5;
+const OVERWORLD_ENEMY_WANDER_MAX_COST = 3.25;
+const OVERWORLD_ENEMY_WANDER_ENTITY_STAGGER = 850;
+const OVERWORLD_PICKUP_DROP_RADIUS = 1;
+const OVERWORLD_PICKUP_DEFINITIONS = Object.freeze({
+  apple: { label: 'Maca', targetRatio: 0.25 },
+  bread: { label: 'Pao', targetRatio: 0.5 },
+  goldenApple: { label: 'Maca dourada', targetRatio: 1 },
+  goldenBread: { label: 'Pao dourado', targetRatio: 1 },
+});
 
 function mapBounds(map) {
   return {
@@ -178,6 +189,18 @@ function finalDirectionFromPath(path) {
     x: to.x - from.x,
     y: to.y - from.y,
   };
+}
+
+function pathDistance(path) {
+  if (!Array.isArray(path) || path.length < 2) return 0;
+
+  let total = 0;
+  for (let i = 0; i < path.length - 1; i += 1) {
+    const p1 = path[i];
+    const p2 = path[i + 1];
+    total += Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+  }
+  return total;
 }
 
 function overworldMapTransitionDuration() {
@@ -233,6 +256,10 @@ function createDefaultCharacteristics() {
 
 function toNonNegativeInteger(value, fallback = 0) {
   return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : fallback;
+}
+
+function randomBetween(min, max) {
+  return min + Math.random() * Math.max(0, max - min);
 }
 
 function playerLevel(player) {
@@ -1185,6 +1212,7 @@ export function createGameActions(state) {
       window.clearTimeout(mapState.respawnTimerId);
       mapState.respawnTimerId = null;
       mapState.nextRespawnAt = null;
+      mapState.pendingRespawnEnemies = [];
     }
   }
 
@@ -1194,33 +1222,65 @@ export function createGameActions(state) {
     }
   }
 
+  function scheduleNextOverworldEnemyRespawn(mapId, delay) {
+    const game = getGame();
+    const mapState = game.overworld?.mapStates?.[mapId];
+    if (!mapState || mapState.respawnTimerId) return false;
+
+    mapState.nextRespawnAt = performance.now() + delay;
+    mapState.respawnTimerId = window.setTimeout(() => {
+      spawnNextOverworldRespawnEnemy(mapId);
+    }, delay);
+    return true;
+  }
+
+  function spawnNextOverworldRespawnEnemy(mapId) {
+    const currentGame = getGame();
+    const currentMapState = currentGame.overworld?.mapStates?.[mapId];
+    if (!currentMapState) return false;
+
+    currentMapState.respawnTimerId = null;
+    currentMapState.nextRespawnAt = null;
+    if (!Array.isArray(currentMapState.enemies)) currentMapState.enemies = [];
+    if (!Array.isArray(currentMapState.pendingRespawnEnemies)) {
+      currentMapState.pendingRespawnEnemies = [];
+    }
+
+    const enemy = currentMapState.pendingRespawnEnemies.shift();
+    if (!enemy) return false;
+
+    currentMapState.enemies.push(enemy);
+    if (currentGame.overworld?.currentMapId === mapId) {
+      setEvent('Um inimigo apareceu no mapa.');
+    }
+
+    if (currentMapState.pendingRespawnEnemies.length > 0) {
+      scheduleNextOverworldEnemyRespawn(
+        mapId,
+        randomBetween(TIMING.OVERWORLD_ENEMY_RESPAWN_STAGGER_MIN, TIMING.OVERWORLD_ENEMY_RESPAWN_STAGGER_MAX),
+      );
+    }
+
+    return true;
+  }
+
   function scheduleOverworldEnemyRespawn(mapId) {
     const game = getGame();
     const map = getWorldMap(mapId);
     const mapState = game.overworld?.mapStates?.[mapId];
-    if (!map || !mapState || aliveEnemiesForMapState(mapState).length > 0 || mapState.respawnTimerId) return false;
+    if (!map || map.randomEncounters === false || !mapState) return false;
+    if (aliveEnemiesForMapState(mapState).length > 0 || mapState.respawnTimerId) return false;
+    if (Array.isArray(mapState.pendingRespawnEnemies) && mapState.pendingRespawnEnemies.length > 0) return false;
 
-    const minDelay = TIMING.OVERWORLD_ENEMY_RESPAWN_MIN;
-    const maxDelay = TIMING.OVERWORLD_ENEMY_RESPAWN_MAX;
-    const delay = minDelay + Math.random() * Math.max(0, maxDelay - minDelay);
-    mapState.nextRespawnAt = performance.now() + delay;
-    mapState.respawnTimerId = window.setTimeout(() => {
-      const currentGame = getGame();
-      const currentMapState = currentGame.overworld?.mapStates?.[mapId];
-      if (!currentMapState) return;
+    const wave = toNonNegativeInteger(mapState.enemyWave);
+    mapState.pendingRespawnEnemies = overworldEnemies(map, wave);
+    mapState.enemyWave = wave + 1;
+    if (mapState.pendingRespawnEnemies.length === 0) return false;
 
-      currentMapState.respawnTimerId = null;
-      currentMapState.nextRespawnAt = null;
-      if (aliveEnemiesForMapState(currentMapState).length > 0) return;
-
-      const wave = toNonNegativeInteger(currentMapState.enemyWave);
-      currentMapState.enemies = overworldEnemies(map, wave);
-      currentMapState.enemyWave = wave + 1;
-      if (currentGame.overworld?.currentMapId === mapId) {
-        setEvent('Novos inimigos apareceram no mapa.');
-      }
-    }, delay);
-    return true;
+    return scheduleNextOverworldEnemyRespawn(
+      mapId,
+      randomBetween(TIMING.OVERWORLD_ENEMY_RESPAWN_MIN, TIMING.OVERWORLD_ENEMY_RESPAWN_MAX),
+    );
   }
 
   function getOverworldEnemyAt(cell) {
@@ -1239,6 +1299,231 @@ export function createGameActions(state) {
     }
 
     return occupied;
+  }
+
+  function getOverworldConnectionKeys(overworld = getGame().overworld) {
+    const map = getCurrentWorldMap(overworld);
+    return new Set((map?.connections || []).map((connection) => posKey(connection)));
+  }
+
+  function getOverworldPickupOccupiedKeys(overworld = getGame().overworld) {
+    return new Set(getCurrentWorldPickups(overworld).map((pickup) => posKey(pickup)));
+  }
+
+  function ensureMapPickups(mapState) {
+    if (!mapState) return [];
+    if (!Array.isArray(mapState.pickups)) mapState.pickups = [];
+    return mapState.pickups;
+  }
+
+  function randomPickupKind() {
+    const golden = Math.random() < 0.1;
+    if (golden) return Math.random() < 0.5 ? 'goldenApple' : 'goldenBread';
+    return Math.random() < 0.55 ? 'apple' : 'bread';
+  }
+
+  function pickupDefinition(kind) {
+    return OVERWORLD_PICKUP_DEFINITIONS[kind] || OVERWORLD_PICKUP_DEFINITIONS.apple;
+  }
+
+  function healTargetForPickup(pickup, player) {
+    const definition = pickupDefinition(pickup?.kind);
+    return Math.max(0, Math.ceil((player?.maxHealth || 0) * definition.targetRatio));
+  }
+
+  function collectOverworldPickupAt(cell) {
+    const game = getGame();
+    if (!isOverworldMode(game) || !game.overworld || !cell) return false;
+
+    const mapState = getCurrentWorldMapState(game.overworld);
+    const pickups = ensureMapPickups(mapState);
+    const pickupIndex = pickups.findIndex((pickup) => samePos(pickup, cell));
+    if (pickupIndex < 0) return false;
+
+    const pickup = pickups[pickupIndex];
+    const targetHealth = healTargetForPickup(pickup, game.player);
+    const definition = pickupDefinition(pickup.kind);
+    if (game.player.health >= targetHealth) {
+      setEvent(`${definition.label}: sem efeito com a vida atual.`);
+      return false;
+    }
+
+    const previousHealth = game.player.health;
+    game.player.health = Math.min(game.player.maxHealth, targetHealth);
+    pickups.splice(pickupIndex, 1);
+
+    const healed = game.player.health - previousHealth;
+    game.animations.push({
+      type: 'floatingText',
+      x: game.player.x,
+      y: game.player.y,
+      text: `+${healed}`,
+      color: pickup.kind?.startsWith('golden') ? '#facc15' : '#34d399',
+      startTime: performance.now(),
+      duration: 1200,
+    });
+    setEvent(`${definition.label}: vida restaurada para ${game.player.health}/${game.player.maxHealth}.`);
+    return true;
+  }
+
+  function pickupDropCellsAround(origin, bounds) {
+    const cells = [];
+    for (let dy = -OVERWORLD_PICKUP_DROP_RADIUS; dy <= OVERWORLD_PICKUP_DROP_RADIUS; dy += 1) {
+      for (let dx = -OVERWORLD_PICKUP_DROP_RADIUS; dx <= OVERWORLD_PICKUP_DROP_RADIUS; dx += 1) {
+        if (dx === 0 && dy === 0) continue;
+        cells.push({ x: origin.x + dx, y: origin.y + dy, distance: Math.abs(dx) + Math.abs(dy) });
+      }
+    }
+    cells.push({ x: origin.x, y: origin.y, distance: 0 });
+
+    return cells
+      .filter((cell) => cell.x >= 0 && cell.y >= 0 && cell.x < bounds.width && cell.y < bounds.height)
+      .sort((a, b) => {
+        if (a.distance !== b.distance) return a.distance - b.distance;
+        return Math.random() - 0.5;
+      });
+  }
+
+  function occupiedDropKeys(overworld, mapState, extraCells = []) {
+    const occupied = new Set([
+      ...getWorldObjectBlockedKeys(overworld),
+      ...getOverworldConnectionKeys(overworld),
+      ...(mapState?.enemies || []).filter((enemy) => enemy.hp !== 0).map((enemy) => posKey(enemy)),
+      ...ensureMapPickups(mapState).map((pickup) => posKey(pickup)),
+      ...extraCells.map((cell) => posKey(cell)),
+    ]);
+
+    occupied.add(posKey(getGame().player));
+    return occupied;
+  }
+
+  function dropOverworldPickupForEnemy(mapState, enemy, extraCells = []) {
+    const game = getGame();
+    const map = getCurrentWorldMap(game.overworld);
+    if (!mapState || !enemy || !map) return null;
+
+    const bounds = getCurrentWorldBounds(game.overworld);
+    const occupied = occupiedDropKeys(game.overworld, mapState, extraCells);
+    const cell = pickupDropCellsAround(enemy, bounds).find((candidate) => !occupied.has(posKey(candidate)));
+    if (!cell) return null;
+
+    const pickupCounter = toNonNegativeInteger(mapState.pickupCounter);
+    mapState.pickupCounter = pickupCounter + 1;
+    const pickup = {
+      id: `${map.id}-pickup-${pickupCounter}`,
+      kind: randomPickupKind(),
+      x: cell.x,
+      y: cell.y,
+      createdAt: performance.now(),
+    };
+
+    ensureMapPickups(mapState).push(pickup);
+    return pickup;
+  }
+
+  function hasActiveMovementAnimation(entityId, now = performance.now()) {
+    return (getGame().animations || []).some((animation) => {
+      if (animation.type !== 'movement' || animation.entityId !== entityId) return false;
+      const duration = Number.isFinite(animation.totalDuration)
+        ? Math.max(0, animation.totalDuration)
+        : Math.max(0, (animation.path?.length || 1) - 1) * Math.max(0, animation.durationPerTile || 0);
+      return now >= animation.startTime && now < animation.startTime + duration;
+    });
+  }
+
+  function enemyWanderBlockedKeys(enemy) {
+    const game = getGame();
+    const blocked = new Set([
+      ...getOverworldBlockedKeys(game.overworld),
+      ...getOverworldConnectionKeys(game.overworld),
+      ...getOverworldPickupOccupiedKeys(game.overworld),
+      ...getOverworldEnemyOccupiedKeys(enemy.id),
+      posKey(game.player),
+    ]);
+    blocked.delete(posKey(enemy));
+    return blocked;
+  }
+
+  function randomEnemyWanderPath(enemy) {
+    const game = getGame();
+    const blocked = enemyWanderBlockedKeys(enemy);
+    const { dist, prev } = dijkstra(enemy, blocked, getOverworldBounds(game.overworld), { allowDiagonal: true });
+    const preferred = [];
+    const fallback = [];
+
+    for (const [key, cost] of dist.entries()) {
+      if (cost <= 0 || blocked.has(key)) continue;
+
+      const cell = parseKey(key);
+      const option = {
+        cell,
+        path: reconstructPath(prev, cell),
+        cost,
+      };
+      if (cost >= OVERWORLD_ENEMY_WANDER_MIN_COST && cost <= OVERWORLD_ENEMY_WANDER_MAX_COST) {
+        preferred.push(option);
+      } else if (cost <= OVERWORLD_ENEMY_WANDER_MAX_COST) {
+        fallback.push(option);
+      }
+    }
+
+    const options = preferred.length > 0 ? preferred : fallback;
+    if (options.length === 0) return null;
+    return options[Math.floor(Math.random() * options.length)].path;
+  }
+
+  function scheduleEnemyNextWander(enemy, now, index = 0) {
+    enemy.lastWanderAt = now;
+    enemy.nextWanderAt = now
+      + randomBetween(TIMING.OVERWORLD_ENEMY_WANDER_MIN, TIMING.OVERWORLD_ENEMY_WANDER_MAX)
+      + index * OVERWORLD_ENEMY_WANDER_ENTITY_STAGGER;
+  }
+
+  function tickOverworldEnemyWander(now = performance.now()) {
+    const game = getGame();
+    if (!isOverworldMode(game) || !game.overworld || game.busy || game.cutscene || game.mapTransition) return false;
+    if (game.activeModal || game.menuOpen) return false;
+
+    const enemies = getAliveOverworldEnemies(game);
+    let moved = false;
+
+    enemies.forEach((enemy, index) => {
+      if (hasActiveMovementAnimation(enemy.id, now)) return;
+
+      if (!Number.isFinite(enemy.nextWanderAt)) {
+        scheduleEnemyNextWander(enemy, now, index);
+        return;
+      }
+
+      const idleFor = now - (Number.isFinite(enemy.lastWanderAt) ? enemy.lastWanderAt : now);
+      if (now < enemy.nextWanderAt && idleFor < TIMING.OVERWORLD_ENEMY_WANDER_MAX_IDLE) return;
+
+      const path = randomEnemyWanderPath(enemy);
+      if (!path || path.length < 2) {
+        scheduleEnemyNextWander(enemy, now, index);
+        return;
+      }
+
+      const target = path[path.length - 1];
+      const distance = pathDistance(path);
+      const direction = finalDirectionFromPath(path);
+      enemy.x = target.x;
+      enemy.y = target.y;
+      if (direction) enemy.facing = direction;
+
+      game.animations.push({
+        type: 'movement',
+        entityId: enemy.id,
+        path,
+        startTime: now,
+        totalDuration: distance * TIMING.OVERWORLD_PLAYER_MOVE_SPEED,
+        totalDistance: distance,
+      });
+      scheduleEnemyNextWander(enemy, now, index);
+      moved = true;
+    });
+
+    return moved;
   }
 
   function getOverworldMovementData() {
@@ -1505,12 +1790,7 @@ export function createGameActions(state) {
     const movementPath = data.path;
     const finalDirection = finalDirectionFromPath(movementPath);
 
-    let totalDist = 0;
-    for (let i = 0; i < movementPath.length - 1; i += 1) {
-      const p1 = movementPath[i];
-      const p2 = movementPath[i + 1];
-      totalDist += Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
-    }
+    const totalDist = pathDistance(movementPath);
 
     const duration = totalDist * TIMING.OVERWORLD_PLAYER_MOVE_SPEED;
     game.player.x = target.x;
@@ -1535,6 +1815,7 @@ export function createGameActions(state) {
 
       const connection = canActivateConnection ? getWorldConnectionAt(game.overworld, target) : null;
       if (!connection) {
+        collectOverworldPickupAt(target);
         game.busy = false;
         return;
       }
@@ -1658,7 +1939,13 @@ export function createGameActions(state) {
       game.overworld.currentMapId = mapId;
       const mapState = getCurrentWorldMapState(game.overworld);
       if (mapState) {
+        const defeatedEnemies = mapState.enemies.filter((enemy) => defeatedIds.has(enemy.id));
         mapState.enemies = mapState.enemies.filter((enemy) => !defeatedIds.has(enemy.id));
+        const droppedCells = [];
+        defeatedEnemies.forEach((enemy) => {
+          const pickup = dropOverworldPickupForEnemy(mapState, enemy, droppedCells);
+          if (pickup) droppedCells.push(pickup);
+        });
         if (aliveEnemiesForMapState(mapState).length === 0) {
           scheduleOverworldEnemyRespawn(mapId);
         }
@@ -2268,6 +2555,7 @@ export function createGameActions(state) {
             ...mapState,
             nextRespawnAt: null,
             respawnTimerId: null,
+            pendingRespawnEnemies: [],
           }];
         })),
       }
@@ -2343,6 +2631,8 @@ export function createGameActions(state) {
       lifeSteal: Number.isFinite(unit.lifeSteal) ? unit.lifeSteal : stats.lifeSteal,
       visualScale: Number.isFinite(unit.visualScale) ? unit.visualScale : stats.visualScale,
       xpGranted: unit.xpGranted === true,
+      lastWanderAt: null,
+      nextWanderAt: null,
       name: template.name,
       emoji: template.emoji,
       tint: template.tint,
@@ -2366,6 +2656,22 @@ export function createGameActions(state) {
 
     return {
       values: { ...debugColors.values },
+    };
+  }
+
+  function normalizeLoadedPickup(pickup) {
+    if (!pickup || typeof pickup !== 'object') return null;
+    const kind = OVERWORLD_PICKUP_DEFINITIONS[pickup.kind] ? pickup.kind : 'apple';
+    const x = Math.floor(Number(pickup.x));
+    const y = Math.floor(Number(pickup.y));
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+    return {
+      id: typeof pickup.id === 'string' && pickup.id ? pickup.id : `pickup-${x}-${y}`,
+      kind,
+      x,
+      y,
+      createdAt: Number.isFinite(pickup.createdAt) ? pickup.createdAt : null,
     };
   }
 
@@ -2397,6 +2703,15 @@ export function createGameActions(state) {
             : fallbackMapState.enemies,
           enemyWave: toNonNegativeInteger(loadedMapState?.enemyWave, toNonNegativeInteger(fallbackMapState.enemyWave, 1)),
           nextRespawnAt: null,
+          respawnTimerId: null,
+          pendingRespawnEnemies: [],
+          pickups: Array.isArray(loadedMapState?.pickups)
+            ? loadedMapState.pickups.map(normalizeLoadedPickup).filter(Boolean)
+            : (fallbackMapState.pickups || []),
+          pickupCounter: toNonNegativeInteger(
+            loadedMapState?.pickupCounter,
+            toNonNegativeInteger(fallbackMapState.pickupCounter),
+          ),
           removedObjectIds: Array.isArray(loadedMapState?.removedObjectIds)
             ? loadedMapState.removedObjectIds
             : (fallbackMapState.removedObjectIds || []),
@@ -2408,6 +2723,12 @@ export function createGameActions(state) {
       normalized.mapStates[currentMapId].enemies = loadedOverworld.enemies.map(normalizeLoadedEnemyUnit);
       normalized.mapStates[currentMapId].enemyWave = toNonNegativeInteger(loadedOverworld.enemyWave, 1);
       normalized.mapStates[currentMapId].nextRespawnAt = null;
+      normalized.mapStates[currentMapId].respawnTimerId = null;
+      normalized.mapStates[currentMapId].pendingRespawnEnemies = [];
+      normalized.mapStates[currentMapId].pickups = Array.isArray(loadedOverworld.pickups)
+        ? loadedOverworld.pickups.map(normalizeLoadedPickup).filter(Boolean)
+        : [];
+      normalized.mapStates[currentMapId].pickupCounter = toNonNegativeInteger(loadedOverworld.pickupCounter);
       normalized.mapStates[currentMapId].removedObjectIds = Array.isArray(loadedOverworld.removedObjectIds)
         ? loadedOverworld.removedObjectIds
         : [];
@@ -2635,6 +2956,7 @@ export function createGameActions(state) {
     startOverworldAtMap,
     startOverworldEncounter,
     tickCutscene,
+    tickOverworldEnemyWander,
     tickOverworldHealthRegen,
     toggleAttackSelection,
     toggleWorldMapHeroPath,
