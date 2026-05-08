@@ -1038,6 +1038,7 @@ export function createGameActions(state) {
     if (levelsGained > 0) {
       game.player.level = nextLevel;
       game.player.characteristicPoints += pointsGained;
+      game.player.health = game.player.maxHealth;
       game.levelUpNotice = {
         levelsGained,
         pointsGained,

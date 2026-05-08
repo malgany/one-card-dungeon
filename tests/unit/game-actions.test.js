@@ -844,6 +844,7 @@ describe('game actions', () => {
     const secondMonster = { type: 'skeletonMage', xp: 45, xpGranted: false };
 
     state.game.player.experience = 10;
+    state.game.player.health = 12;
 
     expect(actions.grantMonsterExperience(firstMonster)).toMatchObject({
       xp: 10,
@@ -854,12 +855,14 @@ describe('game actions', () => {
       experience: 20,
       level: 2,
       characteristicPoints: 5,
+      health: state.game.player.maxHealth,
     });
     expect(actions.getXpProgress(state.game.player)).toMatchObject({
       progressXp: 5,
       requiredXp: 20,
     });
 
+    state.game.player.health = 20;
     expect(actions.grantMonsterExperience(secondMonster)).toMatchObject({
       xp: 45,
       levelsGained: 2,
@@ -869,6 +872,7 @@ describe('game actions', () => {
       experience: 65,
       level: 4,
       characteristicPoints: 15,
+      health: state.game.player.maxHealth,
     });
     expect(actions.getXpProgress(state.game.player)).toMatchObject({
       progressXp: 5,
