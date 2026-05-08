@@ -3211,6 +3211,29 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     ctx.restore();
   }
 
+  function drawHoveredOverworldEnemyLevel(currentLayout) {
+    const enemy = layout.hoveredOverworldEnemy();
+    if (!enemy || state.game.activeModal || state.game.menuOpen || state.game.busy) return;
+
+    const label = `Nível ${enemy.level || 1}`;
+    const point = screenPointForTile(currentLayout, enemy.x, enemy.y, 1.52);
+
+    ctx.save();
+    ctx.font = '900 12px Inter, sans-serif';
+    const width = Math.min(currentLayout.sw - 24, Math.max(76, ctx.measureText(label).width + 22));
+    const height = 26;
+    const x = clamp(point.x - width / 2, 12, currentLayout.sw - width - 12);
+    const y = clamp(point.y - 32, 12, currentLayout.sh - height - 12);
+
+    draw.roundRect(x, y, width, height, 6, 'rgba(7,8,7,0.92)', '#d9c894');
+    draw.drawText(label, x + width / 2, y + 18, {
+      align: 'center',
+      font: '900 12px Inter, sans-serif',
+      color: UI_THEME.text,
+    });
+    ctx.restore();
+  }
+
   function drawFloatingTextAnimations(currentLayout, now) {
     state.game.animations.forEach((anim) => {
       if (anim.type !== 'floatingText' || now < anim.startTime) return;
@@ -3749,6 +3772,8 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     clearThreeBoardViewport(currentLayout);
     drawSpeechBubbleAnimations(currentLayout, now);
+    drawFloatingTextAnimations(currentLayout, now);
+    if (!cutsceneActive) drawHoveredOverworldEnemyLevel(currentLayout);
 
     if (cutsceneActive) {
       drawCutsceneSpeechBubbles(currentLayout, now);
