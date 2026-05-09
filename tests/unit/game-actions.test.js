@@ -73,10 +73,11 @@ function hasClosedWallCorner(walls) {
   return false;
 }
 
-const LEVEL_3_CLASS_SPELLS = [
+const CLASS_SPELL_CASES = [
   {
     characterType: 'mage',
     spellId: 'mageFireBucket',
+    unlockLevel: 3,
     characteristic: 'fire',
     baseDamage: 11,
     apCost: 4,
@@ -91,8 +92,43 @@ const LEVEL_3_CLASS_SPELLS = [
     projectileDuration: 420,
   },
   {
+    characterType: 'mage',
+    spellId: 'mageFonteCinzas',
+    unlockLevel: 5,
+    characteristic: 'fire',
+    baseDamage: 9,
+    apCost: 4,
+    rangeLabel: '2~4',
+    player: { x: 0, y: 5 },
+    reachable: ['0,3', '1,4', '2,5'],
+    unreachable: ['0,4', '5,5'],
+    target: { x: 0, y: 3 },
+    animation: 'Ranged_Magic_Shoot',
+    duration: 933,
+    projectileModel: 'fireBucket',
+    projectileDuration: 420,
+  },
+  {
+    characterType: 'mage',
+    spellId: 'mageAmpulhetaMare',
+    unlockLevel: 8,
+    characteristic: 'water',
+    baseDamage: 7,
+    apCost: 3,
+    rangeLabel: '3~6',
+    player: { x: 0, y: 5 },
+    reachable: ['0,2', '3,2', '5,5'],
+    unreachable: ['0,3', '2,4'],
+    target: { x: 0, y: 2 },
+    animation: 'Ranged_Magic_Shoot',
+    duration: 933,
+    projectileModel: 'waterHourglass',
+    projectileDuration: 420,
+  },
+  {
     characterType: 'knight',
     spellId: 'knightStoneLance',
+    unlockLevel: 3,
     characteristic: 'earth',
     baseDamage: 13,
     apCost: 5,
@@ -107,8 +143,43 @@ const LEVEL_3_CLASS_SPELLS = [
     projectileDuration: 260,
   },
   {
+    characterType: 'knight',
+    spellId: 'knightCorteVendaval',
+    unlockLevel: 5,
+    characteristic: 'air',
+    baseDamage: 9,
+    apCost: 4,
+    rangeLabel: '2~4',
+    player: { x: 2, y: 2 },
+    reachable: ['2,0', '2,5', '5,2'],
+    unreachable: ['2,1', '3,3'],
+    target: { x: 2, y: 0 },
+    animation: 'Melee_1H_Attack_Chop',
+    duration: 1067,
+    projectileModel: 'windSlash',
+    projectileDuration: 300,
+  },
+  {
+    characterType: 'knight',
+    spellId: 'knightQuebraBaluarte',
+    unlockLevel: 8,
+    characteristic: 'earth',
+    baseDamage: 10,
+    apCost: 3,
+    rangeLabel: '1~2',
+    player: { x: 2, y: 2 },
+    reachable: ['2,1', '4,2'],
+    unreachable: ['5,2', '3,3'],
+    target: { x: 2, y: 1 },
+    animation: 'Melee_1H_Attack_Chop',
+    duration: 1067,
+    projectileModel: 'stoneLance',
+    projectileDuration: 260,
+  },
+  {
     characterType: 'barbarian',
     spellId: 'barbarianBoulderHurl',
+    unlockLevel: 3,
     characteristic: 'earth',
     baseDamage: 14,
     apCost: 5,
@@ -123,8 +194,43 @@ const LEVEL_3_CLASS_SPELLS = [
     projectileDuration: 520,
   },
   {
+    characterType: 'barbarian',
+    spellId: 'barbarianTremorPedra',
+    unlockLevel: 5,
+    characteristic: 'earth',
+    baseDamage: 12,
+    apCost: 5,
+    rangeLabel: '1~2',
+    player: { x: 0, y: 5 },
+    reachable: ['0,4', '2,5'],
+    unreachable: ['0,2', '1,4'],
+    target: { x: 0, y: 4 },
+    animation: 'Melee_2H_Attack_Chop',
+    duration: 1633,
+    projectileModel: 'rollingBoulder',
+    projectileDuration: 470,
+  },
+  {
+    characterType: 'barbarian',
+    spellId: 'barbarianRugidoBrasa',
+    unlockLevel: 8,
+    characteristic: 'fire',
+    baseDamage: 8,
+    apCost: 3,
+    rangeLabel: '1~3',
+    player: { x: 0, y: 5 },
+    reachable: ['0,4', '1,4', '2,5'],
+    unreachable: ['4,5', '5,0'],
+    target: { x: 0, y: 4 },
+    animation: 'Melee_2H_Attack_Chop',
+    duration: 1633,
+    projectileModel: 'fireBucket',
+    projectileDuration: 390,
+  },
+  {
     characterType: 'ranger',
     spellId: 'rangerVerdantArrow',
+    unlockLevel: 3,
     characteristic: 'air',
     baseDamage: 10,
     apCost: 4,
@@ -139,8 +245,43 @@ const LEVEL_3_CLASS_SPELLS = [
     projectileDuration: 280,
   },
   {
+    characterType: 'ranger',
+    spellId: 'rangerFlechaIncendiaria',
+    unlockLevel: 5,
+    characteristic: 'fire',
+    baseDamage: 10,
+    apCost: 4,
+    rangeLabel: '3~6',
+    player: { x: 0, y: 5 },
+    reachable: ['0,2', '3,5', '5,5'],
+    unreachable: ['0,3', '2,3'],
+    target: { x: 0, y: 2 },
+    animation: 'Ranged_Bow_Release',
+    duration: 1333,
+    projectileModel: 'flameArrow',
+    projectileDuration: 280,
+  },
+  {
+    characterType: 'ranger',
+    spellId: 'rangerDisparoCiclone',
+    unlockLevel: 8,
+    characteristic: 'air',
+    baseDamage: 8,
+    apCost: 3,
+    rangeLabel: '2~6',
+    player: { x: 0, y: 5 },
+    reachable: ['0,3', '2,3', '5,5'],
+    unreachable: ['0,4', '2,4'],
+    target: { x: 0, y: 3 },
+    animation: 'Ranged_Bow_Release',
+    duration: 1333,
+    projectileModel: 'cycloneArrow',
+    projectileDuration: 320,
+  },
+  {
     characterType: 'rogue',
     spellId: 'rogueTideDagger',
+    unlockLevel: 3,
     characteristic: 'water',
     baseDamage: 9,
     apCost: 4,
@@ -154,7 +295,43 @@ const LEVEL_3_CLASS_SPELLS = [
     projectileModel: 'tideDagger',
     projectileDuration: 260,
   },
+  {
+    characterType: 'rogue',
+    spellId: 'rogueCorteRessaca',
+    unlockLevel: 5,
+    characteristic: 'water',
+    baseDamage: 8,
+    apCost: 4,
+    rangeLabel: '2~5',
+    player: { x: 2, y: 2 },
+    reachable: ['4,4', '2,5', '5,2'],
+    unreachable: ['3,3', '4,3'],
+    target: { x: 4, y: 4 },
+    animation: 'Ranged_1H_Shoot',
+    duration: 1067,
+    projectileModel: 'tideDagger',
+    projectileDuration: 260,
+  },
+  {
+    characterType: 'rogue',
+    spellId: 'rogueEspelhoAfogado',
+    unlockLevel: 8,
+    characteristic: 'water',
+    baseDamage: 6,
+    apCost: 3,
+    rangeLabel: '1~4',
+    player: { x: 2, y: 2 },
+    reachable: ['3,3', '2,5', '5,2'],
+    unreachable: ['0,5', '5,4'],
+    target: { x: 3, y: 3 },
+    animation: 'Ranged_1H_Shoot',
+    duration: 1067,
+    projectileModel: 'waterMirror',
+    projectileDuration: 300,
+  },
 ];
+
+const CLASS_TYPES = [...new Set(CLASS_SPELL_CASES.map((spellCase) => spellCase.characterType))];
 
 describe('game actions', () => {
   beforeEach(() => {
@@ -318,6 +495,32 @@ describe('game actions', () => {
     expect(state.game.player.health).toBe(50);
   });
 
+  it('restores overworld health from offline time without instantly filling short logouts', () => {
+    const savedAt = new Date('2026-05-08T12:00:00.000Z');
+    const { state, actions } = createActionHarness(createOverworldGame(getWorldMap('open-road')));
+    state.game.player.health = 0;
+
+    vi.setSystemTime(savedAt);
+    expect(actions.saveGame({ silent: true })).toBe(true);
+    expect(JSON.parse(localStorage.getItem(SAVE_KEY)).savedAt).toBe(savedAt.getTime());
+
+    state.game = createGame();
+    vi.setSystemTime(new Date(savedAt.getTime() + 5000));
+    expect(actions.loadGame({ silent: true })).toBe(true);
+    expect(state.game.mode).toBe(GAME_MODES.OVERWORLD);
+    expect(state.game.player.health).toBe(1);
+
+    state.game.player.health = 0;
+    vi.setSystemTime(savedAt);
+    expect(actions.saveGame({ silent: true })).toBe(true);
+
+    state.game = createGame();
+    vi.setSystemTime(new Date(savedAt.getTime() + 3 * 60 * 1000));
+    expect(actions.loadGame({ silent: true })).toBe(true);
+    expect(state.game.player.health).toBe(state.game.player.maxHealth);
+    expect(state.game.nextOverworldHealthRegenAt).toBe(null);
+  });
+
   it('returns reachable player tiles within remaining speed', () => {
     const { state, actions } = createActionHarness();
     state.game.phase = PHASES.HERO;
@@ -400,6 +603,37 @@ describe('game actions', () => {
     expect(state.game.phase).toBe(PHASES.LEVELUP);
   });
 
+  it('defers defeated monster XP until the battle is won', () => {
+    const firstMonster = createMonster('skeletonMinion', 1, 5, 0);
+    const secondMonster = createMonster('skeletonWarrior', 2, 5, 1);
+    firstMonster.hp = 1;
+    secondMonster.hp = 1;
+    const game = createDungeonLegacyGame();
+    game.phase = PHASES.HERO;
+    game.player = { ...game.player, x: 0, y: 5, rangeBase: 3 };
+    game.monsters = [firstMonster, secondMonster];
+    game.apRemaining = 5;
+    game.selectedAttackId = game.player.attackSlot.id;
+    const { state, actions } = createActionHarness(game);
+
+    actions.attackMonster(firstMonster.id);
+    vi.advanceTimersByTime(monsterDeathFinishDelay());
+
+    expect(state.game.monsters).toEqual([secondMonster]);
+    expect(state.game.player.experience).toBe(0);
+    expect(firstMonster.xpGranted).toBe(false);
+
+    state.game.apRemaining = 5;
+    state.game.selectedAttackId = state.game.player.attackSlot.id;
+    actions.attackMonster(secondMonster.id);
+    vi.advanceTimersByTime(monsterDeathFinishDelay());
+
+    expect(state.game.monsters).toEqual([]);
+    expect(state.game.player.experience).toBe(firstMonster.xp + secondMonster.xp);
+    expect(firstMonster.xpGranted).toBe(true);
+    expect(secondMonster.xpGranted).toBe(true);
+  });
+
   it('requires selecting the equipped attack before targeting monsters', () => {
     const monster = createMonster('skeletonMinion', 1, 5, 0);
     const game = createDungeonLegacyGame();
@@ -438,9 +672,9 @@ describe('game actions', () => {
     actions.attackTile({ x: 0, y: 4 });
 
     expect(state.game.apRemaining).toBe(5);
-    expect(state.game.selectedAttackId).toBe(game.player.attackSlot.id);
+    expect(state.game.selectedAttackId).toBe(null);
     expect(state.game.busy).toBe(false);
-    expect(state.game.lastEvent).toBe('Golpe: nenhum inimigo nessa celula.');
+    expect(state.game.lastEvent).toBe('Golpe: nenhum inimigo nessa celula. Poder desmarcado.');
     expect(state.game.animations.some((animation) => {
       return animation.type === 'modelAction' && animation.entityId === 'player';
     })).toBe(false);
@@ -1071,25 +1305,43 @@ describe('game actions', () => {
       vi.advanceTimersByTime(movement.totalDuration);
     }
 
-    state.game.player.health = 20;
+    state.game.player.health = state.game.player.maxHealth;
     moveAndFinish({ x: 2, y: 9 });
-    expect(state.game.player.health).toBe(20);
+    expect(state.game.player.health).toBe(state.game.player.maxHealth);
     expect(getCurrentWorldPickups(state.game.overworld).some((pickup) => pickup.id === 'apple-high-health')).toBe(true);
 
-    state.game.player.health = 5;
+    state.game.player.health = 20;
     moveAndFinish({ x: 3, y: 9 });
-    expect(state.game.player.health).toBe(15);
+    expect(state.game.player.health).toBe(30);
     expect(getCurrentWorldPickups(state.game.overworld).some((pickup) => pickup.id === 'apple-low-health')).toBe(false);
 
     state.game.player.health = 20;
     moveAndFinish({ x: 5, y: 9 });
-    expect(state.game.player.health).toBe(30);
+    expect(state.game.player.health).toBe(40);
     expect(getCurrentWorldPickups(state.game.overworld).some((pickup) => pickup.id === 'bread-low-health')).toBe(false);
 
     state.game.player.health = 1;
     moveAndFinish({ x: 6, y: 9 });
     expect(state.game.player.health).toBe(state.game.player.maxHealth);
     expect(getCurrentWorldPickups(state.game.overworld).some((pickup) => pickup.id === 'golden-low-health')).toBe(false);
+  });
+
+  it('expires dropped overworld food pickups after fifteen seconds', () => {
+    const game = createOverworldGame(getWorldMap('open-road'));
+    const { state, actions } = createActionHarness(game);
+    const mapState = getCurrentWorldMapState(state.game.overworld);
+    mapState.pickups = [
+      { id: 'fresh-apple', kind: 'apple', x: 2, y: 9, createdAt: 1000 },
+      { id: 'legacy-bread', kind: 'bread', x: 3, y: 9 },
+    ];
+
+    expect(actions.tickOverworldPickupExpiry(15_999)).toBe(false);
+    expect(getCurrentWorldPickups(state.game.overworld).map((pickup) => pickup.id))
+      .toEqual(['fresh-apple', 'legacy-bread']);
+
+    expect(actions.tickOverworldPickupExpiry(16_000)).toBe(true);
+    expect(getCurrentWorldPickups(state.game.overworld).map((pickup) => pickup.id))
+      .toEqual(['legacy-bread']);
   });
 
   it('allocates life and elemental characteristics without buffing neutral strike', () => {
@@ -1111,10 +1363,11 @@ describe('game actions', () => {
     expect(actions.allocateCharacteristic('water')).toBe(false);
   });
 
-  it('locks level 3 class spells until level 3 and keeps them out of the combat palette', () => {
-    for (const spellCase of LEVEL_3_CLASS_SPELLS) {
+  it('locks class spells until their unlock levels and keeps them out of the combat palette', () => {
+    for (const characterType of CLASS_TYPES) {
+      const classSpellCases = CLASS_SPELL_CASES.filter((spellCase) => spellCase.characterType === characterType);
       const { state, actions } = createActionHarness(createGame());
-      state.game.player.characterType = spellCase.characterType;
+      state.game.player.characterType = characterType;
 
       expect(actions.getPlayerSpellbook(state.game.player).map((spell) => ({
         id: spell.id,
@@ -1122,26 +1375,43 @@ describe('game actions', () => {
         unlockLevel: spell.unlockLevel,
       }))).toEqual([
         { id: 'strike', locked: false, unlockLevel: 1 },
-        { id: spellCase.spellId, locked: true, unlockLevel: 3 },
+        ...classSpellCases.map((spellCase) => ({
+          id: spellCase.spellId,
+          locked: true,
+          unlockLevel: spellCase.unlockLevel,
+        })),
       ]);
       expect(actions.getAvailableAttacks(state.game).map((attack) => attack.id)).toEqual(['strike']);
 
       state.game.player.level = 3;
+      expect(actions.getAvailableAttacks(state.game).map((attack) => attack.id)).toEqual([
+        'strike',
+        ...classSpellCases.filter((spellCase) => spellCase.unlockLevel <= 3).map((spellCase) => spellCase.spellId),
+      ]);
 
-      expect(actions.getPlayerSpellbook(state.game.player)[1].locked).toBe(false);
-      expect(actions.getAvailableAttacks(state.game).map((attack) => attack.id)).toEqual(['strike', spellCase.spellId]);
+      state.game.player.level = 5;
+      expect(actions.getAvailableAttacks(state.game).map((attack) => attack.id)).toEqual([
+        'strike',
+        ...classSpellCases.filter((spellCase) => spellCase.unlockLevel <= 5).map((spellCase) => spellCase.spellId),
+      ]);
+
+      state.game.player.level = 8;
+      expect(actions.getAvailableAttacks(state.game).map((attack) => attack.id)).toEqual([
+        'strike',
+        ...classSpellCases.map((spellCase) => spellCase.spellId),
+      ]);
     }
   });
 
   it('uses elemental bonuses and class range patterns without changing Golpe', () => {
-    for (const spellCase of LEVEL_3_CLASS_SPELLS) {
+    for (const spellCase of CLASS_SPELL_CASES) {
       const game = createDungeonLegacyGame();
       game.phase = PHASES.HERO;
       game.combatWalls = [];
       game.player = {
         ...game.player,
         characterType: spellCase.characterType,
-        level: 3,
+        level: spellCase.unlockLevel,
         x: spellCase.player.x,
         y: spellCase.player.y,
         characteristics: {
@@ -1185,7 +1455,7 @@ describe('game actions', () => {
   });
 
   it('plays class spell animations and projectiles', () => {
-    for (const spellCase of LEVEL_3_CLASS_SPELLS) {
+    for (const spellCase of CLASS_SPELL_CASES) {
       const monster = createMonster('skeletonMinion', spellCase.target.x, spellCase.target.y, 0);
       monster.hp = 30;
       const game = createDungeonLegacyGame();
@@ -1194,7 +1464,7 @@ describe('game actions', () => {
       game.player = {
         ...game.player,
         characterType: spellCase.characterType,
-        level: 3,
+        level: spellCase.unlockLevel,
         x: spellCase.player.x,
         y: spellCase.player.y,
       };
@@ -1231,14 +1501,105 @@ describe('game actions', () => {
         }),
       ]));
 
-      vi.advanceTimersByTime(Math.max(TIMING.HERO_ATTACK_WAIT_TIME, spellCase.duration));
+      vi.advanceTimersByTime(3000);
       expect(state.game.busy).toBe(false);
       vi.clearAllTimers();
     }
   });
 
+  it('applies earth splash damage to adjacent monsters only', () => {
+    const primary = createMonster('skeletonMinion', 2, 4, 0);
+    const adjacent = createMonster('skeletonMinion', 3, 4, 1);
+    const far = createMonster('skeletonMinion', 4, 4, 2);
+    const game = createDungeonLegacyGame();
+    game.phase = PHASES.HERO;
+    game.combatWalls = [];
+    game.player = {
+      ...game.player,
+      characterType: 'barbarian',
+      level: 5,
+      x: 2,
+      y: 5,
+    };
+    game.monsters = [primary, adjacent, far];
+    game.apRemaining = 5;
+    game.selectedAttackId = 'barbarianTremorPedra';
+    const { actions } = createActionHarness(game);
+
+    expect(actions.attackTile({ x: 2, y: 4 })).toBe(true);
+
+    expect(primary.hp).toBe(9);
+    expect(adjacent.hp).toBe(15);
+    expect(far.hp).toBe(20);
+  });
+
+  it('moves living targets with air effects and stops at blocked cells', () => {
+    const pushed = createMonster('skeletonMinion', 0, 3, 0);
+    const game = createDungeonLegacyGame();
+    game.phase = PHASES.HERO;
+    game.combatWalls = [];
+    game.player = {
+      ...game.player,
+      characterType: 'ranger',
+      level: 8,
+      x: 0,
+      y: 5,
+    };
+    game.monsters = [pushed];
+    game.apRemaining = 3;
+    game.selectedAttackId = 'rangerDisparoCiclone';
+    const { actions } = createActionHarness(game);
+
+    expect(actions.attackTile({ x: 0, y: 3 })).toBe(true);
+    expect(pushed).toMatchObject({ x: 0, y: 1 });
+
+    vi.advanceTimersByTime(1490);
+    const blocked = createMonster('skeletonMinion', 0, 3, 1);
+    game.combatWalls = [[0, 2]];
+    game.monsters = [blocked];
+    game.apRemaining = 3;
+    game.selectedAttackId = 'rangerDisparoCiclone';
+    game.busy = false;
+
+    expect(actions.attackTile({ x: 0, y: 3 })).toBe(true);
+    expect(blocked).toMatchObject({ x: 0, y: 3 });
+  });
+
+  it('queues water AP for the next hero turn with a cap', () => {
+    const first = createMonster('skeletonMinion', 3, 3, 0);
+    const second = createMonster('skeletonMinion', 2, 5, 1);
+    const game = createDungeonLegacyGame();
+    game.phase = PHASES.HERO;
+    game.combatWalls = [];
+    game.player = {
+      ...game.player,
+      characterType: 'rogue',
+      level: 8,
+      x: 2,
+      y: 2,
+    };
+    game.monsters = [first, second];
+    game.apRemaining = 6;
+    game.selectedAttackId = 'rogueEspelhoAfogado';
+    const { state, actions } = createActionHarness(game);
+
+    expect(actions.attackTile({ x: 3, y: 3 })).toBe(true);
+    expect(state.game.pendingNextTurnApBonus).toBe(2);
+
+    vi.advanceTimersByTime(1067);
+    state.game.selectedAttackId = 'rogueEspelhoAfogado';
+    expect(actions.attackTile({ x: 2, y: 5 })).toBe(true);
+    expect(state.game.pendingNextTurnApBonus).toBe(2);
+
+    vi.advanceTimersByTime(1067);
+    actions.startHeroTurn();
+
+    expect(state.game.apRemaining).toBe(state.game.player.apMax + 2);
+    expect(state.game.pendingNextTurnApBonus).toBe(0);
+  });
+
   it('keeps basic attacks on Throw without spawning class spell projectiles', () => {
-    for (const { characterType } of LEVEL_3_CLASS_SPELLS) {
+    for (const characterType of CLASS_TYPES) {
       const monster = createMonster('skeletonMinion', 1, 5, 0);
       monster.hp = 30;
       const game = createDungeonLegacyGame();
@@ -1286,12 +1647,12 @@ describe('game actions', () => {
     expect(state.game.turnQueue).toEqual(['player', ...state.game.monsters.map((m) => m.id)]);
   });
 
-  it('migrates old enemy save data to skeleton enemy types', () => {
+  it('turns a saved overworld combat into a defeat on load', () => {
     const { state, actions } = createActionHarness(createGame());
     localStorage.setItem(SAVE_KEY, JSON.stringify({
       mode: GAME_MODES.COMBAT,
       levelIndex: 0,
-      player: { ...state.game.player, x: 0, y: 5 },
+      player: { ...state.game.player, x: 0, y: 5, health: 12 },
       monsters: [{
         id: 'spider-0-1-5',
         type: 'spider',
@@ -1332,25 +1693,51 @@ describe('game actions', () => {
 
     actions.loadGame();
 
-    expect(state.game.monsters[0]).toMatchObject({
-      id: 'skeletonMinion-0-1-5',
-      type: 'skeletonMinion',
-      groupId: 'skeleton-minions',
-      overworldEnemyId: 'overworld-open-road-skeleton-minions-0',
-      name: 'Esqueleto Minion',
-      hp: 7,
-    });
-    expect(state.game.turnQueue).toEqual(['player', 'skeletonMinion-0-1-5']);
-    expect(state.game.combatContext).toMatchObject({
-      groupId: 'skeleton-mages',
-      enemyIds: ['overworld-open-road-skeleton-mages-0'],
-    });
-    expect(getCurrentWorldEnemies(state.game.overworld)[0]).toMatchObject({
+    expect(state.game.mode).toBe(GAME_MODES.OVERWORLD);
+    expect(state.game.player.health).toBe(0);
+    expect(state.game.overworld.currentMapId).toBe(START_WORLD_MAP_ID);
+    expect(state.game.monsters).toEqual([]);
+    expect(state.game.turnQueue).toEqual(['player']);
+    expect(state.game.combatContext).toBe(null);
+    expect(state.game.pendingCombatXp).toEqual([]);
+    expect(state.game.overworld.mapStates['open-road'].enemies[0]).toMatchObject({
       id: 'overworld-open-road-skeleton-minions-0',
       encounterId: 'skeleton-minions-0',
       type: 'skeletonMinion',
       groupId: 'skeleton-minions',
     });
+  });
+
+  it('persists combat logout defeat health to character progress', () => {
+    const { state, actions } = createActionHarness(createGame());
+    window.localStorage.setItem(SELECTED_CHARACTER_KEY, 'char-a');
+    window.localStorage.setItem(CHARACTERS_KEY, JSON.stringify([
+      {
+        id: 'char-a',
+        name: 'A',
+        type: 'mage',
+        progress: { health: 12, maxHealth: state.game.player.maxHealth },
+      },
+    ]));
+
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      ...createOverworldGame(getWorldMap('open-road')),
+      mode: GAME_MODES.COMBAT,
+      player: { ...state.game.player, characterId: 'char-a', health: 12 },
+      monsters: [],
+      combatContext: {
+        origin: GAME_MODES.OVERWORLD,
+        mapId: 'open-road',
+        groupId: 'skeleton-minions',
+        enemyIds: [],
+      },
+    }));
+
+    expect(actions.loadGame({ silent: true })).toBe(true);
+
+    const characters = JSON.parse(window.localStorage.getItem(CHARACTERS_KEY));
+    expect(state.game.player.health).toBe(0);
+    expect(characters[0].progress.health).toBe(0);
   });
 
   it('saves and loads a normalized game without transient UI state', () => {
@@ -1433,5 +1820,30 @@ describe('game actions', () => {
       facing: { x: 1, y: 0 },
     });
     expect(state.game.banner).toBe(null);
+  });
+
+  it('loads the requested character save instead of the latest global save', () => {
+    const { state, actions } = createActionHarness(createOverworldGame(getWorldMap('open-road')));
+    state.game.player.characterId = 'char-a';
+    state.game.player.name = 'A';
+    state.game.player.x = 2;
+    state.game.player.y = 3;
+    expect(actions.saveGame({ silent: true })).toBe(true);
+
+    state.game.player.characterId = 'char-b';
+    state.game.player.name = 'B';
+    state.game.player.x = 8;
+    state.game.player.y = 9;
+    expect(actions.saveGame({ silent: true })).toBe(true);
+
+    state.game = createGame();
+    expect(actions.loadGame({ silent: true, characterId: 'char-a' })).toBe(true);
+
+    expect(state.game.player).toMatchObject({
+      characterId: 'char-a',
+      name: 'A',
+      x: 2,
+      y: 3,
+    });
   });
 });

@@ -142,6 +142,19 @@ describe('canvas input', () => {
     expect(actions.movePlayer).not.toHaveBeenCalled();
   });
 
+  it('drops the selected attack when clicking outside the board', () => {
+    const { actions, layout, listeners, state } = createInputHarness();
+    state.game.phase = PHASES.HERO;
+    state.game.selectedAttackId = 'strike';
+    layout.tileAt.mockReturnValue(null);
+
+    listeners.get('click')();
+
+    expect(state.game.selectedAttackId).toBe(null);
+    expect(actions.attackTile).not.toHaveBeenCalled();
+    expect(actions.movePlayer).not.toHaveBeenCalled();
+  });
+
   it('starts overworld encounters or moves on empty overworld tiles', () => {
     const { actions, layout, listeners, state } = createInputHarness();
     state.game.mode = GAME_MODES.OVERWORLD;

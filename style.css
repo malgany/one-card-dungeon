@@ -435,6 +435,27 @@
       font-size: 12px;
     }
 
+    .menu-character-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    .menu-character-copy .menu-character-level {
+      display: inline-flex;
+      align-items: center;
+      min-height: 20px;
+      padding: 2px 7px;
+      border: 1px solid rgba(211, 155, 50, 0.54);
+      border-radius: 999px;
+      background: rgba(211, 155, 50, 0.14);
+      color: #f2ead7;
+      font-weight: 900;
+      line-height: 1;
+    }
+
     .menu-character-color {
       width: 18px;
       height: 42px;

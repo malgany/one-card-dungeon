@@ -55,6 +55,16 @@ const UI_THEME = {
   textDim: '#8f8773',
   overlay: 'rgba(7,8,7,0.94)',
 };
+const POWER_BUTTON_COLORS = Object.freeze({
+  emptyFill: 'rgba(23,25,18,0.48)',
+  readyFill: 'rgba(27,38,27,0.9)',
+  hoverFill: 'rgba(63,111,69,0.88)',
+  selectedFill: 'rgba(63,111,69,0.96)',
+  disabledFill: 'rgba(23,25,18,0.62)',
+  lacksApFill: 'rgba(65,24,20,0.82)',
+  readyStroke: 'rgba(95,143,84,0.78)',
+  selectedStroke: '#8fca7e',
+});
 const SPELL_ELEMENT_META = {
   neutral: { label: 'Neutro', color: UI_THEME.accent },
   earth: { label: 'Terra', color: '#9b6a3f' },
@@ -1756,13 +1766,13 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       const filled = index === 0;
       const selected = filled && attackSelected;
       const fill = !filled
-        ? 'rgba(23,25,18,0.52)'
+        ? POWER_BUTTON_COLORS.emptyFill
         : selected
-          ? UI_THEME.accentDark
+          ? POWER_BUTTON_COLORS.selectedFill
           : hovered && !attackDisabled
-            ? '#73501d'
-            : UI_THEME.surface1;
-      const stroke = selected ? '#e6c06f' : filled ? UI_THEME.accentDark : UI_THEME.border0;
+            ? POWER_BUTTON_COLORS.hoverFill
+            : POWER_BUTTON_COLORS.readyFill;
+      const stroke = selected ? POWER_BUTTON_COLORS.selectedStroke : filled ? POWER_BUTTON_COLORS.readyStroke : UI_THEME.border0;
 
       draw.roundRect(sx, slotsY, slotSize, slotSize, 6, fill, stroke);
 
@@ -1887,13 +1897,13 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       const filled = index === 0;
       const selected = filled && attackSelected;
       const fill = !filled
-        ? 'rgba(23,25,18,0.52)'
+        ? POWER_BUTTON_COLORS.emptyFill
         : selected
-          ? UI_THEME.accentDark
+          ? POWER_BUTTON_COLORS.selectedFill
           : hovered && !attackDisabled
-            ? '#73501d'
-            : UI_THEME.surface1;
-      const stroke = selected ? '#e6c06f' : filled ? UI_THEME.accentDark : UI_THEME.border0;
+            ? POWER_BUTTON_COLORS.hoverFill
+            : POWER_BUTTON_COLORS.readyFill;
+      const stroke = selected ? POWER_BUTTON_COLORS.selectedStroke : filled ? POWER_BUTTON_COLORS.readyStroke : UI_THEME.border0;
 
       draw.roundRect(sx, slotsY, slotSize, slotSize, 6, fill, stroke);
 
@@ -2031,22 +2041,22 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       const attackDisabled = filled && (game.phase !== PHASES.HERO || game.busy || game.apRemaining < attack.apCost);
       const lacksAp = filled && game.phase === PHASES.HERO && !game.busy && game.apRemaining < attack.apCost;
       const fill = !filled
-        ? 'rgba(23,25,18,0.48)'
+        ? POWER_BUTTON_COLORS.emptyFill
         : selected
-          ? UI_THEME.accentDark
+          ? POWER_BUTTON_COLORS.selectedFill
           : hovered && !attackDisabled
-            ? '#73501d'
+            ? POWER_BUTTON_COLORS.hoverFill
             : lacksAp
-              ? 'rgba(65,24,20,0.82)'
+              ? POWER_BUTTON_COLORS.lacksApFill
               : attackDisabled
-                ? 'rgba(23,25,18,0.62)'
-              : UI_THEME.surface1;
+                ? POWER_BUTTON_COLORS.disabledFill
+              : POWER_BUTTON_COLORS.readyFill;
       const stroke = selected
-        ? '#e6c06f'
+        ? POWER_BUTTON_COLORS.selectedStroke
         : filled && lacksAp
           ? UI_THEME.danger
           : filled
-            ? UI_THEME.accent
+            ? POWER_BUTTON_COLORS.readyStroke
             : UI_THEME.border0;
 
       draw.roundRect(sx, slotsY, slotSize, slotSize, Math.min(6, slotSize * 0.18), fill, stroke);
@@ -2294,7 +2304,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const headerW = modalW - pad * 2 - portraitSize - 18;
     const xpBarW = Math.max(120, headerW);
     const xpBarH = 12;
-    const rowTop = y + (compact ? 172 : 196);
+    const rowTop = y + (compact ? 198 : 196);
     const rowH = compact ? 56 : 58;
     const rowGap = compact ? 8 : 10;
     const rowW = modalW - pad * 2;
@@ -2331,18 +2341,37 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       color: UI_THEME.text,
       maxWidth: headerW,
     });
-    draw.drawText(`Nível ${xp.level} | Pontos ${player.characteristicPoints}`, headerX, y + 102, {
-      font: '800 13px Inter, sans-serif',
-      color: UI_THEME.accent,
-      maxWidth: headerW,
-    });
-    draw.drawText(`Vida ${player.health}/${player.maxHealth}`, headerX, y + 126, {
+    draw.drawText(`Nivel ${xp.level} | Vida ${player.health}/${player.maxHealth}`, headerX, y + 102, {
       font: '800 13px Inter, sans-serif',
       color: UI_THEME.textMuted,
       maxWidth: headerW,
     });
 
-    const xpY = y + 148;
+    const pointsLabel = player.characteristicPoints === 1 ? 'ponto livre' : 'pontos livres';
+    const pointsBadgeW = Math.min(headerW, compact ? 150 : 172);
+    const pointsBadgeH = 32;
+    const pointsBadgeY = y + 116;
+    const hasFreePoints = player.characteristicPoints > 0;
+    draw.roundRect(
+      headerX,
+      pointsBadgeY,
+      pointsBadgeW,
+      pointsBadgeH,
+      7,
+      hasFreePoints ? 'rgba(95,143,84,0.24)' : 'rgba(32,34,25,0.82)',
+      hasFreePoints ? UI_THEME.success : UI_THEME.border0,
+    );
+    draw.drawText(String(player.characteristicPoints), headerX + 15, pointsBadgeY + 23, {
+      font: '900 21px Inter, sans-serif',
+      color: hasFreePoints ? UI_THEME.text : UI_THEME.textMuted,
+    });
+    draw.drawText(pointsLabel, headerX + 48, pointsBadgeY + 21, {
+      font: '900 12px Inter, sans-serif',
+      color: hasFreePoints ? UI_THEME.text : UI_THEME.textDim,
+      maxWidth: pointsBadgeW - 58,
+    });
+
+    const xpY = y + 156;
     draw.roundRect(headerX, xpY, xpBarW, xpBarH, xpBarH / 2, 'rgba(7,8,7,0.72)', UI_THEME.border0);
     draw.roundRect(headerX + 2, xpY + 2, Math.max(0, (xpBarW - 4) * xp.progress), xpBarH - 4, (xpBarH - 4) / 2, UI_THEME.accent, null);
     draw.drawText(`XP ${xp.progressXp}/${xp.requiredXp}`, headerX, xpY + 30, {
@@ -2361,9 +2390,9 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       const buttonSize = 34;
       const buttonX = x + pad + rowW - buttonSize - 10;
 
-      draw.roundRect(x + pad, rowY, rowW, rowH, 8, 'rgba(23,25,18,0.84)', UI_THEME.border0);
-      draw.roundRect(x + pad + 3, rowY + 3, 5, rowH - 6, 3, definition.color, null);
-      drawIconImage(definition.iconKey, iconX, rowY + 7, iconSize, definition.label[0], definition.color);
+      draw.roundRect(x + pad, rowY, rowW, rowH, 8, 'rgba(23,25,18,0.88)', 'rgba(111,99,66,0.5)');
+      draw.roundRect(x + pad + 4, rowY + 10, 3, rowH - 20, 2, 'rgba(111,99,66,0.58)', null);
+      drawIconImage(definition.iconKey, iconX, rowY + 7, iconSize, definition.label[0], UI_THEME.textMuted);
       draw.drawText(definition.label, textX, rowY + 24, {
         font: '900 14px Inter, sans-serif',
         color: UI_THEME.text,
@@ -2376,9 +2405,9 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       draw.drawButton(buttonX, rowY + (rowH - buttonSize) / 2, buttonSize, buttonSize, '+', () => {
         actions.allocateCharacteristic(definition.key);
       }, {
-        fill: definition.color,
-        hoverFill: UI_THEME.accent,
-        stroke: '#e6c06f',
+        fill: canSpend ? UI_THEME.successDark : UI_THEME.surface1,
+        hoverFill: UI_THEME.success,
+        stroke: canSpend ? UI_THEME.success : UI_THEME.border0,
         disabled: !canSpend,
         font: '900 20px Inter, sans-serif',
       });
@@ -2508,6 +2537,18 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       const range = actions.getAttackRangeLabel(spell, game.player);
       const cross = spell.pattern === ATTACK_PATTERNS.CROSS;
       const line8 = spell.pattern === ATTACK_PATTERNS.LINE_8;
+      const effects = spell.effects && typeof spell.effects === 'object' ? spell.effects : {};
+      const effectParts = [];
+      if (spell.lifeSteal > 0) effectParts.push(`cura ${spell.lifeSteal}`);
+      if (effects.splashDamage) effectParts.push('area');
+      if (effects.moveTarget?.direction === 'pull') effectParts.push(`puxa ${effects.moveTarget.distance || 1}`);
+      if (effects.moveTarget?.direction === 'push') effectParts.push(`empurra ${effects.moveTarget.distance || 1}`);
+      if (effects.nextTurnApBonus?.amount > 0) effectParts.push(`+${effects.nextTurnApBonus.amount} AP prox.`);
+      const rangeDetail = cross
+        ? `Alcance ${range} | em cruz`
+        : line8
+          ? `Alcance ${range} | linha/diagonal`
+          : `Alcance ${range}`;
 
       return {
         ...spell,
@@ -2518,11 +2559,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
         cross,
         rangePattern: cross ? ATTACK_PATTERNS.CROSS : line8 ? ATTACK_PATTERNS.LINE_8 : ATTACK_PATTERNS.PATH,
         value: `${elementMeta.label} | ${spell.apCost} AP | ${damage} dano`,
-        detail: cross
-          ? `Alcance ${range} | em cruz`
-          : line8
-            ? `Alcance ${range} | linha/diagonal`
-            : `Alcance ${range}`,
+        detail: effectParts.length > 0 ? `${rangeDetail} | ${effectParts.join(' | ')}` : rangeDetail,
       };
     });
     const modalW = Math.min(currentLayout.sw - 24, compact ? 430 : 620);
@@ -2644,7 +2681,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const pad = 24;
 
     drawModalBackdrop(currentLayout);
-    draw.roundRect(x, y, modalW, modalH, 10, UI_THEME.overlay, UI_THEME.accent);
+    draw.roundRect(x, y, modalW, modalH, 10, UI_THEME.overlay, UI_THEME.border1);
     draw.drawText('Você passou de nível', x + modalW / 2, y + 46, {
       align: 'center',
       font: '900 22px Inter, sans-serif',
@@ -2653,7 +2690,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     draw.drawText(`Nível ${state.game.player.level}`, x + modalW / 2, y + 82, {
       align: 'center',
       font: '900 28px Inter, sans-serif',
-      color: UI_THEME.accent,
+      color: UI_THEME.text,
     });
     draw.drawText(`+${notice.pointsGained} pontos de característica`, x + modalW / 2, y + 114, {
       align: 'center',
@@ -2661,15 +2698,9 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       color: UI_THEME.textMuted,
     });
 
-    const buttonW = (modalW - pad * 2 - 12) / 2;
+    const buttonW = modalW - pad * 2;
     const buttonY = y + modalH - 66;
-    draw.drawButton(x + pad, buttonY, buttonW, 42, 'Características', actions.openCharacteristicsModal, {
-      fill: UI_THEME.accentDark,
-      hoverFill: UI_THEME.accent,
-      stroke: '#e6c06f',
-      font: '900 13px Inter, sans-serif',
-    });
-    draw.drawButton(x + pad + buttonW + 12, buttonY, buttonW, 42, 'Continuar', actions.closeActiveModal, {
+    draw.drawButton(x + pad, buttonY, buttonW, 42, 'Continuar', actions.closeActiveModal, {
       fill: UI_THEME.surface1,
       hoverFill: UI_THEME.surface2,
       stroke: UI_THEME.border1,
@@ -3831,6 +3862,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     if (state.game.mode === GAME_MODES.OVERWORLD) {
       actions.tickOverworldHealthRegen(now);
       actions.tickOverworldEnemyWander?.(now);
+      actions.tickOverworldPickupExpiry?.();
       actions.tickCutscene?.(now);
       threeBoard.setVisible?.(true);
       drawOverworld(currentLayout, now);

@@ -48,6 +48,7 @@ import {
   overworldEnemies,
 } from './game-factories.js';
 import {
+  SELECTED_CHARACTER_KEY,
   levelFromExperience,
   levelXpRequirement,
   persistPlayerProgress,
@@ -73,6 +74,7 @@ import {
 
 let heroTurnTimeoutId = null;
 const PLAYER_ATTACK_ANIMATION = 'Throw';
+const CHARACTER_SAVE_KEY_PREFIX = `${SAVE_KEY}:character:`;
 const PLAYER_SPELL_MODEL_ACTIONS = Object.freeze({
   mageFireBucket: {
     animation: 'Ranged_Magic_Shoot',
@@ -84,7 +86,47 @@ const PLAYER_SPELL_MODEL_ACTIONS = Object.freeze({
       duration: 420,
     },
   },
+  mageFonteCinzas: {
+    animation: 'Ranged_Magic_Shoot',
+    duration: 933,
+    impactDelay: 760,
+    projectile: {
+      model: 'fireBucket',
+      startDelay: 340,
+      duration: 420,
+    },
+  },
+  mageAmpulhetaMare: {
+    animation: 'Ranged_Magic_Shoot',
+    duration: 933,
+    impactDelay: 760,
+    projectile: {
+      model: 'waterHourglass',
+      startDelay: 340,
+      duration: 420,
+    },
+  },
   knightStoneLance: {
+    animation: 'Melee_1H_Attack_Chop',
+    duration: 1067,
+    impactDelay: 690,
+    projectile: {
+      model: 'stoneLance',
+      startDelay: 430,
+      duration: 260,
+    },
+  },
+  knightCorteVendaval: {
+    animation: 'Melee_1H_Attack_Chop',
+    duration: 1067,
+    impactDelay: 690,
+    projectile: {
+      model: 'windSlash',
+      startDelay: 430,
+      duration: 300,
+    },
+  },
+  knightQuebraBaluarte: {
     animation: 'Melee_1H_Attack_Chop',
     duration: 1067,
     impactDelay: 690,
@@ -104,6 +146,26 @@ const PLAYER_SPELL_MODEL_ACTIONS = Object.freeze({
       duration: 520,
     },
   },
+  barbarianTremorPedra: {
+    animation: 'Melee_2H_Attack_Chop',
+    duration: 1633,
+    impactDelay: 1080,
+    projectile: {
+      model: 'rollingBoulder',
+      startDelay: 560,
+      duration: 470,
+    },
+  },
+  barbarianRugidoBrasa: {
+    animation: 'Melee_2H_Attack_Chop',
+    duration: 1633,
+    impactDelay: 960,
+    projectile: {
+      model: 'fireBucket',
+      startDelay: 520,
+      duration: 390,
+    },
+  },
   rangerVerdantArrow: {
     animation: 'Ranged_Bow_Release',
     duration: 1333,
@@ -112,6 +174,26 @@ const PLAYER_SPELL_MODEL_ACTIONS = Object.freeze({
       model: 'arrowBow',
       startDelay: 620,
       duration: 280,
+    },
+  },
+  rangerFlechaIncendiaria: {
+    animation: 'Ranged_Bow_Release',
+    duration: 1333,
+    impactDelay: 900,
+    projectile: {
+      model: 'flameArrow',
+      startDelay: 620,
+      duration: 280,
+    },
+  },
+  rangerDisparoCiclone: {
+    animation: 'Ranged_Bow_Release',
+    duration: 1333,
+    impactDelay: 900,
+    projectile: {
+      model: 'cycloneArrow',
+      startDelay: 620,
+      duration: 320,
     },
   },
   rogueTideDagger: {
@@ -124,7 +206,72 @@ const PLAYER_SPELL_MODEL_ACTIONS = Object.freeze({
       duration: 260,
     },
   },
+  rogueCorteRessaca: {
+    animation: 'Ranged_1H_Shoot',
+    duration: 1067,
+    impactDelay: 690,
+    projectile: {
+      model: 'tideDagger',
+      startDelay: 430,
+      duration: 260,
+    },
+  },
+  rogueEspelhoAfogado: {
+    animation: 'Ranged_1H_Shoot',
+    duration: 1067,
+    impactDelay: 690,
+    projectile: {
+      model: 'waterMirror',
+      startDelay: 430,
+      duration: 300,
+    },
+  },
 });
+
+function normalizeCharacterSaveId(characterId) {
+  return typeof characterId === 'string' && characterId ? characterId : null;
+}
+
+function characterSaveKey(characterId) {
+  const normalized = normalizeCharacterSaveId(characterId);
+  return normalized ? `${CHARACTER_SAVE_KEY_PREFIX}${encodeURIComponent(normalized)}` : SAVE_KEY;
+}
+
+function readLocalStorageText(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function selectedStoredCharacterId() {
+  return normalizeCharacterSaveId(readLocalStorageText(SELECTED_CHARACTER_KEY));
+}
+
+function savedSnapshotCharacterId(snapshot) {
+  return normalizeCharacterSaveId(snapshot?.player?.characterId)
+    || normalizeCharacterSaveId(snapshot?.selectedCharacter?.id);
+}
+
+function readSavedGameRaw(characterId) {
+  const requestedCharacterId = normalizeCharacterSaveId(characterId);
+  if (!requestedCharacterId) return readLocalStorageText(SAVE_KEY);
+
+  const scopedRaw = readLocalStorageText(characterSaveKey(requestedCharacterId));
+  if (scopedRaw) return scopedRaw;
+
+  const legacyRaw = readLocalStorageText(SAVE_KEY);
+  if (!legacyRaw) return null;
+
+  try {
+    const legacySnapshot = JSON.parse(legacyRaw);
+    const legacyCharacterId = savedSnapshotCharacterId(legacySnapshot);
+    return !legacyCharacterId || legacyCharacterId === requestedCharacterId ? legacyRaw : null;
+  } catch {
+    return null;
+  }
+}
 const OVERWORLD_COMBAT_WALL_COUNT = 3;
 const COMBAT_WALL_GENERATION_ATTEMPTS = 80;
 const COMBAT_ARENA_BOUNDS = { width: BOARD_SIZE, height: BOARD_SIZE };
@@ -139,11 +286,13 @@ const OVERWORLD_ENEMY_WANDER_MIN_COST = 1.5;
 const OVERWORLD_ENEMY_WANDER_MAX_COST = 3.25;
 const OVERWORLD_ENEMY_WANDER_ENTITY_STAGGER = 850;
 const OVERWORLD_PICKUP_DROP_RADIUS = 1;
+const OVERWORLD_PICKUP_LIFETIME = 15 * 1000;
+const OFFLINE_HEALTH_FULL_REGEN_TIME = 3 * 60 * 1000;
 const OVERWORLD_PICKUP_DEFINITIONS = Object.freeze({
-  apple: { label: 'Maca', targetRatio: 0.25 },
-  bread: { label: 'Pao', targetRatio: 0.5 },
-  goldenApple: { label: 'Maca dourada', targetRatio: 1 },
-  goldenBread: { label: 'Pao dourado', targetRatio: 1 },
+  apple: { label: 'Maca', healAmount: 10 },
+  bread: { label: 'Pao', healAmount: 20 },
+  goldenApple: { label: 'Maca dourada', healAmount: 35 },
+  goldenBread: { label: 'Pao dourado', healAmount: 60 },
 });
 
 function mapBounds(map) {
@@ -855,6 +1004,127 @@ export function createGameActions(state) {
     return Math.max(0, rawDamage - Math.max(0, defense));
   }
 
+  function attackEffects(attack) {
+    return attack?.effects && typeof attack.effects === 'object' ? attack.effects : {};
+  }
+
+  function splashDamageEffect(attack) {
+    const effect = attackEffects(attack).splashDamage;
+    if (!effect || typeof effect !== 'object') return null;
+
+    const ratio = Number.isFinite(effect.ratio) ? Math.max(0, effect.ratio) : 0;
+    const radius = toNonNegativeInteger(effect.radius, 1) || 1;
+    return ratio > 0 ? { ratio, radius } : null;
+  }
+
+  function moveTargetEffect(attack) {
+    const effect = attackEffects(attack).moveTarget;
+    if (!effect || typeof effect !== 'object') return null;
+
+    const direction = effect.direction === 'pull' ? 'pull' : effect.direction === 'push' ? 'push' : null;
+    const distance = toNonNegativeInteger(effect.distance, 1) || 1;
+    return direction ? { direction, distance } : null;
+  }
+
+  function nextTurnApBonusEffect(attack) {
+    const effect = attackEffects(attack).nextTurnApBonus;
+    if (!effect || typeof effect !== 'object') return null;
+
+    const amount = toNonNegativeInteger(effect.amount);
+    const maxBonus = Math.max(amount, toNonNegativeInteger(effect.maxBonus, amount));
+    return amount > 0 ? { amount, maxBonus } : null;
+  }
+
+  function queueNextTurnApBonus(attack, game = getGame()) {
+    const effect = nextTurnApBonusEffect(attack);
+    if (!effect) return 0;
+
+    const currentAmount = toNonNegativeInteger(game.pendingNextTurnApBonus);
+    const currentCap = toNonNegativeInteger(game.pendingNextTurnApBonusCap);
+    const cap = Math.max(currentCap, effect.maxBonus);
+    const nextAmount = Math.min(cap, currentAmount + effect.amount);
+    game.pendingNextTurnApBonus = nextAmount;
+    game.pendingNextTurnApBonusCap = cap;
+    return Math.max(0, nextAmount - currentAmount);
+  }
+
+  function consumeNextTurnApBonus(game = getGame()) {
+    const amount = toNonNegativeInteger(game.pendingNextTurnApBonus);
+    const cap = toNonNegativeInteger(game.pendingNextTurnApBonusCap);
+    const bonus = Math.min(amount, cap);
+    game.pendingNextTurnApBonus = 0;
+    game.pendingNextTurnApBonusCap = 0;
+    return bonus;
+  }
+
+  function resetNextTurnApBonus(game = getGame()) {
+    game.pendingNextTurnApBonus = 0;
+    game.pendingNextTurnApBonusCap = 0;
+  }
+
+  function combatOccupiedKeys(game, exceptMonsterId = null) {
+    const occupied = monsterOccupiedKeys(game.monsters, exceptMonsterId);
+    occupied.add(posKey(game.player));
+    return occupied;
+  }
+
+  function splashTargetsForAttack(game, originCell, primaryTarget, effect) {
+    if (!effect) return [];
+
+    return game.monsters.filter((monster) => {
+      if (monster.hp <= 0 || monster.id === primaryTarget.id) return false;
+      const distance = Math.abs(monster.x - originCell.x) + Math.abs(monster.y - originCell.y);
+      return distance > 0 && distance <= effect.radius;
+    });
+  }
+
+  function movementStepForTargetEffect(game, target, effect) {
+    const fromPlayerX = Math.sign(target.x - game.player.x);
+    const fromPlayerY = Math.sign(target.y - game.player.y);
+    if (fromPlayerX === 0 && fromPlayerY === 0) return null;
+
+    const directionMultiplier = effect.direction === 'pull' ? -1 : 1;
+    return {
+      x: fromPlayerX * directionMultiplier,
+      y: fromPlayerY * directionMultiplier,
+    };
+  }
+
+  function moveTargetByEffect(game, target, attack, attackStartTime, impactDelay) {
+    const effect = moveTargetEffect(attack);
+    if (!effect || !target || target.hp <= 0) return { moved: 0, path: null };
+
+    const step = movementStepForTargetEffect(game, target, effect);
+    if (!step) return { moved: 0, path: null };
+
+    const walls = combatWallsSet(game);
+    const occupied = combatOccupiedKeys(game, target.id);
+    const path = [{ x: target.x, y: target.y }];
+
+    for (let index = 0; index < effect.distance; index += 1) {
+      const next = { x: target.x + step.x, y: target.y + step.y };
+      const key = posKey(next);
+      if (!isInsideCombatArena(next) || walls.has(key) || occupied.has(key)) break;
+
+      target.x = next.x;
+      target.y = next.y;
+      path.push(next);
+    }
+
+    const moved = path.length - 1;
+    if (moved <= 0) return { moved: 0, path: null };
+
+    game.animations.push({
+      type: 'movement',
+      entityId: target.id,
+      path,
+      startTime: attackStartTime + impactDelay + 90,
+      durationPerTile: TIMING.MONSTER_MOVE_SPEED,
+    });
+
+    return { moved, path };
+  }
+
   function getAttackRangeBounds(attack, player = getGame().player) {
     const minRange = Math.max(0, toNonNegativeInteger(attack?.minRange, 1));
     const maxRange = Number.isFinite(attack?.maxRange)
@@ -1085,6 +1355,53 @@ export function createGameActions(state) {
     return { xp, levelsGained, pointsGained };
   }
 
+  function samePendingExperienceMonster(left, right) {
+    if (!left || !right) return false;
+    return left === right || (!!left.id && left.id === right.id);
+  }
+
+  function pendingCombatExperienceMonsters(game = getGame()) {
+    if (!Array.isArray(game.pendingCombatXp)) game.pendingCombatXp = [];
+    return game.pendingCombatXp;
+  }
+
+  function queueCombatExperience(monster) {
+    if (!monster || monster.xpGranted) return false;
+
+    const pending = pendingCombatExperienceMonsters();
+    if (pending.some((item) => samePendingExperienceMonster(item, monster))) return false;
+
+    pending.push(monster);
+    return true;
+  }
+
+  function combineExperienceResults(total, result) {
+    return {
+      xp: total.xp + result.xp,
+      levelsGained: total.levelsGained + result.levelsGained,
+      pointsGained: total.pointsGained + result.pointsGained,
+    };
+  }
+
+  function grantPendingCombatExperience() {
+    const game = getGame();
+    const pending = pendingCombatExperienceMonsters(game).splice(0);
+
+    return pending.reduce((total, monster) => {
+      return combineExperienceResults(total, grantMonsterExperience(monster));
+    }, { xp: 0, levelsGained: 0, pointsGained: 0 });
+  }
+
+  function combatExperienceText(result) {
+    if (!result || result.xp <= 0) return '';
+
+    const levelText = result.levelsGained > 0
+      ? ` Nivel ${getGame().player.level}! +${result.pointsGained} pontos.`
+      : '';
+
+    return ` +${result.xp} XP.${levelText}`;
+  }
+
   function primeHeroTurnClock(game = getGame(), now = performance.now()) {
     if (!game || !isCombatMode(game) || game.phase !== PHASES.HERO) return;
 
@@ -1153,6 +1470,37 @@ export function createGameActions(state) {
     return true;
   }
 
+  function offlineHealthRegenAmount(player, elapsedMs) {
+    if (!player || !Number.isFinite(player.maxHealth) || elapsedMs <= 0) return 0;
+
+    const health = Number.isFinite(player.health)
+      ? Math.max(0, Math.min(player.maxHealth, Math.floor(player.health)))
+      : player.maxHealth;
+    const missingHealth = Math.max(0, player.maxHealth - health);
+    if (missingHealth <= 0) return 0;
+
+    const elapsedRatio = Math.min(1, elapsedMs / OFFLINE_HEALTH_FULL_REGEN_TIME);
+    return Math.min(missingHealth, Math.floor(player.maxHealth * elapsedRatio));
+  }
+
+  function applyOfflineHealthRegen(game, loadedGame, now = Date.now()) {
+    if (!game || game.mode !== GAME_MODES.OVERWORLD) return 0;
+
+    const savedAt = Number(loadedGame?.savedAt);
+    if (!Number.isFinite(savedAt)) return 0;
+
+    const elapsedMs = Math.max(0, now - savedAt);
+    const restored = offlineHealthRegenAmount(game.player, elapsedMs);
+    if (restored <= 0) return 0;
+
+    game.player.health = Math.min(game.player.maxHealth, game.player.health + restored);
+    game.nextOverworldHealthRegenAt = game.player.health >= game.player.maxHealth
+      ? null
+      : performance.now() + TIMING.OVERWORLD_HEALTH_REGEN_INTERVAL;
+
+    return restored;
+  }
+
   function startHeroTurn(message = null) {
     const game = getGame();
 
@@ -1161,14 +1509,16 @@ export function createGameActions(state) {
     game.energyAssigned = { speed: null, attack: null, defense: null };
     game.assignment = { speed: 0, attack: 0, defense: 0 };
     game.speedRemaining = game.player.speedBase;
-    game.apRemaining = game.player.apMax;
+    const apBonus = consumeNextTurnApBonus(game);
+    game.apRemaining = game.player.apMax + apBonus;
     game.draggingDie = null;
     game.selectedEntity = null;
     game.selectedAttackId = null;
     game.busy = false;
     primeHeroTurnClock(game);
 
-    setEvent(message || `Sua vez. ${game.apRemaining} AP, ${game.speedRemaining} movimento.`);
+    const bonusText = apBonus > 0 ? ` (+${apBonus} roubado)` : '';
+    setEvent(message || `Sua vez. ${game.apRemaining} AP${bonusText}, ${game.speedRemaining} movimento.`);
   }
 
   function startEnergyTurn() {
@@ -1326,30 +1676,49 @@ export function createGameActions(state) {
     return OVERWORLD_PICKUP_DEFINITIONS[kind] || OVERWORLD_PICKUP_DEFINITIONS.apple;
   }
 
-  function healTargetForPickup(pickup, player) {
+  function healAmountForPickup(pickup) {
     const definition = pickupDefinition(pickup?.kind);
-    return Math.max(0, Math.ceil((player?.maxHealth || 0) * definition.targetRatio));
+    return Math.max(0, toNonNegativeInteger(definition.healAmount));
+  }
+
+  function pickupExpired(pickup, now = Date.now()) {
+    if (!Number.isFinite(pickup?.createdAt)) return false;
+    return now - pickup.createdAt >= OVERWORLD_PICKUP_LIFETIME;
+  }
+
+  function tickOverworldPickupExpiry(now = Date.now()) {
+    const game = getGame();
+    if (!isOverworldMode(game) || !game.overworld) return false;
+
+    const mapState = getCurrentWorldMapState(game.overworld);
+    const pickups = ensureMapPickups(mapState);
+    const activePickups = pickups.filter((pickup) => !pickupExpired(pickup, now));
+    if (activePickups.length === pickups.length) return false;
+
+    mapState.pickups = activePickups;
+    return true;
   }
 
   function collectOverworldPickupAt(cell) {
     const game = getGame();
     if (!isOverworldMode(game) || !game.overworld || !cell) return false;
 
+    tickOverworldPickupExpiry();
     const mapState = getCurrentWorldMapState(game.overworld);
     const pickups = ensureMapPickups(mapState);
     const pickupIndex = pickups.findIndex((pickup) => samePos(pickup, cell));
     if (pickupIndex < 0) return false;
 
     const pickup = pickups[pickupIndex];
-    const targetHealth = healTargetForPickup(pickup, game.player);
+    const healAmount = healAmountForPickup(pickup);
     const definition = pickupDefinition(pickup.kind);
-    if (game.player.health >= targetHealth) {
+    if (game.player.health >= game.player.maxHealth || healAmount <= 0) {
       setEvent(`${definition.label}: sem efeito com a vida atual.`);
       return false;
     }
 
     const previousHealth = game.player.health;
-    game.player.health = Math.min(game.player.maxHealth, targetHealth);
+    game.player.health = Math.min(game.player.maxHealth, game.player.health + healAmount);
     pickups.splice(pickupIndex, 1);
 
     const healed = game.player.health - previousHealth;
@@ -1414,7 +1783,7 @@ export function createGameActions(state) {
       kind: randomPickupKind(),
       x: cell.x,
       y: cell.y,
-      createdAt: performance.now(),
+      createdAt: Date.now(),
     };
 
     ensureMapPickups(mapState).push(pickup);
@@ -1914,13 +2283,15 @@ export function createGameActions(state) {
     game.animations = [];
     game.selectedEntity = null;
     game.selectedAttackId = null;
+    game.pendingCombatXp = [];
+    resetNextTurnApBonus(game);
     game.busy = false;
 
     startHeroTurn(`Encontro iniciado: grupo ${target.groupId}.`);
     return true;
   }
 
-  function completeOverworldCombat() {
+  function completeOverworldCombat(experienceResult = null) {
     const game = getGame();
     const context = game.combatContext;
     if (!context || context.origin !== GAME_MODES.OVERWORLD) return false;
@@ -1969,12 +2340,15 @@ export function createGameActions(state) {
     game.apRemaining = game.player.apMax;
     game.selectedEntity = null;
     game.selectedAttackId = null;
+    game.pendingCombatXp = [];
+    resetNextTurnApBonus(game);
     game.animations = [];
     game.busy = false;
 
-    setEvent('Grupo derrotado. Você voltou ao mapa.');
+    const xpText = combatExperienceText(experienceResult);
+    setEvent(`Grupo derrotado. Voce voltou ao mapa.${xpText}`);
     syncGameMusic(game);
-    showBanner('Vitória', 'Grupo removido do mapa aberto.', 2000, null, {
+    showBanner('Vitória', experienceResult?.xp > 0 ? `+${experienceResult.xp} XP no fim da batalha.` : 'Grupo removido do mapa aberto.', 2000, null, {
       cardKey: 'player',
       accent: '#34d399',
     });
@@ -2016,6 +2390,8 @@ export function createGameActions(state) {
     game.apRemaining = game.player.apMax;
     game.selectedEntity = null;
     game.selectedAttackId = null;
+    game.pendingCombatXp = [];
+    resetNextTurnApBonus(game);
     game.animations = [];
     game.busy = false;
 
@@ -2096,13 +2472,17 @@ export function createGameActions(state) {
     }
 
     if (!getPlayerAttackTiles().has(posKey(targetCell))) {
-      setEvent('Fora do alcance. Escolha uma celula destacada em vermelho.');
+      game.selectedAttackId = null;
+      game.selectedEntity = null;
+      setEvent('Fora do alcance. Poder desmarcado.');
       return false;
     }
 
     const target = game.monsters.find((monster) => samePos(monster, targetCell));
     if (!target) {
-      setEvent(`${attack.name}: nenhum inimigo nessa celula.`);
+      game.selectedAttackId = null;
+      game.selectedEntity = null;
+      setEvent(`${attack.name}: nenhum inimigo nessa celula. Poder desmarcado.`);
       return false;
     }
 
@@ -2155,99 +2535,153 @@ export function createGameActions(state) {
 
     let damage = 0;
     let healed = 0;
-    let experienceResult = { xp: 0, levelsGained: 0, pointsGained: 0 };
+    let splashDamageTotal = 0;
+    let apQueued = 0;
     const attackDamage = getAttackDamage(attack, game.player);
-    if (target) {
-      const previousHp = target.hp;
-      damage = getMitigatedDamage(attackDamage, target.defense);
-      target.hp = Math.max(0, target.hp - damage);
-      if (previousHp > 0 && target.hp <= 0) {
-        experienceResult = grantMonsterExperience(target);
-      }
+    const targetImpactCell = { x: target.x, y: target.y };
+    const targetDamageStartTime = attackStartTime + playerAttackModelAction.impactDelay;
+    const defeatedRecords = [];
+    const defeatedIds = new Set();
 
-      const lifeSteal = Math.max(0, Number(attack.lifeSteal) || 0);
-      healed = damage > 0
-        ? Math.min(lifeSteal, game.player.maxHealth - game.player.health)
-        : 0;
-      if (healed > 0) game.player.health += healed;
+    function recordDefeatedMonster(monster, record) {
+      if (!monster || defeatedIds.has(monster.id)) return;
+      defeatedIds.add(monster.id);
+      defeatedRecords.push(record);
+    }
+
+    function applyMonsterDamage(monster, rawDamage, impactCell, damageStartTime) {
+      const previousHp = monster.hp;
+      const dealt = getMitigatedDamage(rawDamage, monster.defense);
+      monster.hp = Math.max(0, monster.hp - dealt);
+      if (previousHp > 0 && monster.hp <= 0) {
+        queueCombatExperience(monster);
+        recordDefeatedMonster(monster, { monster, damage: dealt, damageStartTime, impactCell });
+      }
 
       game.animations.push({
         type: 'damageShake',
-        entityId: target.id,
-        startTime: attackStartTime + playerAttackModelAction.impactDelay,
+        entityId: monster.id,
+        startTime: damageStartTime,
         duration: TIMING.DAMAGE_SHAKE_DURATION
       });
 
-      const targetDamageStartTime = attackStartTime + playerAttackModelAction.impactDelay;
-      if (damage > 0) {
+      if (dealt > 0) {
         game.animations.push({
           type: 'modelAction',
-          entityId: target.id,
+          entityId: monster.id,
           animation: 'Hit_B',
-          sourceX: target.x,
-          sourceY: target.y,
+          sourceX: impactCell.x,
+          sourceY: impactCell.y,
           targetX: game.player.x,
           targetY: game.player.y,
-          startTime: targetDamageStartTime,
+          startTime: damageStartTime,
           duration: TIMING.PLAYER_DAMAGE_ANIMATION
         });
       }
 
       game.animations.push({
         type: 'floatingText',
-        x: target.x,
-        y: target.y,
-        text: damage > 0 ? `-${damage}` : 'DEF',
-        color: damage > 0 ? '#b94735' : '#d9c894',
-        startTime: attackStartTime + playerAttackModelAction.impactDelay,
+        x: impactCell.x,
+        y: impactCell.y,
+        text: dealt > 0 ? `-${dealt}` : 'DEF',
+        color: dealt > 0 ? '#b94735' : '#d9c894',
+        startTime: damageStartTime,
         duration: 1200
+      });
+
+      return dealt;
+    }
+
+    damage = applyMonsterDamage(target, attackDamage, targetImpactCell, targetDamageStartTime);
+
+    const lifeSteal = Math.max(0, Number(attack.lifeSteal) || 0);
+    healed = damage > 0
+      ? Math.min(lifeSteal, game.player.maxHealth - game.player.health)
+      : 0;
+    if (healed > 0) game.player.health += healed;
+
+    if (damage > 0) {
+      apQueued = queueNextTurnApBonus(attack, game);
+    }
+
+    const splashEffect = splashDamageEffect(attack);
+    if (splashEffect) {
+      const splashRawDamage = Math.max(1, Math.floor(attackDamage * splashEffect.ratio));
+      const splashTargets = splashTargetsForAttack(game, targetImpactCell, target, splashEffect);
+      splashTargets.forEach((splashTarget) => {
+        const splashImpactCell = { x: splashTarget.x, y: splashTarget.y };
+        splashDamageTotal += applyMonsterDamage(
+          splashTarget,
+          splashRawDamage,
+          splashImpactCell,
+          targetDamageStartTime + 90,
+        );
       });
     }
 
+    const moveEffect = moveTargetEffect(attack);
+    const moveResult = moveTargetByEffect(
+      game,
+      target,
+      attack,
+      attackStartTime,
+      playerAttackModelAction.impactDelay,
+    );
+
     game.busy = true;
 
+    const effectTexts = [];
+    if (healed > 0) effectTexts.push(`Suga ${healed} vida.`);
+    if (splashDamageTotal > 0) effectTexts.push(`Area ${splashDamageTotal} dano.`);
+    if (moveResult.moved > 0 && moveEffect) {
+      effectTexts.push(`${moveEffect.direction === 'pull' ? 'Puxa' : 'Empurra'} ${moveResult.moved}.`);
+    }
+    if (apQueued > 0) effectTexts.push(`+${apQueued} AP na proxima vez.`);
+    const effectText = effectTexts.length > 0 ? ` ${effectTexts.join(' ')}` : '';
+
     if (target.hp <= 0) {
-      const xpText = experienceResult.xp > 0 ? ` +${experienceResult.xp} XP.` : '';
-      const levelText = experienceResult.levelsGained > 0
-          ? ` Nível ${game.player.level}! +${experienceResult.pointsGained} pontos.`
-        : '';
-      setEvent(`${target.name} derrotado.${xpText}${levelText}`);
+      setEvent(`${target.name} derrotado.${effectText}`);
     } else {
-      const healText = healed > 0 ? ` Suga ${healed} vida.` : '';
-      setEvent(`${attack.name}: ${attackDamage} - DEF ${target.defense} = ${damage} dano. Gasto: ${cost} AP.${healText}`);
+      setEvent(`${attack.name}: ${attackDamage} - DEF ${target.defense} = ${damage} dano. Gasto: ${cost} AP.${effectText}`);
     }
 
-    const targetDefeated = target.hp <= 0;
-    const finishDelay = targetDefeated
-      ? (
-        (damage > 0 ? playerAttackModelAction.impactDelay + TIMING.PLAYER_DAMAGE_ANIMATION : 0)
-        + TIMING.MONSTER_DEATH_ANIMATION
-        + TIMING.MONSTER_DEFEAT_EXIT_PAUSE
-      )
-      : Math.max(TIMING.HERO_ATTACK_WAIT_TIME, playerAttackModelAction.duration);
-
-    if (targetDefeated) {
-      const deathStartTime = damage > 0
-        ? attackStartTime + playerAttackModelAction.impactDelay + TIMING.PLAYER_DAMAGE_ANIMATION
+    defeatedRecords.forEach((record) => {
+      const deathStartTime = record.damage > 0
+        ? record.damageStartTime + TIMING.PLAYER_DAMAGE_ANIMATION
         : attackStartTime;
-
       game.animations.push({
         type: 'modelAction',
-        entityId: target.id,
+        entityId: record.monster.id,
         animation: 'Death_A',
-        sourceX: target.x,
-        sourceY: target.y,
+        sourceX: record.impactCell.x,
+        sourceY: record.impactCell.y,
         targetX: game.player.x,
         targetY: game.player.y,
         startTime: deathStartTime,
         duration: TIMING.MONSTER_DEATH_ANIMATION + TIMING.MONSTER_DEFEAT_EXIT_PAUSE
       });
-    }
+    });
+
+    const deathFinishDelay = defeatedRecords.reduce((maxDelay, record) => {
+      const damageDelay = record.damage > 0
+        ? (record.damageStartTime - attackStartTime) + TIMING.PLAYER_DAMAGE_ANIMATION
+        : 0;
+      return Math.max(
+        maxDelay,
+        damageDelay + TIMING.MONSTER_DEATH_ANIMATION + TIMING.MONSTER_DEFEAT_EXIT_PAUSE,
+      );
+    }, 0);
+    const movementFinishDelay = moveResult.moved > 0
+      ? playerAttackModelAction.impactDelay + 90 + moveResult.moved * TIMING.MONSTER_MOVE_SPEED
+      : 0;
+    const finishDelay = defeatedRecords.length > 0
+      ? Math.max(deathFinishDelay, movementFinishDelay)
+      : Math.max(TIMING.HERO_ATTACK_WAIT_TIME, playerAttackModelAction.duration, movementFinishDelay);
 
     setTimeout(() => {
       game.busy = false;
 
-      if (target && target.hp <= 0) {
+      if (defeatedRecords.length > 0) {
         game.monsters = game.monsters.filter((monster) => monster.hp > 0);
         
         if (game.monsters.length === 0) {
@@ -2257,19 +2691,23 @@ export function createGameActions(state) {
           }
           game.heroTurnStartedAt = null;
           game.heroTurnEndsAt = null;
+          const battleExperienceResult = grantPendingCombatExperience();
+          const battleXpText = combatExperienceText(battleExperienceResult);
 
           if (game.mode === GAME_MODES.COMBAT && game.combatContext?.origin === GAME_MODES.OVERWORLD) {
-            completeOverworldCombat();
+            completeOverworldCombat(battleExperienceResult);
             return;
           }
 
           if (game.levelIndex === LEVELS.length - 1) {
             game.phase = PHASES.WON;
+            setEvent(`Batalha vencida.${battleXpText}`);
             showBanner('Vitória!', 'Você encontrou o Cetro de M’Guf-yn.', 2000);
             return;
           }
 
           game.phase = PHASES.LEVELUP;
+          setEvent(`Batalha vencida.${battleXpText}`);
           showBanner('Nível concluído', 'Escolha curar ou melhorar um atributo.', 2000);
         }
       }
@@ -2542,6 +2980,8 @@ export function createGameActions(state) {
     game.player.y = nextLevel.start.y;
     game.monsters = levelMonsters(nextLevel);
     game.turnQueue = ['player', ...game.monsters.map(m => m.id)];
+    game.pendingCombatXp = [];
+    resetNextTurnApBonus(game);
 
     startHeroTurn(`Nível ${nextLevel.id}. ${game.player.apMax} AP, ${game.player.speedBase} movimento.`);
   }
@@ -2563,6 +3003,7 @@ export function createGameActions(state) {
 
     return {
       ...game,
+      savedAt: Date.now(),
       overworld: safeOverworld,
       buttons: [],
       diceRects: [],
@@ -2576,6 +3017,7 @@ export function createGameActions(state) {
       menuView: 'main',
       activeModal: null,
       levelUpNotice: null,
+      combatLogoutDefeat: false,
     };
   }
 
@@ -2584,7 +3026,15 @@ export function createGameActions(state) {
     const silent = options?.silent === true;
 
     try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify(savedGameSnapshot(game)));
+      const snapshot = savedGameSnapshot(game);
+      const serialized = JSON.stringify(snapshot);
+      const saveKeys = new Set([SAVE_KEY]);
+      const characterId = savedSnapshotCharacterId(snapshot);
+      if (characterId) saveKeys.add(characterSaveKey(characterId));
+
+      for (const key of saveKeys) {
+        localStorage.setItem(key, serialized);
+      }
       if (!silent) {
         game.menuOpen = false;
         game.activeModal = null;
@@ -2743,6 +3193,50 @@ export function createGameActions(state) {
     return normalized;
   }
 
+  function applyCombatLogoutDefeat(normalized) {
+    if (normalized?.mode !== GAME_MODES.COMBAT) return false;
+
+    normalized.combatLogoutDefeat = true;
+    normalized.player.health = 0;
+    normalized.pendingCombatXp = [];
+    normalized.pendingNextTurnApBonus = 0;
+    normalized.pendingNextTurnApBonusCap = 0;
+    normalized.selectedEntity = null;
+    normalized.selectedAttackId = null;
+    normalized.draggingDie = null;
+    normalized.draggingControl = null;
+    normalized.busy = false;
+    normalized.nextOverworldHealthRegenAt = null;
+
+    if (normalized.combatContext?.origin === GAME_MODES.OVERWORLD) {
+      const map = getWorldMap(START_WORLD_MAP_ID);
+      if (normalized.overworld && map) {
+        ensureOverworldMapState(normalized.overworld, map.id);
+        normalized.overworld.currentMapId = map.id;
+        recordOverworldHeroMapVisit(normalized.overworld, map.id);
+      }
+
+      normalized.mode = GAME_MODES.OVERWORLD;
+      normalized.phase = PHASES.HERO;
+      normalized.player.x = map?.playerStart?.x ?? 0;
+      normalized.player.y = map?.playerStart?.y ?? 0;
+      normalized.player.facing = { x: 0, y: 1 };
+      normalized.monsters = [];
+      normalized.combatContext = null;
+      normalized.combatWalls = null;
+      normalized.turnQueue = ['player'];
+      normalized.turnCount = 0;
+      normalized.speedRemaining = normalized.player.speedBase;
+      normalized.apRemaining = normalized.player.apMax;
+      normalized.lastEvent = 'Voce saiu durante uma batalha e voltou ao mapa 0,0 sem vida.';
+      return true;
+    }
+
+    normalized.phase = PHASES.LOST;
+    normalized.lastEvent = 'Voce saiu durante uma batalha e foi derrotado.';
+    return true;
+  }
+
   function normalizeLoadedGame(loaded) {
     if (!loaded || typeof loaded !== 'object') return createGame();
 
@@ -2795,6 +3289,11 @@ export function createGameActions(state) {
     normalized.diceRects = [];
     normalized.dropZones = [];
     normalized.draggingDie = null;
+    normalized.pendingCombatXp = Array.isArray(loaded.pendingCombatXp)
+      ? loaded.pendingCombatXp.map(normalizeLoadedEnemyUnit).filter(Boolean)
+      : [];
+    normalized.pendingNextTurnApBonus = toNonNegativeInteger(loaded.pendingNextTurnApBonus);
+    normalized.pendingNextTurnApBonusCap = toNonNegativeInteger(loaded.pendingNextTurnApBonusCap);
     normalized.selectedAttackId = null;
     normalized.activeModal = null;
     normalized.levelUpNotice = null;
@@ -2804,6 +3303,7 @@ export function createGameActions(state) {
     normalized.busy = false;
     normalized.animations = [];
     normalized.banner = null;
+    normalized.combatLogoutDefeat = false;
     normalized.heroTurnStartedAt = null;
     normalized.heroTurnEndsAt = null;
     normalized.nextOverworldHealthRegenAt = Number.isFinite(normalized.nextOverworldHealthRegenAt)
@@ -2813,12 +3313,16 @@ export function createGameActions(state) {
       ? normalized.turnQueue.map((id) => id === 'player' ? id : normalizeMonsterId(id))
       : [];
 
+    const combatLogoutDefeat = applyCombatLogoutDefeat(normalized);
+
     if (normalized.mode === GAME_MODES.OVERWORLD) {
       normalized.turnQueue = ['player'];
       normalized.monsters = [];
       normalized.combatContext = null;
       normalized.combatWalls = null;
       normalized.phase = PHASES.HERO;
+      normalized.nextOverworldHealthRegenAt = null;
+      if (!combatLogoutDefeat) applyOfflineHealthRegen(normalized, loaded);
     } else {
       normalized.nextOverworldHealthRegenAt = null;
     }
@@ -2854,16 +3358,19 @@ export function createGameActions(state) {
 
   function loadGame(options = {}) {
     const silent = options?.silent === true;
+    const characterId = normalizeCharacterSaveId(options?.characterId) || selectedStoredCharacterId();
 
     try {
-      const raw = localStorage.getItem(SAVE_KEY);
+      const raw = readSavedGameRaw(characterId);
       if (!raw) {
         if (silent) return false;
         showBanner('Sem save', 'Nenhum jogo salvo encontrado.', 2000);
         return false;
       }
 
-      setGame(normalizeLoadedGame(JSON.parse(raw)));
+      const normalized = normalizeLoadedGame(JSON.parse(raw));
+      setGame(normalized);
+      if (normalized.combatLogoutDefeat) persistPlayerProgress(normalized.player);
       scheduleEmptyOverworldRespawns();
       if (!silent) showBanner('Jogo carregado', 'Continue sua aventura.', 2000);
       return true;
@@ -2958,6 +3465,7 @@ export function createGameActions(state) {
     tickCutscene,
     tickOverworldEnemyWander,
     tickOverworldHealthRegen,
+    tickOverworldPickupExpiry,
     toggleAttackSelection,
     toggleWorldMapHeroPath,
     toggleWorldMapModal,

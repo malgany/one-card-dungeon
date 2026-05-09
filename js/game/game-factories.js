@@ -401,6 +401,7 @@ function createBaseUiState() {
     selectedEntity: null,
     activeModal: null,
     levelUpNotice: null,
+    pendingCombatXp: [],
     mapTransition: null,
     menuOpen: false,
     menuView: 'main',
@@ -411,6 +412,8 @@ function createBaseUiState() {
     heroTurnStartedAt: null,
     heroTurnEndsAt: null,
     nextOverworldHealthRegenAt: null,
+    pendingNextTurnApBonus: 0,
+    pendingNextTurnApBonusCap: 0,
   };
 }
 

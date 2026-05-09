@@ -4,6 +4,7 @@ import {
   CHARACTERS_KEY,
   SELECTED_CHARACTER_KEY,
   applyCharacterProgressToPlayer,
+  levelFromExperience,
 } from '../game/character-progress.js';
 import {
   CHARACTER_TYPES,
@@ -18,6 +19,7 @@ import {
   sanitizeCharacterName,
   serializePaletteDraft,
 } from '../config/character-palettes.js';
+import { GAME_MODES, START_WORLD_MAP_ID } from '../config/game-data.js';
 import { NURSERY_INTRO_MAP_ID } from '../config/cutscenes/nursery-intro.js';
 
 function versionedAssetUrl(path) {
@@ -222,9 +224,21 @@ function characterClothingColors(character) {
   return { primary, secondary };
 }
 
+function characterLevel(character) {
+  const progress = character?.progress && typeof character.progress === 'object'
+    ? character.progress
+    : {};
+  const explicitLevel = Number.isFinite(progress.level)
+    ? Math.max(1, Math.floor(progress.level))
+    : 1;
+
+  return Math.max(explicitLevel, levelFromExperience(progress.experience));
+}
+
 function characterRow(character, selectedId) {
   const active = character.id === selectedId ? ' is-selected' : '';
   const clothingColors = characterClothingColors(character);
+  const level = characterLevel(character);
   const colorStyle = [
     `--character-color:${escapeHtml(character.color)}`,
     `--character-primary-color:${escapeHtml(clothingColors.primary)}`,
@@ -236,7 +250,10 @@ function characterRow(character, selectedId) {
       <img src="${escapeHtml(character.image)}" alt="" class="menu-character-thumb">
       <span class="menu-character-copy">
         <strong>${escapeHtml(character.name)}</strong>
-        <small>${escapeHtml(character.typeLabel)}</small>
+        <span class="menu-character-meta">
+          <small>${escapeHtml(character.typeLabel)}</small>
+          <small class="menu-character-level">Nível ${level}</small>
+        </span>
       </span>
       <span class="menu-character-color" title="Roupa 1 em cima, Roupa 2 embaixo" style="${colorStyle}"></span>
       <button class="menu-delete-button" type="button" data-menu-action="delete-character" data-character-id="${escapeHtml(character.id)}" title="Excluir personagem">
@@ -837,6 +854,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     }
 
     const current = selectedCharacter();
+    const currentLevel = characterLevel(current);
     const createDisabled = characters.length >= MAX_CHARACTERS ? ' disabled' : '';
 
     showRoot('select', MENU_ASSETS.select);
@@ -858,7 +876,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
         <main class="menu-character-stage" style="--character-color:${escapeHtml(current.color)}">
           <div class="menu-character-nameplate menu-glass">
             <strong>${escapeHtml(current.name)}</strong>
-            <span>${escapeHtml(current.typeLabel)}</span>
+            <span>${escapeHtml(current.typeLabel)} · Nível ${currentLevel}</span>
           </div>
           <div class="menu-character-preview" data-menu-character-preview aria-label="${escapeHtml(current.typeLabel)}"></div>
         </main>
@@ -963,11 +981,24 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     playOverworldMusic();
   }
 
+  function shouldResetWorldForCharacter(characterId) {
+    const game = state?.game;
+    const activeCharacterId = game?.player?.characterId || game?.selectedCharacter?.id || null;
+    if (activeCharacterId && activeCharacterId !== characterId) return true;
+
+    return game?.mode && game.mode !== GAME_MODES.OVERWORLD;
+  }
+
   function playCharacter(character, options = {}) {
     const normalized = normalizeCharacter(character);
     setSelectedCharacterId(normalized.id);
     if (options.startNurseryIntro) {
       actions?.startOverworldAtMap?.(NURSERY_INTRO_MAP_ID);
+    } else {
+      const loadedCharacterSave = actions?.loadGame?.({ silent: true, characterId: normalized.id }) === true;
+      if (!loadedCharacterSave && shouldResetWorldForCharacter(normalized.id)) {
+        actions?.startOverworldAtMap?.(START_WORLD_MAP_ID);
+      }
     }
     applyCharacter(normalized);
     if (options.startNurseryIntro) {

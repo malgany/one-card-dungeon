@@ -2847,11 +2847,176 @@ export function createThreeBoardView({ state }) {
     return group;
   }
 
+  function createWindSlashProjectile() {
+    const group = new THREE.Group();
+    const windMaterial = new THREE.MeshStandardMaterial({
+      color: 0xc9ffe8,
+      emissive: 0x74f1cf,
+      emissiveIntensity: 1.1,
+      transparent: true,
+      opacity: 0.66,
+      roughness: 0.24,
+    });
+
+    const arcA = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.018, 8, 28, Math.PI * 1.35), windMaterial);
+    arcA.rotation.x = Math.PI / 2;
+    arcA.rotation.z = -0.7;
+    group.add(arcA);
+
+    const arcB = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.013, 8, 24, Math.PI * 1.15), windMaterial);
+    arcB.rotation.x = Math.PI / 2;
+    arcB.rotation.z = 1.2;
+    group.add(arcB);
+
+    group.userData.projectileMotion = 'windSlash';
+    return group;
+  }
+
+  function createFlameArrowProjectile() {
+    const group = new THREE.Group();
+    const shaftMaterial = new THREE.MeshStandardMaterial({
+      color: 0xe8d3a4,
+      roughness: 0.62,
+    });
+    const flameMaterial = new THREE.MeshStandardMaterial({
+      color: 0xff8a24,
+      emissive: 0xff4d00,
+      emissiveIntensity: 1.8,
+      roughness: 0.24,
+    });
+
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.58, 8), shaftMaterial);
+    shaft.rotation.x = Math.PI / 2;
+    group.add(shaft);
+
+    const head = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.16, 12), flameMaterial);
+    head.rotation.x = Math.PI / 2;
+    head.position.z = 0.35;
+    group.add(head);
+
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.22, 12), flameMaterial);
+    flame.rotation.x = -Math.PI / 2;
+    flame.position.z = -0.34;
+    group.add(flame);
+
+    const light = new THREE.PointLight(0xff7a1a, 0.55, 1.8);
+    group.add(light);
+    group.userData.projectileMotion = 'flameArrow';
+    return group;
+  }
+
+  function createCycloneArrowProjectile() {
+    const group = new THREE.Group();
+    const arrowMaterial = new THREE.MeshStandardMaterial({
+      color: 0xd8fff7,
+      emissive: 0x70ddce,
+      emissiveIntensity: 0.9,
+      roughness: 0.26,
+    });
+    const windMaterial = new THREE.MeshStandardMaterial({
+      color: 0x9bf4e5,
+      emissive: 0x5fd7cb,
+      emissiveIntensity: 1.1,
+      transparent: true,
+      opacity: 0.5,
+      roughness: 0.2,
+    });
+
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.52, 14), arrowMaterial);
+    arrow.rotation.x = Math.PI / 2;
+    group.add(arrow);
+
+    [-0.18, 0, 0.18].forEach((z, index) => {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.14 + index * 0.025, 0.01, 8, 28), windMaterial);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.z = z;
+      group.add(ring);
+    });
+
+    group.userData.projectileMotion = 'cycloneArrow';
+    return group;
+  }
+
+  function createWaterHourglassProjectile() {
+    const group = new THREE.Group();
+    const waterMaterial = new THREE.MeshStandardMaterial({
+      color: 0x6ad8ff,
+      emissive: 0x208ee8,
+      emissiveIntensity: 1.2,
+      transparent: true,
+      opacity: 0.68,
+      roughness: 0.18,
+    });
+    const foamMaterial = new THREE.MeshStandardMaterial({
+      color: 0xe9fbff,
+      emissive: 0x79dfff,
+      emissiveIntensity: 0.65,
+      transparent: true,
+      opacity: 0.54,
+      roughness: 0.2,
+    });
+
+    const top = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.22, 16), waterMaterial);
+    top.position.y = 0.1;
+    top.rotation.x = Math.PI;
+    group.add(top);
+
+    const bottom = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.22, 16), waterMaterial);
+    bottom.position.y = -0.1;
+    group.add(bottom);
+
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.012, 8, 24), foamMaterial);
+    ring.rotation.x = Math.PI / 2;
+    group.add(ring);
+
+    const light = new THREE.PointLight(0x4dbdff, 0.42, 1.6);
+    group.add(light);
+    group.userData.projectileMotion = 'waterHourglass';
+    return group;
+  }
+
+  function createWaterMirrorProjectile() {
+    const group = new THREE.Group();
+    const waterMaterial = new THREE.MeshStandardMaterial({
+      color: 0x75dcff,
+      emissive: 0x207dcc,
+      emissiveIntensity: 1,
+      transparent: true,
+      opacity: 0.62,
+      roughness: 0.16,
+      side: THREE.DoubleSide,
+    });
+    const rimMaterial = new THREE.MeshStandardMaterial({
+      color: 0xd7f8ff,
+      emissive: 0x6ddcff,
+      emissiveIntensity: 0.75,
+      transparent: true,
+      opacity: 0.68,
+      roughness: 0.22,
+    });
+
+    const disk = new THREE.Mesh(new THREE.CircleGeometry(0.18, 32), waterMaterial);
+    disk.rotation.x = Math.PI / 2;
+    group.add(disk);
+
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.014, 8, 32), rimMaterial);
+    rim.rotation.x = Math.PI / 2;
+    group.add(rim);
+
+    group.userData.projectileMotion = 'waterMirror';
+    return group;
+  }
+
   function createProceduralProjectile(animation) {
     if (animation.model === 'fireBucket') return createFireBucketProjectile();
     if (animation.model === 'stoneLance') return createStoneLanceProjectile();
     if (animation.model === 'rollingBoulder') return createRollingBoulderProjectile();
     if (animation.model === 'tideDagger') return createTideDaggerProjectile();
+    if (animation.model === 'windSlash') return createWindSlashProjectile();
+    if (animation.model === 'flameArrow') return createFlameArrowProjectile();
+    if (animation.model === 'cycloneArrow') return createCycloneArrowProjectile();
+    if (animation.model === 'waterHourglass') return createWaterHourglassProjectile();
+    if (animation.model === 'waterMirror') return createWaterMirrorProjectile();
     return null;
   }
 
@@ -2860,6 +3025,11 @@ export function createThreeBoardView({ state }) {
     if (animation.model === 'stoneLance') return 0.42 + Math.sin(progress * Math.PI) * 0.08;
     if (animation.model === 'rollingBoulder') return 0.28 + Math.sin(progress * Math.PI) * 0.07;
     if (animation.model === 'tideDagger') return 0.52 + Math.sin(progress * Math.PI * 2) * 0.05;
+    if (animation.model === 'windSlash') return 0.5 + Math.sin(progress * Math.PI) * 0.14;
+    if (animation.model === 'flameArrow') return 0.5 + Math.sin(progress * Math.PI) * 0.12;
+    if (animation.model === 'cycloneArrow') return 0.54 + Math.sin(progress * Math.PI) * 0.16;
+    if (animation.model === 'waterHourglass') return 0.56 + Math.sin(progress * Math.PI) * 0.22;
+    if (animation.model === 'waterMirror') return 0.48 + Math.sin(progress * Math.PI * 2) * 0.06;
     return 0.48 + Math.sin(progress * Math.PI) * 0.22;
   }
 
@@ -2892,6 +3062,33 @@ export function createThreeBoardView({ state }) {
 
     if (animation.model === 'tideDagger') {
       group.rotation.z = Math.sin(progress * Math.PI * 2) * 0.16;
+      return;
+    }
+
+    if (animation.model === 'windSlash') {
+      group.rotation.set(0.08, angle + progress * Math.PI * 2.5, Math.sin(progress * Math.PI) * 0.3);
+      return;
+    }
+
+    if (animation.model === 'flameArrow') {
+      group.rotation.set(0, angle, 0);
+      const light = group.getObjectByProperty('type', 'PointLight');
+      if (light) light.intensity = 0.45 + Math.sin(progress * Math.PI) * 0.45;
+      return;
+    }
+
+    if (animation.model === 'cycloneArrow') {
+      group.rotation.set(0, angle + progress * Math.PI * 3, 0);
+      return;
+    }
+
+    if (animation.model === 'waterHourglass') {
+      group.rotation.set(0, angle + progress * Math.PI * 4, 0);
+      return;
+    }
+
+    if (animation.model === 'waterMirror') {
+      group.rotation.set(0, angle + progress * Math.PI * 2, 0);
     }
   }
 

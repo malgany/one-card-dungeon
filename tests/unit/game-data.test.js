@@ -124,6 +124,59 @@ describe('game data', () => {
     expect(CARD_SOURCES.spellVerdantArrow).toBe('./assets/ui/actions/ranger-verdant-arrow.png');
   });
 
+  it('defines class spell progressions at levels 3, 5, and 8', () => {
+    const expectedSpells = {
+      mage: [
+        { id: 'mageFireBucket', element: SPELL_ELEMENTS.FIRE, apCost: 4, unlockLevel: 3, pattern: ATTACK_PATTERNS.PATH },
+        { id: 'mageFonteCinzas', element: SPELL_ELEMENTS.FIRE, apCost: 4, unlockLevel: 5, pattern: ATTACK_PATTERNS.PATH, iconKey: 'spellMageFonteCinzas' },
+        { id: 'mageAmpulhetaMare', element: SPELL_ELEMENTS.WATER, apCost: 3, unlockLevel: 8, pattern: ATTACK_PATTERNS.LINE_8, iconKey: 'spellMageAmpulhetaMare' },
+      ],
+      knight: [
+        { id: 'knightStoneLance', element: SPELL_ELEMENTS.EARTH, apCost: 5, unlockLevel: 3, pattern: ATTACK_PATTERNS.CROSS },
+        { id: 'knightCorteVendaval', element: SPELL_ELEMENTS.AIR, apCost: 4, unlockLevel: 5, pattern: ATTACK_PATTERNS.CROSS, iconKey: 'spellKnightCorteVendaval' },
+        { id: 'knightQuebraBaluarte', element: SPELL_ELEMENTS.EARTH, apCost: 3, unlockLevel: 8, pattern: ATTACK_PATTERNS.CROSS, iconKey: 'spellKnightQuebraBaluarte' },
+      ],
+      barbarian: [
+        { id: 'barbarianBoulderHurl', element: SPELL_ELEMENTS.EARTH, apCost: 5, unlockLevel: 3, pattern: ATTACK_PATTERNS.PATH },
+        { id: 'barbarianTremorPedra', element: SPELL_ELEMENTS.EARTH, apCost: 5, unlockLevel: 5, pattern: ATTACK_PATTERNS.CROSS, iconKey: 'spellBarbarianTremorPedra' },
+        { id: 'barbarianRugidoBrasa', element: SPELL_ELEMENTS.FIRE, apCost: 3, unlockLevel: 8, pattern: ATTACK_PATTERNS.PATH, iconKey: 'spellBarbarianRugidoBrasa' },
+      ],
+      ranger: [
+        { id: 'rangerVerdantArrow', element: SPELL_ELEMENTS.AIR, apCost: 4, unlockLevel: 3, pattern: ATTACK_PATTERNS.CROSS, iconKey: 'spellVerdantArrow' },
+        { id: 'rangerFlechaIncendiaria', element: SPELL_ELEMENTS.FIRE, apCost: 4, unlockLevel: 5, pattern: ATTACK_PATTERNS.CROSS, iconKey: 'spellRangerFlechaIncendiaria' },
+        { id: 'rangerDisparoCiclone', element: SPELL_ELEMENTS.AIR, apCost: 3, unlockLevel: 8, pattern: ATTACK_PATTERNS.LINE_8, iconKey: 'spellRangerDisparoCiclone' },
+      ],
+      rogue: [
+        { id: 'rogueTideDagger', element: SPELL_ELEMENTS.WATER, apCost: 4, unlockLevel: 3, pattern: ATTACK_PATTERNS.LINE_8 },
+        { id: 'rogueCorteRessaca', element: SPELL_ELEMENTS.WATER, apCost: 4, unlockLevel: 5, pattern: ATTACK_PATTERNS.LINE_8, iconKey: 'spellRogueCorteRessaca' },
+        { id: 'rogueEspelhoAfogado', element: SPELL_ELEMENTS.WATER, apCost: 3, unlockLevel: 8, pattern: ATTACK_PATTERNS.LINE_8, iconKey: 'spellRogueEspelhoAfogado' },
+      ],
+    };
+
+    for (const [characterType, spells] of Object.entries(expectedSpells)) {
+      expect(SPELL_DEFINITIONS[characterType]).toHaveLength(3);
+      expect(SPELL_DEFINITIONS[characterType]).toEqual(
+        spells.map((spell) => expect.objectContaining(spell)),
+      );
+      expect(SPELL_DEFINITIONS[characterType][2].apCost).toBe(3);
+    }
+
+    [
+      'spellBarbarianTremorPedra',
+      'spellBarbarianRugidoBrasa',
+      'spellKnightCorteVendaval',
+      'spellKnightQuebraBaluarte',
+      'spellRogueCorteRessaca',
+      'spellRogueEspelhoAfogado',
+      'spellMageFonteCinzas',
+      'spellMageAmpulhetaMare',
+      'spellRangerFlechaIncendiaria',
+      'spellRangerDisparoCiclone',
+    ].forEach((iconKey) => {
+      expect(CARD_SOURCES[iconKey]).toMatch(/^\.\/assets\/ui\/actions\/.+\.png$/);
+    });
+  });
+
   it('keeps all levels inside the board and references known monster templates', () => {
     LEVELS.forEach((level) => {
       expect(level.start.x).toBeGreaterThanOrEqual(0);
