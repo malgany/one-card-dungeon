@@ -113,7 +113,7 @@ const CLASS_SPELL_CASES = [
     spellId: 'mageAmpulhetaMare',
     unlockLevel: 8,
     characteristic: 'water',
-    baseDamage: 7,
+    baseDamage: 9,
     apCost: 3,
     rangeLabel: '3~6',
     player: { x: 0, y: 5 },
@@ -130,7 +130,7 @@ const CLASS_SPELL_CASES = [
     spellId: 'knightStoneLance',
     unlockLevel: 3,
     characteristic: 'earth',
-    baseDamage: 13,
+    baseDamage: 14,
     apCost: 5,
     rangeLabel: '1~3',
     player: { x: 2, y: 2 },
@@ -181,7 +181,7 @@ const CLASS_SPELL_CASES = [
     spellId: 'barbarianBoulderHurl',
     unlockLevel: 3,
     characteristic: 'earth',
-    baseDamage: 14,
+    baseDamage: 13,
     apCost: 5,
     rangeLabel: '2~4',
     player: { x: 0, y: 5 },
@@ -266,7 +266,7 @@ const CLASS_SPELL_CASES = [
     spellId: 'rangerDisparoCiclone',
     unlockLevel: 8,
     characteristic: 'air',
-    baseDamage: 8,
+    baseDamage: 9,
     apCost: 3,
     rangeLabel: '2~6',
     player: { x: 0, y: 5 },
@@ -283,7 +283,7 @@ const CLASS_SPELL_CASES = [
     spellId: 'rogueTideDagger',
     unlockLevel: 3,
     characteristic: 'water',
-    baseDamage: 9,
+    baseDamage: 10,
     apCost: 4,
     rangeLabel: '2~5',
     player: { x: 2, y: 2 },
@@ -300,7 +300,7 @@ const CLASS_SPELL_CASES = [
     spellId: 'rogueCorteRessaca',
     unlockLevel: 5,
     characteristic: 'water',
-    baseDamage: 8,
+    baseDamage: 9,
     apCost: 4,
     rangeLabel: '2~5',
     player: { x: 2, y: 2 },
@@ -317,7 +317,7 @@ const CLASS_SPELL_CASES = [
     spellId: 'rogueEspelhoAfogado',
     unlockLevel: 8,
     characteristic: 'water',
-    baseDamage: 6,
+    baseDamage: 8,
     apCost: 3,
     rangeLabel: '1~4',
     player: { x: 2, y: 2 },
@@ -561,7 +561,7 @@ describe('game actions', () => {
     game.phase = PHASES.HERO;
     game.player = { ...game.player, x: 0, y: 5, health: 59, rangeBase: 2 };
     game.monsters = [monster];
-    game.apRemaining = 5;
+    game.apRemaining = 4;
     game.selectedAttackId = game.player.attackSlot.id;
     const { state, actions } = createActionHarness(game);
 
@@ -1083,34 +1083,34 @@ describe('game actions', () => {
     expect(actions.grantMonsterExperience(firstMonster)).toMatchObject({
       xp: 10,
       levelsGained: 1,
-      pointsGained: 5,
+      pointsGained: 3,
     });
     expect(state.game.player).toMatchObject({
       experience: 20,
       level: 2,
-      characteristicPoints: 5,
+      characteristicPoints: 3,
       health: state.game.player.maxHealth,
     });
     expect(actions.getXpProgress(state.game.player)).toMatchObject({
-      progressXp: 5,
-      requiredXp: 20,
+      progressXp: 0,
+      requiredXp: 30,
     });
 
     state.game.player.health = 20;
     expect(actions.grantMonsterExperience(secondMonster)).toMatchObject({
       xp: 45,
-      levelsGained: 2,
-      pointsGained: 10,
+      levelsGained: 1,
+      pointsGained: 3,
     });
     expect(state.game.player).toMatchObject({
       experience: 65,
-      level: 4,
-      characteristicPoints: 15,
+      level: 3,
+      characteristicPoints: 6,
       health: state.game.player.maxHealth,
     });
     expect(actions.getXpProgress(state.game.player)).toMatchObject({
-      progressXp: 5,
-      requiredXp: 30,
+      progressXp: 15,
+      requiredXp: 40,
     });
   });
 
@@ -1132,8 +1132,8 @@ describe('game actions', () => {
     const [storedCharacter] = JSON.parse(localStorage.getItem(CHARACTERS_KEY));
     expect(storedCharacter.progress).toMatchObject({
       experience: 45,
-      level: 3,
-      characteristicPoints: 10,
+      level: 2,
+      characteristicPoints: 3,
       defenseBase: 0,
     });
   });
@@ -1163,7 +1163,7 @@ describe('game actions', () => {
     expect(state.game.player).toMatchObject({
       level: 10,
       experience: totalXpForLevel(10),
-      characteristicPoints: 30,
+      characteristicPoints: 12,
       health: 70,
       maxHealth: 80,
       apMax: 8,
@@ -1359,7 +1359,7 @@ describe('game actions', () => {
     expect(state.game.player.characteristics.fire).toBe(1);
     expect(actions.getElementalDamageBonus('fire')).toBe(1);
     expect(actions.getAttackDamage({ id: 'spark', damage: 5, element: 'fire' })).toBe(6);
-    expect(actions.getAttackDamage(state.game.player.attackSlot)).toBe(10);
+    expect(actions.getAttackDamage(state.game.player.attackSlot)).toBe(11);
     expect(actions.allocateCharacteristic('water')).toBe(false);
   });
 
@@ -1427,7 +1427,7 @@ describe('game actions', () => {
       const attackTiles = actions.getPlayerAttackTiles();
 
       expect(actions.getAttackDamage(spell)).toBe(spellCase.baseDamage + 2);
-      expect(actions.getAttackDamage(game.player.attackSlot)).toBe(10);
+      expect(actions.getAttackDamage(game.player.attackSlot)).toBe(11);
       expect(actions.getAttackRangeLabel(spell)).toBe(spellCase.rangeLabel);
       spellCase.reachable.forEach((key) => expect(attackTiles.has(key)).toBe(true));
       spellCase.unreachable.forEach((key) => expect(attackTiles.has(key)).toBe(false));
@@ -1584,7 +1584,7 @@ describe('game actions', () => {
     const { state, actions } = createActionHarness(game);
 
     expect(actions.attackTile({ x: 3, y: 3 })).toBe(true);
-    expect(state.game.pendingNextTurnApBonus).toBe(2);
+    expect(state.game.pendingNextTurnApBonus).toBe(1);
 
     vi.advanceTimersByTime(1067);
     state.game.selectedAttackId = 'rogueEspelhoAfogado';

@@ -106,7 +106,6 @@ const PLAYER_MODELS = {
   mage: {
     ...PLAYER_MODEL_BASE,
     modelUrl: WORLD_ASSETS.characters.mage,
-    hiddenModelParts: ['Mage_Hat', 'Mage_Cape'],
     animations: [
       ...PLAYER_MODEL_BASE.animations,
       WORLD_ASSETS.animations.rigMedium.combatRanged,
@@ -115,7 +114,6 @@ const PLAYER_MODELS = {
   barbarian: {
     ...PLAYER_MODEL_BASE,
     modelUrl: WORLD_ASSETS.characters.barbarian,
-    hiddenModelParts: ['Barbarian_BearHat'],
     animations: [
       ...PLAYER_MODEL_BASE.animations,
       WORLD_ASSETS.animations.rigMedium.combatMelee,
@@ -124,7 +122,6 @@ const PLAYER_MODELS = {
   knight: {
     ...PLAYER_MODEL_BASE,
     modelUrl: WORLD_ASSETS.characters.knight,
-    hiddenModelParts: ['Knight_Cape', 'Knight_Helmet', 'Knight_HelmetVisor'],
     animations: [
       ...PLAYER_MODEL_BASE.animations,
       WORLD_ASSETS.animations.rigMedium.combatMelee,
@@ -133,7 +130,6 @@ const PLAYER_MODELS = {
   ranger: {
     ...PLAYER_MODEL_BASE,
     modelUrl: WORLD_ASSETS.characters.ranger,
-    hiddenModelParts: ['Ranger_Cape', 'Ranger_Quiver'],
     equipment: [
       {
         id: 'bow',
@@ -172,7 +168,6 @@ const PLAYER_MODELS = {
   rogue: {
     ...PLAYER_MODEL_BASE,
     modelUrl: WORLD_ASSETS.characters.rogue,
-    hiddenModelParts: ['Rogue_Cape', 'RogueHooded_Cape', 'RogueHooded_Mask'],
     animations: [
       ...PLAYER_MODEL_BASE.animations,
       WORLD_ASSETS.animations.rigMedium.combatRanged,
@@ -2030,20 +2025,6 @@ export function createThreeBoardView({ state }) {
     return match;
   }
 
-  function hideModelParts(model, partNames) {
-    const hiddenParts = (Array.isArray(partNames) ? partNames : [partNames])
-      .filter(Boolean)
-      .map(normalizedObjectName);
-    if (hiddenParts.length === 0) return;
-
-    const hiddenPartSet = new Set(hiddenParts);
-    model.traverse((object) => {
-      if (hiddenPartSet.has(normalizedObjectName(object.name))) {
-        object.visible = false;
-      }
-    });
-  }
-
   function attachModelEquipment(group, model, modelConfig, entityId) {
     const equipmentList = Array.isArray(modelConfig.equipment) ? modelConfig.equipment : [];
     if (equipmentList.length === 0) return;
@@ -2198,7 +2179,6 @@ export function createThreeBoardView({ state }) {
         typeId: isPlayer ? playerModelKey(unit) : null,
         palette: isPlayer ? unit?.characterPalette : null,
       });
-      if (isPlayer) hideModelParts(model, modelConfig.hiddenModelParts);
       group.add(model);
       attachModelEquipment(group, model, modelConfig, entityId);
 

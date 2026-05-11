@@ -114,8 +114,8 @@ export function leveledMonsterStats(type, level = 1) {
     defense: template.defense + Math.floor(tier / 3) + warriorBonus,
     range: Math.min(5, template.range + (normalizedType === 'skeletonMage' && tier >= 4 ? 1 : 0)),
     speed: Math.min(4, template.speed + (tier >= 6 ? 1 : 0)),
-    xp: template.xp + tier * 6 + mageBonus * 3 + warriorBonus * 2,
-    lifeSteal: Math.min(8, Math.floor(tier / 2) + mageBonus),
+    xp: template.xp + tier * 4 + mageBonus * 3 + warriorBonus * 2,
+    lifeSteal: Math.min(4, Math.floor(tier / 2) + mageBonus),
     visualScale: clampNumber(OVERWORLD_MIN_ENEMY_SCALE + tier * 0.045, OVERWORLD_MIN_ENEMY_SCALE, OVERWORLD_MAX_ENEMY_SCALE),
   };
 }
@@ -130,7 +130,7 @@ function randomGroupSize(map, remaining) {
   const level = overworldEnemyLevelForMap(map);
   const roll = Math.random();
   if (level >= 5 && remaining >= 3 && roll > 0.82) return 3;
-  if (level >= 2 && roll > 0.62) return 2;
+  if (level >= 3 && roll > 0.62) return 2;
   return 1;
 }
 

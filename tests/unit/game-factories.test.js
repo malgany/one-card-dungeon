@@ -158,8 +158,8 @@ describe('game factories', () => {
       attackSlot: {
         name: 'Golpe',
         element: 'neutral',
-        apCost: 5,
-        damage: 10,
+        apCost: 4,
+        damage: 11,
         lifeSteal: 0,
       },
     });

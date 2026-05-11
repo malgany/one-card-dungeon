@@ -41,9 +41,9 @@ describe('game data', () => {
 
   it('defines progression data for characteristics and XP', () => {
     expect(XP_RULES).toMatchObject({
-      BASE_LEVEL_XP: 15,
-      LEVEL_XP_STEP: 5,
-      POINTS_PER_LEVEL: 5,
+      BASE_LEVEL_XP: 20,
+      LEVEL_XP_STEP: 10,
+      POINTS_PER_LEVEL: 3,
       LIFE_PER_POINT: 5,
       ELEMENT_DAMAGE_PER_POINT: 1,
     });
@@ -72,7 +72,7 @@ describe('game data', () => {
         name: 'Lança de Pedra',
         element: SPELL_ELEMENTS.EARTH,
         apCost: 5,
-        damage: 13,
+        damage: 14,
         minRange: 1,
         maxRange: 3,
         pattern: ATTACK_PATTERNS.CROSS,
@@ -83,7 +83,7 @@ describe('game data', () => {
         name: 'Rocha Brutal',
         element: SPELL_ELEMENTS.EARTH,
         apCost: 5,
-        damage: 14,
+        damage: 13,
         minRange: 2,
         maxRange: 4,
         pattern: ATTACK_PATTERNS.PATH,
@@ -105,7 +105,7 @@ describe('game data', () => {
         name: 'Adaga da Maré',
         element: SPELL_ELEMENTS.WATER,
         apCost: 4,
-        damage: 9,
+        damage: 10,
         minRange: 2,
         maxRange: 5,
         pattern: ATTACK_PATTERNS.LINE_8,
