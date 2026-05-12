@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { getCharacterDefinition } from '../config/character-palettes.js';
+import { publicAssetUrl } from '../config/public-paths.js';
 import { configureCharacterTexture, loadCharacterPaletteTexture } from './character-palette-texture.js';
 
-const IDLE_ANIMATION_URL = '/assets/models/adventurers/animations/rig-medium/general.glb';
+const IDLE_ANIMATION_URL = publicAssetUrl('assets/models/adventurers/animations/rig-medium/general.glb');
 const PREVIEW_MODEL_HEIGHT = 3.15;
 const PREVIEW_MODEL_GROUND_OFFSET = -0.32;
 const PREVIEW_CAMERA_TARGET_Y = 1.24;

@@ -1,5 +1,6 @@
 import { mountMenuCharacterPreview } from './menu-character-viewer.js';
 import { playOverworldMusic, stopOverworldMusic } from '../game/audio.js';
+import { publicAssetUrl } from '../config/public-paths.js';
 import {
   CHARACTERS_KEY,
   SELECTED_CHARACTER_KEY,
@@ -27,14 +28,14 @@ function versionedAssetUrl(path) {
 }
 
 const MENU_ASSETS = {
-  home: '/assets/ui/menu/capa.png',
-  select: '/assets/ui/menu/capa0.png',
-  create: '/assets/ui/menu/capa2.png',
-  logo: '/assets/ui/menu/logo.png',
+  home: publicAssetUrl('assets/ui/menu/capa.png'),
+  select: publicAssetUrl('assets/ui/menu/capa0.png'),
+  create: publicAssetUrl('assets/ui/menu/capa2.png'),
+  logo: publicAssetUrl('assets/ui/menu/logo.png'),
 };
 
 const INTRO_ASSET_VERSION = '2026-05-06-webp-q90-v1';
-const INTRO_SCENE_BASE = '/assets/cenas-inicio/';
+const INTRO_SCENE_BASE = publicAssetUrl('assets/cenas-inicio/');
 const INTRO_SCENE_DURATION = 4500;
 const INTRO_END_BLACKOUT_DURATION = 2000;
 const INTRO_TRANSITION_DURATION = 560;

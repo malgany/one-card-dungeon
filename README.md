@@ -50,14 +50,20 @@ npm run build
 
 A pasta publicada em producao e `dist`.
 
-## Deploy Na Vercel
+## Deploy No GitHub Pages
 
-Use estas configuracoes:
+O deploy principal e feito pelo workflow `.github/workflows/deploy-pages.yml`.
 
-- Framework Preset: `Vite`
-- Build Command: `npm run build`
-- Output Directory: `dist`
-- Root Directory: raiz do repositorio
+No GitHub, abra `Settings > Pages` e selecione `GitHub Actions` como origem do deploy. Depois disso, cada push na branch `master` publica uma nova versao.
+
+O workflow:
+
+- instala dependencias com `npm ci`;
+- roda `npm run build`;
+- define `VITE_BASE_PATH` como `/<nome-do-repositorio>/`;
+- publica a pasta `dist`.
+
+Esse `VITE_BASE_PATH` e o que faz os scripts, CSS, imagens, sons e modelos 3D carregarem corretamente em URLs do tipo `https://usuario.github.io/one-rpg-game/`. O ambiente local continua usando a raiz `/` quando voce roda `npm run dev`.
 
 ## Estrutura
 

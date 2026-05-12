@@ -1,5 +1,7 @@
-const OVERWORLD_MUSIC_SRC = '/assets/audio/verden-i.mp3';
-const COMBAT_MUSIC_SRC = encodeURI('/assets/audio/Skyblade Ocarina.mp3');
+import { publicAssetUrl } from '../config/public-paths.js';
+
+const OVERWORLD_MUSIC_SRC = publicAssetUrl('assets/audio/verden-i.mp3');
+const COMBAT_MUSIC_SRC = encodeURI(publicAssetUrl('assets/audio/Skyblade Ocarina.mp3'));
 const OVERWORLD_MUSIC_VOLUME = 0.5;
 const OVERWORLD_MUSIC_VOLUME_KEY = 'one-rpg-overworld-music-volume-v1';
 

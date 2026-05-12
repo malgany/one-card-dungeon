@@ -1,3 +1,5 @@
+import { publicAssetUrl } from './public-paths.js';
+
 export const CHARACTER_PALETTE_VERSION = 1;
 
 export const CHARACTER_TEXTURE_ATLAS = {
@@ -11,10 +13,10 @@ const CHARACTER_DEFINITION_MAP = {
   mage: {
     id: 'mage',
     label: 'Mago',
-    image: '/assets/characters/mage.png',
+    image: publicAssetUrl('assets/characters/mage.png'),
     summary: 'Arcano equilibrado',
-    modelUrl: '/assets/models/adventurers/characters/mage.glb',
-    textureUrl: '/assets/models/adventurers/textures/mage_texture.png',
+    modelUrl: publicAssetUrl('assets/models/adventurers/characters/mage.glb'),
+    textureUrl: publicAssetUrl('assets/models/adventurers/textures/mage_texture.png'),
     usedSlots: ['r2c0', 'r2c2', 'r2c3', 'r2c7', 'r3c0', 'r3c2', 'r3c3', 'r4c0', 'r4c1', 'r4c2', 'r4c7', 'r5c0', 'r5c1', 'r5c2', 'r5c7', 'r6c0', 'r6c1', 'r6c3', 'r6c4', 'r6c5', 'r7c0', 'r7c1', 'r7c2', 'r7c3', 'r7c4', 'r7c5'],
     paletteGroups: [
       ['r2c0', 'r3c0'],
@@ -72,10 +74,10 @@ const CHARACTER_DEFINITION_MAP = {
   barbarian: {
     id: 'barbarian',
     label: 'Bárbaro',
-    image: '/assets/characters/barbarian.png',
+    image: publicAssetUrl('assets/characters/barbarian.png'),
     summary: 'Força bruta',
-    modelUrl: '/assets/models/adventurers/characters/barbarian.glb',
-    textureUrl: '/assets/models/adventurers/textures/barbarian_texture.png',
+    modelUrl: publicAssetUrl('assets/models/adventurers/characters/barbarian.glb'),
+    textureUrl: publicAssetUrl('assets/models/adventurers/textures/barbarian_texture.png'),
     usedSlots: ['r0c1', 'r1c1', 'r2c3', 'r2c7', 'r3c3', 'r3c7', 'r4c0', 'r4c2', 'r4c5', 'r4c6', 'r4c7', 'r5c0', 'r5c2', 'r5c3', 'r5c5', 'r5c6', 'r5c7', 'r6c0', 'r6c1', 'r6c2', 'r6c3', 'r6c6', 'r6c7', 'r7c0', 'r7c1', 'r7c2', 'r7c3', 'r7c6', 'r7c7'],
     paletteGroups: [
       ['r0c1', 'r1c1'],
@@ -143,10 +145,10 @@ const CHARACTER_DEFINITION_MAP = {
   knight: {
     id: 'knight',
     label: 'Cavaleiro',
-    image: '/assets/characters/knight.png',
+    image: publicAssetUrl('assets/characters/knight.png'),
     summary: 'Defesa firme',
-    modelUrl: '/assets/models/adventurers/characters/knight.glb',
-    textureUrl: '/assets/models/adventurers/textures/knight_texture.png',
+    modelUrl: publicAssetUrl('assets/models/adventurers/characters/knight.glb'),
+    textureUrl: publicAssetUrl('assets/models/adventurers/textures/knight_texture.png'),
     usedSlots: ['r4c0', 'r4c1', 'r4c2', 'r4c7', 'r5c0', 'r5c1', 'r5c2', 'r5c7', 'r6c0', 'r6c1', 'r6c2', 'r6c3', 'r6c4', 'r6c6', 'r6c7', 'r7c0', 'r7c1', 'r7c2', 'r7c3', 'r7c4', 'r7c6', 'r7c7'],
     paletteGroups: [
       ['r4c0', 'r4c1', 'r5c0', 'r5c1'],
@@ -197,10 +199,10 @@ const CHARACTER_DEFINITION_MAP = {
   ranger: {
     id: 'ranger',
     label: 'Patrulheiro',
-    image: '/assets/characters/ranger.png',
+    image: publicAssetUrl('assets/characters/ranger.png'),
     summary: 'Ataque à distância',
-    modelUrl: '/assets/models/adventurers/characters/ranger.glb',
-    textureUrl: '/assets/models/adventurers/textures/ranger_texture.png',
+    modelUrl: publicAssetUrl('assets/models/adventurers/characters/ranger.glb'),
+    textureUrl: publicAssetUrl('assets/models/adventurers/textures/ranger_texture.png'),
     usedSlots: ['r2c3', 'r2c7', 'r3c3', 'r3c7', 'r4c0', 'r4c1', 'r4c6', 'r4c7', 'r5c0', 'r5c1', 'r5c5', 'r5c6', 'r5c7', 'r6c0', 'r6c1', 'r6c2', 'r6c3', 'r6c5', 'r6c6', 'r6c7', 'r7c0', 'r7c1', 'r7c2', 'r7c3', 'r7c5', 'r7c6', 'r7c7'],
     paletteGroups: [
       ['r2c3', 'r2c7', 'r3c3', 'r3c7', 'r4c6', 'r5c5', 'r5c6', 'r6c7', 'r7c7'],
@@ -261,10 +263,10 @@ const CHARACTER_DEFINITION_MAP = {
   rogue: {
     id: 'rogue',
     label: 'Ladino',
-    image: '/assets/characters/rogue.png',
+    image: publicAssetUrl('assets/characters/rogue.png'),
     summary: 'Ágil e preciso',
-    modelUrl: '/assets/models/adventurers/characters/rogue-hooded.glb',
-    textureUrl: '/assets/models/adventurers/textures/rogue_texture.png',
+    modelUrl: publicAssetUrl('assets/models/adventurers/characters/rogue-hooded.glb'),
+    textureUrl: publicAssetUrl('assets/models/adventurers/textures/rogue_texture.png'),
     usedSlots: ['r2c3', 'r2c7', 'r3c3', 'r3c7', 'r4c0', 'r4c1', 'r4c7', 'r5c0', 'r5c1', 'r5c7', 'r6c0', 'r6c1', 'r6c3', 'r6c5', 'r6c6', 'r7c0', 'r7c1', 'r7c2', 'r7c3', 'r7c5', 'r7c6'],
     paletteGroups: [
       ['r2c3', 'r2c7', 'r3c3', 'r3c7', 'r6c5', 'r6c6', 'r7c5', 'r7c6'],
