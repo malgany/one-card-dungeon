@@ -63,7 +63,7 @@ O workflow:
 - define `VITE_BASE_PATH` como `/<nome-do-repositorio>/`;
 - publica a pasta `dist`.
 
-Esse `VITE_BASE_PATH` e o que faz os scripts, CSS, imagens, sons e modelos 3D carregarem corretamente em URLs do tipo `https://usuario.github.io/one-rpg-game/`. O ambiente local continua usando a raiz `/` quando voce roda `npm run dev`.
+Esse `VITE_BASE_PATH` e o que faz os scripts, CSS, imagens, sons e modelos 3D carregarem corretamente em URLs do tipo `https://usuario.github.io/one-card-dungeon/`. O ambiente local continua usando a raiz `/` quando voce roda `npm run dev`.
 
 ## Estrutura
 
