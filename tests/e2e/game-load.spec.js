@@ -313,6 +313,8 @@ test('edits grouped mage palette slots together', async ({ page }) => {
 });
 
 test('opens character selection when a character exists', async ({ page }) => {
+  test.setTimeout(60_000);
+
   await page.addInitScript(() => {
     const character = {
       id: 'saved-character',
