@@ -466,6 +466,8 @@ export const TIMING = {
   OVERWORLD_HEALTH_REGEN_INTERVAL: 2000,
 };
 
+const BUILD_ENV = import.meta.env || {};
+
 export const DEBUG_CONFIG = {
-  SHOW_STATS: import.meta.env.VITE_ONE_RPG_DEBUG === 'true',
+  SHOW_STATS: BUILD_ENV.VITE_ONE_RPG_DEBUG === 'true',
 };

@@ -1,4 +1,4 @@
-const DEFAULT_BASE_URL = '/';
+const DEFAULT_BASE_URL = './';
 
 function normalizeBaseUrl(baseUrl) {
   const base = typeof baseUrl === 'string' && baseUrl ? baseUrl : DEFAULT_BASE_URL;
