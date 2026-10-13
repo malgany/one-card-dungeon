@@ -1,3 +1,4 @@
+import { isMobileLayout } from './mobile-layout.js';
 import { BOARD_SIZE, GAME_MODES, PHASES } from '../config/game-data.js';
 import { inBounds, samePos } from '../game/board-logic.js';
 import { getCurrentWorldBounds, getCurrentWorldEnemies } from '../game/world-state.js';
@@ -12,17 +13,17 @@ export function createLayoutTools({ canvas, ctx, state }) {
   }
 
   function resize() {
-    canvas.width = window.innerWidth * devicePixelRatio;
-    canvas.height = window.innerHeight * devicePixelRatio;
+    canvas.width = window.innerWidth * Math.min(window.devicePixelRatio || 1, 2);
+    canvas.height = window.innerHeight * Math.min(window.devicePixelRatio || 1, 2);
     canvas.style.width = `${window.innerWidth}px`;
     canvas.style.height = `${window.innerHeight}px`;
-    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+    ctx.setTransform(Math.min(window.devicePixelRatio || 1, 2), 0, 0, Math.min(window.devicePixelRatio || 1, 2), 0, 0);
   }
 
   function getLayout() {
     const sw = window.innerWidth;
     const sh = window.innerHeight;
-    const compact = sw < 760;
+    const compact = isMobileLayout(sw, sh);
     const inOverworld = isOverworldMode();
 
     if (compact) {

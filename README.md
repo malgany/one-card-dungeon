@@ -4,8 +4,14 @@ Projeto de dungeon crawler tático com **tabuleiro 3D (Three.js)**, inspirado em
 
 ## Funcionalidades Atuais
 
+- **Crônicas do Vale**: campanha de seis regiões conectadas, de 16×16 a 24×24 casas, com caminhos em terra firme. A floresta e a estrada levam às ruínas; dois selos abrem a Cripta das Raízes e seus sentinelas liberam o chefe final.
+- **Exploração com propósito**: diário de objetivos (`J`), fogueiras, inscrições e baús (`E` perto do objeto); poções (`Q`) curam 25 de vida e custam 2 AP durante a sua vez em combate. A roda do mouse ajusta o zoom.
+- **Novos adversários**: Slime de Musgo, Guardião de Musgo e Guardião do Eclipse, com modelos animados do pacote Ultimate Monsters, de Quaternius (CC0). O chefe anuncia no chão o golpe da próxima vez: use o turno para sair das marcas vermelhas.
+- **Personagens existentes**: no mapa antigo, use “Viajar ao Refúgio do Vale”. A viagem mantém o personagem e os mapas explorados. Novos personagens mantêm a introdução do Berçário, cuja saída leva ao vale.
+- **Campanha persistente**: inimigos vencidos e baús recolhidos não reaparecem; selos, poções e conclusão são salvos com o personagem.
+
 - **Mapa Aberto 3D**: O jogo novo inicia em um mapa isometrico maior, com camera seguindo o aventureiro.
-- **Chunks de Mundo**: O mapa aberto e configurado em chunks 10x10 conectaveis, com bioma, terreno, objetos, encontros e conexoes por arquivo.
+- **Regiões de Mundo**: a campanha carrega uma região por vez; os mapas antigos de 10×10 continuam disponíveis para saves existentes e ferramentas de edição.
 - **Transicao Mapa/Luta**: Clicar em um inimigo do mapa inicia uma luta tatica 6x6; ao vencer, o grupo derrotado some do mapa e o jogador volta ao ponto onde estava.
 - **Grupos de Encontro**: Inimigos com o mesmo grupo entram juntos na arena.
 - **Dungeon Legada**: O fluxo antigo de andares/salas continua preservado como modo legado acessivel pelo menu.
@@ -15,13 +21,15 @@ Projeto de dungeon crawler tático com **tabuleiro 3D (Three.js)**, inspirado em
 - **Sistema de Turnos Individual**: Cada entidade (jogador e monstros) possui sua própria vez na fila de iniciativa.
 - **Fase de Herói Simplificada**: O turno do aventureiro começa direto na ação, com **6 AP** fixos por turno.
 - **Ações Estratégicas**:
-  - **Movimento**: 4 pontos de movimento por turno (passos ortogonais apenas).
-  - **Ataque**: Equipado com `Golpe` (5 AP, 10 Dano, sem roubo de vida).
+  - **Movimento**: 3 pontos de movimento base por turno.
+  - **Ataque**: Equipado com `Golpe` (4 AP, 11 de dano base).
 - **Combate**: Defesa mitiga dano (Dano Final = Ataque - Defesa, min 0).
 - **Vida**: Aventureiro tem 60 HP; monstros têm vida proporcional à sua periculosidade.
 - **Interface**: HUD interativo, tooltips e animações de texto flutuante.
 
 ## Como abrir
+
+Os modelos de cenário adicionais são do [KayKit Dungeon Pack](https://kaylousberg.itch.io/kaykit-dungeon-pack), de Kay Lousberg, sob CC0. A licença acompanha `assets/models/dungeon-pack/License.txt`. Os monstros são do [Ultimate Monsters](https://quaternius.com/packs/ultimatemonsters.html), com licença e procedência em `assets/models/quaternius-monsters/`. A fogueira e a pedra de inscrição são geradas localmente por `scripts/generate-campaign-models.mjs`.
 
 Como o projeto usa imports de pacote (`three` e addons), rode pelo Vite para que as dependencias sejam resolvidas corretamente.
 
@@ -92,3 +100,9 @@ A direcao atual e um RPG tatico de ferro, pedra e musgo: menos azul/slate, menos
 
 Se for adicionar ou ajustar modelos GLTF no mundo aberto, consulte `docs/gltf-models.md` antes de mexer em `js/ui/three-board-view.js` ou em `js/config/world/objects.js`.
 O jogador usa o pacote KayKit Adventurers documentado em `docs/kaykit-adventurers.md`; os inimigos esqueletos usam o pacote KayKit Skeletons documentado em `docs/kaykit-skeletons.md`.
+
+## Controles no celular
+
+A interface se adapta a retrato e paisagem. Toque no chão para andar e selecione um ataque antes de tocar no alvo. Herói, feitiços, mapa, poção, diário e fim de turno têm controles visíveis; a barra de ataques permite rolagem horizontal. Os botões de câmera afastam, aproximam e restauram o enquadramento. O combate mantém o tabuleiro completo visível. O limite de densidade de pixels é 2 para reduzir o custo em telas de alta resolução.
+
+Validação: testes unitários de toque, cancelamento de gestos, enquadramento e disponibilidade das ações; navegação manual em 390×844 e 844×390. Não substitui medição de desempenho em aparelhos físicos.

@@ -454,11 +454,53 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     }
   }
 
+  let touch = null;
+  let ignoreMouseUntil = 0;
+  function cancelTouch() {
+    touch = null;
+    state.game.draggingControl = null;
+    state.game.draggingDie = null;
+    state.suppressClick = false;
+  }
+  function pointerDown(event) {
+    if (event.pointerType === 'mouse') return;
+    event.preventDefault();
+    ignoreMouseUntil = Date.now() + 800;
+    if (event.isPrimary === false) { cancelTouch(); return; }
+    touch = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+    state.suppressClick = false;
+    canvas.setPointerCapture?.(event.pointerId);
+    handleMouseDown(event);
+  }
+  function pointerMove(event) {
+    if (!touch || event.pointerId !== touch.id) return;
+    event.preventDefault();
+    if (Math.hypot(event.clientX - touch.x, event.clientY - touch.y) > 12) touch.moved = true;
+    handleMouseMove(event);
+  }
+  function pointerUp(event) {
+    if (!touch || event.pointerId !== touch.id) return;
+    event.preventDefault();
+    ignoreMouseUntil = Date.now() + 800;
+    const moved = touch.moved;
+    handleMouseUp(event);
+    if (!moved) handleClick(event);
+    cancelTouch();
+    canvas.releasePointerCapture?.(event.pointerId);
+    // A touch has no persistent hover; stale coordinates can select the wrong unit.
+    state.mouse.x = -1;
+    state.mouse.y = -1;
+  }
+  const mouseClick = event => { if (Date.now() >= ignoreMouseUntil) handleClick(event); };
+  canvas.addEventListener('pointerdown', pointerDown);
+  canvas.addEventListener('pointermove', pointerMove);
+  canvas.addEventListener('pointerup', pointerUp);
+  canvas.addEventListener('pointercancel', cancelTouch);
   canvas.addEventListener('mousemove', handleMouseMove);
   canvas.addEventListener('wheel', handleWheel, { passive: false });
   canvas.addEventListener('mousedown', handleMouseDown);
   canvas.addEventListener('mouseup', handleMouseUp);
-  canvas.addEventListener('click', handleClick);
+  canvas.addEventListener('click', mouseClick);
   window.addEventListener('keydown', handleKeyDown);
 
   return () => {
@@ -466,7 +508,11 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     canvas.removeEventListener('wheel', handleWheel);
     canvas.removeEventListener('mousedown', handleMouseDown);
     canvas.removeEventListener('mouseup', handleMouseUp);
-    canvas.removeEventListener('click', handleClick);
+    canvas.removeEventListener('click', mouseClick);
+    canvas.removeEventListener('pointerdown', pointerDown);
+    canvas.removeEventListener('pointermove', pointerMove);
+    canvas.removeEventListener('pointerup', pointerUp);
+    canvas.removeEventListener('pointercancel', cancelTouch);
     window.removeEventListener('keydown', handleKeyDown);
   };
 }

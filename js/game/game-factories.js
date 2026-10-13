@@ -261,7 +261,7 @@ export function createOverworldEnemy(typeOrEncounter, x, y, groupId, index, mapI
     lifeSteal: Number.isFinite(encounter.lifeSteal) ? encounter.lifeSteal : stats.lifeSteal,
     visualScale: Number.isFinite(encounter.visualScale) ? encounter.visualScale : stats.visualScale,
     xpGranted: false,
-    name: template.name,
+    name: encounter.name || template.name,
     emoji: template.emoji,
     tint: template.tint,
   };
@@ -283,6 +283,7 @@ export function createCombatMonsterFromEnemy(enemy, x, y, index) {
 
   return {
     ...monster,
+    name: enemy.name || monster.name,
     id: enemy.id,
     groupId: enemy.groupId,
     overworldEnemyId: enemy.id,
@@ -296,6 +297,7 @@ export function levelMonsters(level) {
 }
 
 export function overworldEnemies(map, wave = 0) {
+  if (map?.authoredEncounters) return (map.encounters || []).map((encounter, index) => createOverworldEnemy(encounter, index, map.id));
   if (map?.randomEncounters === false) return [];
 
   const count = Math.max(OVERWORLD_SPAWN_MIN, Math.min(OVERWORLD_SPAWN_MAX, randomOverworldEnemyCount()));

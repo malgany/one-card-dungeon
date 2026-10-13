@@ -1,0 +1,14 @@
+Ultimate Monsters — Quaternius
+https://quaternius.com/packs/ultimatemonsters.html
+Downloaded 2026-10-12 from the author's linked public distribution:
+https://drive.google.com/drive/folders/18m4KpzpEzhC9wl7jzr6dUc0N8Jozr79C
+
+Selected source models: Blob/glTF/GreenBlob.gltf, Big/glTF/MushroomKing.gltf,
+Big/glTF/Demon.gltf. License: CC0-1.0, confirmed on the pack page and its
+License.txt. The original license file happens to name Ultimate Platformer
+Pack; its wording is retained as distributed in the Ultimate Monsters folder.
+
+Adaptations: packed embedded buffers and textures into GLB, renamed five
+animation clips to match the game's existing animation interface. Geometry,
+textures, skinning and keyframes remain the author's. Runtime scale adjusted
+to the board. Imported models total approximately 1.37 MB.

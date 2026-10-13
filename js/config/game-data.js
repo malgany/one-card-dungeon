@@ -329,6 +329,9 @@ export const STAT_META = {
 };
 
 export const MONSTER_TEMPLATES = {
+  mossSlime: { name: 'Gosma de Musgo', emoji: '🟢', hp: 18, attack: 3, defense: 0, range: 1, speed: 2, xp: 12, tint: '#6b9e45' },
+  rootGuardian: { name: 'Guardião de Musgo', emoji: '🌳', hp: 36, attack: 5, defense: 2, range: 1, speed: 2, xp: 28, tint: '#84704c' },
+  eclipseWarden: { name: 'Guardião do Eclipse', emoji: '♜', hp: 90, attack: 7, defense: 2, range: 1, speed: 2, xp: 100, tint: '#bd7e35' },
   skeletonMinion: { name: 'Esqueleto Minion', emoji: '💀', hp: 20, attack: 2, defense: 1, range: 3, speed: 3, xp: 10, tint: '#6b7280' },
   skeletonWarrior: { name: 'Esqueleto Guerreiro', emoji: '💀', hp: 30, attack: 3, defense: 2, range: 3, speed: 3, xp: 15, tint: '#58606c' },
   skeletonRogue: { name: 'Esqueleto Rogue', emoji: '💀', hp: 20, attack: 2, defense: 2, range: 5, speed: 3, xp: 15, tint: '#7c5c35' },
@@ -379,6 +382,9 @@ export function normalizeMonsterId(id) {
 }
 
 export const CARD_SOURCES = {
+  mossSlime: './assets/characters/moss-slime.png',
+  rootGuardian: './assets/characters/root-guardian.png',
+  eclipseWarden: './assets/characters/eclipse-warden.png',
   player: './assets/characters/mage.png',
   mage: './assets/characters/mage.png',
   barbarian: './assets/characters/barbarian.png',

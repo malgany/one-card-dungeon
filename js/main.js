@@ -1,3 +1,5 @@
+import { createMobileUI } from './ui/mobile-ui.js';
+import { createCampaignUI } from './ui/campaign-ui.js';
 import { createGameActions } from './game/game-actions.js';
 import { createGame, loadCardImages } from './game/game-factories.js';
 import { DEBUG_CONFIG } from './config/game-data.js';
@@ -107,9 +109,13 @@ const unregisterCanvasInput = registerCanvasInput({ canvas, state, actions, layo
 if (DEBUG_CONFIG.SHOW_STATS) menuFlow.showDebugEntry();
 else menuFlow.show();
 renderer.start();
+const campaignUI = createCampaignUI(state, actions);
+const mobileUI = createMobileUI(state, actions);
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
+    campaignUI.dispose();
+    mobileUI.dispose();
     renderer.dispose?.();
     menuFlow.dispose?.();
     unregisterCanvasInput?.();

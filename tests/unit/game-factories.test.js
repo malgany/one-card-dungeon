@@ -169,7 +169,7 @@ describe('game factories', () => {
     expect(game.overworld.mapStates[startMap.id]).toBeDefined();
     expect(startMap.id).toBe(START_WORLD_MAP_ID);
     expect(startMapState.enemies).toHaveLength(1);
-    expect(startMapState.enemies.every((enemy) => enemy.type === 'skeletonMinion')).toBe(true);
+    expect(startMapState.enemies.every((enemy) => enemy.type === 'mossSlime')).toBe(true);
     expect(game.monsters).toEqual([]);
     expect(game.turnQueue).toEqual(['player']);
     expect(game.banner.title).toBe(startMap.name);

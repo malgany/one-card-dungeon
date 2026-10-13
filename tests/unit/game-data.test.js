@@ -218,8 +218,8 @@ describe('game data', () => {
     Object.values(WORLD_MAPS).forEach((map) => {
       expect(BIOMES[map.biome]).toBeDefined();
       expect(TERRAIN_TYPES[map.defaultTerrain]).toBeDefined();
-      expect(map.size.width).toBe(10);
-      expect(map.size.height).toBe(10);
+      expect(map.size.width).toBeGreaterThanOrEqual(map.campaign ? 16 : 10);
+      expect(map.size.height).toBeGreaterThanOrEqual(map.campaign ? 16 : 10);
       expect(map.size.width).toBeGreaterThan(BOARD_SIZE);
       expect(map.size.height).toBeGreaterThan(BOARD_SIZE);
       expect(map.playerStart.x).toBeGreaterThanOrEqual(0);
@@ -227,7 +227,7 @@ describe('game data', () => {
       expect(map.playerStart.y).toBeGreaterThanOrEqual(0);
       expect(map.playerStart.y).toBeLessThan(map.size.height);
       if (map.gridPosition) {
-        const key = `${map.gridPosition.x},${map.gridPosition.y}`;
+        const key = `${map.campaign ? 'campaign' : 'legacy'}:${map.gridPosition.x},${map.gridPosition.y}`;
         expect(gridKeys.has(key)).toBe(false);
         gridKeys.add(key);
       }

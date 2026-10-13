@@ -66,6 +66,23 @@ function createInputHarness() {
 }
 
 describe('canvas input', () => {
+  it('handles a touch tap exactly once and discards a swipe or cancelled gesture', () => {
+    const { listeners, state } = createInputHarness();
+    const onClick=vi.fn();
+    state.game.buttons=[{x:0,y:0,w:100,h:100,onClick}];
+    const event={pointerId:1,pointerType:'touch',isPrimary:true,clientX:30,clientY:45,preventDefault:vi.fn()};
+    listeners.get('pointerdown')(event);
+    listeners.get('pointerup')(event);
+    listeners.get('click')(event);
+    expect(onClick).toHaveBeenCalledTimes(1);
+    listeners.get('pointerdown')(event);
+    listeners.get('pointermove')({...event,clientX:65});
+    listeners.get('pointerup')({...event,clientX:65});
+    listeners.get('pointerdown')(event);
+    listeners.get('pointercancel')(event);
+    listeners.get('pointerup')(event);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
   afterEach(() => {
     while (cleanupCallbacks.length > 0) cleanupCallbacks.pop()?.();
   });

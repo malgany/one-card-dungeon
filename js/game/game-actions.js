@@ -1,3 +1,4 @@
+import { ensureCampaign, campaignGateMessage, recordCampaignVictory, interactCampaignPoint, useCampaignPotion, bossBlastCells } from './campaign.js';
 import {
   ACTION_RULES,
   ATTACK_PATTERNS,
@@ -642,6 +643,15 @@ function playerAttackModelActionFor(attack) {
 
 export function createGameActions(state) {
 
+  function interactCampaign() {
+    const result = interactCampaignPoint(getGame());
+    if (!result) return false;
+    setEvent(result.text); showBanner(result.title, result.text, 4500); autoSaveGame(); return true;
+  }
+  function drinkPotion() {
+    if (!useCampaignPotion(getGame())) return false;
+    setEvent('Poção usada: até 25 de vida restaurados.'); autoSaveGame(); return true;
+  }
   function getGame() {
     return state.game;
   }
@@ -1857,6 +1867,7 @@ export function createGameActions(state) {
     let moved = false;
 
     enemies.forEach((enemy, index) => {
+      if (getCurrentWorldMap(game.overworld)?.authoredEncounters) return;
       if (hasActiveMovementAnimation(enemy.id, now)) return;
 
       if (!Number.isFinite(enemy.nextWanderAt)) {
@@ -2189,7 +2200,7 @@ export function createGameActions(state) {
         return;
       }
 
-      const blockedMessage = connectionBlockedMessage(connection);
+      const blockedMessage = campaignGateMessage(game, connection) || connectionBlockedMessage(connection);
       if (blockedMessage) {
         game.busy = false;
         setEvent(blockedMessage);
@@ -2287,7 +2298,8 @@ export function createGameActions(state) {
     resetNextTurnApBonus(game);
     game.busy = false;
 
-    startHeroTurn(`Encontro iniciado: grupo ${target.groupId}.`);
+    game.bossTelegraph = null;
+    startHeroTurn(`Encontro: ${target.name}.`);
     return true;
   }
 
@@ -2345,13 +2357,16 @@ export function createGameActions(state) {
     game.animations = [];
     game.busy = false;
 
+    const campaignReward = recordCampaignVictory(game, context.groupId);
+    game.bossTelegraph = null;
     const xpText = combatExperienceText(experienceResult);
     setEvent(`Grupo derrotado. Voce voltou ao mapa.${xpText}`);
     syncGameMusic(game);
-    showBanner('Vitória', experienceResult?.xp > 0 ? `+${experienceResult.xp} XP no fim da batalha.` : 'Grupo removido do mapa aberto.', 2000, null, {
+    showBanner(campaignReward?.title || 'Vitória', campaignReward?.text || (experienceResult?.xp > 0 ? `+${experienceResult.xp} XP no fim da batalha.` : 'Grupo removido do mapa aberto.'), campaignReward ? 5000 : 2000, null, {
       cardKey: 'player',
-      accent: '#34d399',
+      accent: '#5f8f54',
     });
+    autoSaveGame();
     return true;
   }
 
@@ -2377,6 +2392,7 @@ export function createGameActions(state) {
     game.mode = GAME_MODES.OVERWORLD;
     game.phase = PHASES.HERO;
     game.nextOverworldHealthRegenAt = null;
+    game.bossTelegraph = null;
     game.player.health = 0;
     game.player.x = map?.playerStart?.x ?? 0;
     game.player.y = map?.playerStart?.y ?? 0;
@@ -2759,6 +2775,24 @@ export function createGameActions(state) {
 
   function executeMonsterTurn(monster) {
     const game = getGame();
+    if (getGame().monsters?.includes(monster) && monster.hp > 0 && monster.type === 'eclipseWarden') {
+      if (game.bossTelegraph?.enemyId === monster.id) {
+        const hit = game.bossTelegraph.cells.some(p => samePos(p, game.player));
+        const damage = hit ? Math.max(1, 16 - game.player.defenseBase) : 0;
+        game.player.health = Math.max(0, game.player.health - damage);
+        game.bossTelegraph = null;
+        setEvent(hit ? 'Ruptura das raízes! Você sofreu ' + damage + ' de dano.' : 'Você escapou da ruptura das raízes!');
+        if (game.player.health <= 0) { completeOverworldDefeat(); return; }
+        setTimeout(() => { if (getGame() === game && game.mode === GAME_MODES.COMBAT) advanceTurn(); }, 700);
+        return;
+      }
+      if (game.turnCount % 2 === 0) {
+        game.bossTelegraph = { enemyId: monster.id, cells: bossBlastCells(game.player) };
+        setEvent('O Guardião prepara a ruptura. Saia das casas vermelhas antes da próxima vez dele!');
+        setTimeout(() => { if (getGame() === game && game.mode === GAME_MODES.COMBAT) advanceTurn(); }, 700);
+        return;
+      }
+    }
     if (monster.hp <= 0) {
       advanceTurn();
       return;
@@ -3083,7 +3117,7 @@ export function createGameActions(state) {
       xpGranted: unit.xpGranted === true,
       lastWanderAt: null,
       nextWanderAt: null,
-      name: template.name,
+      name: unit.name || template.name,
       emoji: template.emoji,
       tint: template.tint,
     };
@@ -3419,6 +3453,8 @@ export function createGameActions(state) {
     assignedStatForDie,
     attackMonster,
     attackTile,
+    interactCampaign,
+    drinkPotion,
     autoSaveGame,
     advanceCutscene,
     closeActiveModal,

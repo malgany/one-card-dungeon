@@ -1444,7 +1444,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const menuView = state.game.menuView || 'main';
     if (menuView === 'main' || menuView === 'sound') {
       const soundView = menuView === 'sound';
-      const w = soundView ? 360 : 260;
+      const w = Math.min(currentLayout.sw - 24, soundView ? 360 : 260);
       const h = soundView ? 228 : 288;
       const x = (currentLayout.sw - w) / 2;
       const y = (currentLayout.sh - h) / 2;
@@ -2233,6 +2233,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   }
 
   function drawOverworldBottomUI(currentLayout) {
+    if (currentLayout.compact) return { h: 148 };
     const slotWidth = (slotSize, slotCount) => {
       const gap = Math.max(8, Math.floor(slotSize * 0.18));
       return slotCount * slotSize + Math.max(0, slotCount - 1) * gap;
@@ -2874,6 +2875,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   }
 
   function drawActiveModal(currentLayout) {
+    if (currentLayout.compact && ['characteristics', 'spells'].includes(state.game.activeModal)) return;
     if (!state.game.activeModal) return;
     state.game.buttons = [];
 
@@ -3043,6 +3045,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   }
 
   function drawCombatBottomUI(currentLayout, now = performance.now()) {
+    if (currentLayout.compact) return;
     const slotWidth = (slotSize, slotCount) => {
       const gap = Math.max(8, Math.floor(slotSize * 0.18));
       return slotCount * slotSize + Math.max(0, slotCount - 1) * gap;
@@ -3308,11 +3311,17 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const cy = activeViewport
       ? activeViewport.y + activeViewport.h / 2
       : currentLayout.boardY + currentLayout.boardH / 2;
-    const hasCard = !!banner.cardKey;
-    const panelW = hasCard ? Math.min(620, Math.max(480, currentLayout.boardW * 0.82)) : 520;
-    const panelH = hasCard ? 176 : 148;
+    const availableWidth = Math.max(240, (currentLayout.sw || window.innerWidth) - 32);
+    const hasCard = !!banner.cardKey && availableWidth >= 480;
+    const panelW = Math.min(availableWidth, hasCard ? 620 : 560);
+    const textWidth = panelW - (hasCard ? 182 : 48);
+    const titleFont = 'bold 26px Inter, sans-serif';
+    const subtitleFont = '16px Inter, sans-serif';
+    const titleLines = wrappedTextLines(banner.title, textWidth, titleFont);
+    const subtitleLines = wrappedTextLines(banner.subtitle || '', textWidth, subtitleFont);
+    const panelH = Math.max(hasCard ? 176 : 148, 48 + titleLines.length * 32 + subtitleLines.length * 23);
     const panelX = cx - panelW / 2;
-    const panelY = hasCard ? cy - panelH / 2 + 16 : cy - 74;
+    const panelY = cy - panelH / 2;
     const accent = banner.accent || UI_THEME.accent;
 
     ctx.save();
@@ -3344,36 +3353,38 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       }
       ctx.restore();
 
-      draw.drawText(banner.title, textX, panelY + 62, {
+      titleLines.forEach((line, index) => draw.drawText(line, textX, panelY + 40 + index * 32, {
         align: 'left',
-        font: 'bold 30px Inter, sans-serif',
+        font: titleFont,
         color: UI_THEME.text,
         maxWidth: textW,
-      });
+      }));
 
       if (banner.subtitle) {
-        draw.drawText(banner.subtitle, textX, panelY + 102, {
+        subtitleLines.forEach((line, index) => draw.drawText(line, textX, panelY + 52 + titleLines.length * 32 + index * 23, {
           align: 'left',
-          font: '16px Inter, sans-serif',
+          font: subtitleFont,
           color: UI_THEME.textMuted,
           maxWidth: textW,
-        });
+        }));
       }
     } else {
       ctx.lineWidth = 3;
       draw.roundRect(panelX, panelY, panelW, panelH, 10, 'rgba(7,8,7,0.8)', accent);
-      draw.drawText(banner.title, cx, cy - 12, {
+      titleLines.forEach((line, index) => draw.drawText(line, cx, panelY + 40 + index * 32, {
         align: 'center',
-        font: 'bold 32px Inter, sans-serif',
+        font: titleFont,
         color: UI_THEME.text,
-      });
+        maxWidth: textWidth,
+      }));
 
       if (banner.subtitle) {
-        draw.drawText(banner.subtitle, cx, cy + 25, {
+        subtitleLines.forEach((line, index) => draw.drawText(line, cx, panelY + 52 + titleLines.length * 32 + index * 23, {
           align: 'center',
-          font: '16px Inter, sans-serif',
+          font: subtitleFont,
           color: UI_THEME.textMuted,
-        });
+          maxWidth: textWidth,
+        }));
       }
     }
 
@@ -3615,7 +3626,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const viewport = threeBoard.getViewport(currentLayout);
     const compact = !!currentLayout.compact;
     const buttonW = compact ? 88 : 104;
-    const buttonH = compact ? 32 : 34;
+    const buttonH = compact ? 44 : 34;
     const x = viewport.x + viewport.w - buttonW - (compact ? 12 : 18);
     const y = viewport.y + (compact ? 12 : 18);
 
@@ -4864,8 +4875,9 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   }
 
   function worldMapsWithGridPositions() {
+    const campaign = !!getCurrentWorldMap(state.game.overworld)?.campaign;
     return Object.values(WORLD_MAPS).filter((map) => {
-      return Number.isFinite(map?.gridPosition?.x) && Number.isFinite(map?.gridPosition?.y);
+      return !!map.campaign === campaign && Number.isFinite(map?.gridPosition?.x) && Number.isFinite(map?.gridPosition?.y);
     });
   }
 
@@ -5188,7 +5200,8 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     return `[${map.gridPosition.x},${map.gridPosition.y}]`;
   }
 
-  function drawCurrentWorldCoordinate() {
+  function drawCurrentWorldCoordinate(currentLayout) {
+    if (currentLayout.compact) return;
     const activeMap = getCurrentWorldMap(state.game.overworld);
     const text = worldMapCoordinateText(activeMap);
     if (!text) return;
@@ -5206,12 +5219,13 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   }
 
   function drawWorldMinimap(currentLayout, bottomInset = 0) {
+    if (currentLayout.compact) return;
     if (!shouldDrawWorldMinimap(state.game)) return;
 
     const activeMap = getCurrentWorldMap(state.game.overworld);
     if (!activeMap?.gridPosition) return;
 
-    const maps = Object.values(WORLD_MAPS).filter((map) => map.gridPosition);
+    const maps = Object.values(WORLD_MAPS).filter((map) => map.gridPosition && (activeMap?.campaign ? map.campaign : !map.campaign));
     if (maps.length === 0) return;
 
     const {

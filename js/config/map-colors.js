@@ -289,6 +289,15 @@ function layeredMapColorValues(mapId) {
 }
 
 export function getMapColorValuesForMap(mapId) {
+  if (mapId?.startsWith('vale-')) {
+    const stone=['vale-ruinas','vale-cripta','vale-trono'].includes(mapId);
+    return { ...DEFAULT_MAP_COLOR_VALUES,
+      water1: stone?'#171913':'#11190f', water2:'#0d100b', water3:'#242a1d',
+      top1: stone?'#555b4e':'#536f38', top2: stone?'#626857':'#648244', top3: stone?'#3b4238':'#3b5428',
+      top4: stone?'#7a806b':'#7d954b', top5: stone?'#4c5345':'#4b6530',
+      side1:'#5b513b',side2:'#73634a',side3:'#4b4434',side4:'#625740',side5:'#39372b',
+    };
+  }
   return normalizeMapColorValues(
     MAP_COLOR_VALUES_BY_MAP[mapId] || layeredMapColorValues(mapId),
     getDefaultNewMapColorValues(),

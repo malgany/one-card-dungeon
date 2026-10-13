@@ -1,3 +1,5 @@
+import { mobileBoardViewport, mobileCameraHeight } from './mobile-layout.js';
+import { getWorldMap } from '../config/world/index.js';
 import * as THREE from 'three';
 import { BOARD_SIZE, CARD_SOURCES, DEBUG_CONFIG, GAME_MODES, TERRAIN_TYPES, WORLD_ASSETS, WORLD_OBJECT_TYPES } from '../config/game-data.js';
 import { getCurrentWorldEnemies, getCurrentWorldMap, getCurrentWorldPickups } from '../game/world-state.js';
@@ -189,7 +191,11 @@ const SKELETON_MODEL_BASE = {
     WORLD_ASSETS.animations.skeletons.rigMedium.movementBasic,
   ],
 };
+const CAMPAIGN_UNIT_MODEL = { ...SKELETON_MODEL_BASE, scale: 1, groundOffset: 0 };
 const UNIT_MODELS = {
+  mossSlime: { ...CAMPAIGN_UNIT_MODEL, scale: 0.375, modelUrl: './assets/models/quaternius-monsters/moss-slime.glb', animations: ['./assets/models/quaternius-monsters/moss-slime.glb'] },
+  rootGuardian: { ...CAMPAIGN_UNIT_MODEL, scale: 0.381, modelUrl: './assets/models/quaternius-monsters/root-guardian.glb', animations: ['./assets/models/quaternius-monsters/root-guardian.glb'] },
+  eclipseWarden: { ...CAMPAIGN_UNIT_MODEL, scale: 0.512, modelUrl: './assets/models/quaternius-monsters/eclipse-warden.glb', animations: ['./assets/models/quaternius-monsters/eclipse-warden.glb'] },
   skeletonMinion: {
     ...SKELETON_MODEL_BASE,
     modelUrl: WORLD_ASSETS.characters.skeletonMinion,
@@ -327,6 +333,7 @@ function setIsometricCameraPosition(camera, target = { x: 0, z: 0 }, distance = 
 }
 
 function boardViewport(layout) {
+  if (layout.compact) return mobileBoardViewport(layout.sw, layout.sh);
   return {
     x: 0,
     y: 0,
@@ -1665,7 +1672,9 @@ export function createThreeBoardView({ state }) {
       : mode === GAME_MODES.COMBAT
         ? (layout.compact ? COMPACT_COMBAT_ORTHO_VIEW_HEIGHT : COMBAT_ORTHO_VIEW_HEIGHT)
         : (layout.compact ? COMPACT_ORTHO_VIEW_HEIGHT : ORTHO_VIEW_HEIGHT);
-    const viewHeight = baseViewHeight / (state.debugZoom || 1.15);
+    const viewHeight = layout.compact
+      ? mobileCameraHeight(viewport, state.debugZoom || 1.15, !isOverworld)
+      : baseViewHeight / (state.debugZoom || 1.15);
     const viewWidth = viewHeight * aspect;
 
     let target = { x: 0, z: 0 };
@@ -1756,12 +1765,12 @@ export function createThreeBoardView({ state }) {
     const waterEnabled = useCubeTerrain && getOverworldWaterEnabled({ mapId, baseValues: state.visuals, runtimeValues });
     const dryGroundEnabled = useCubeTerrain && !waterEnabled;
     const terrain = isOverworld ? currentOverworldTerrain() : null;
-    const terrainId = terrain?.id || null;
+    const terrainId = (terrain?.id || '') + ':' + (mapId || '');
     const showGrid = !!state.visuals?.showGrid;
     const connectionSignature = useCubeTerrain && !waterEnabled
       ? (connections || []).map((conn) => `${conn.id}:${conn.x},${conn.y}`).join('|')
       : '';
-    const connectionTileKeys = useCubeTerrain && !waterEnabled
+    const connectionTileKeys = useCubeTerrain && !waterEnabled && !mapId?.startsWith('vale-')
       ? new Set((connections || []).map((conn) => keyFor(conn.x, conn.y)))
       : new Set();
 
@@ -1864,11 +1873,11 @@ export function createThreeBoardView({ state }) {
           if (x >= 0 && x < width && y >= 0 && y < height) continue;
           const center = tileCenter(x, y, width, height);
 
-          dummy.position.set(center.x, -TERRAIN_CUBE_HEIGHT * 1.5, center.z);
+          dummy.position.set(center.x, -TERRAIN_CUBE_HEIGHT * (mapId?.startsWith('vale-') ? 0.5 : 1.5), center.z);
           dummy.scale.set(1, 1, 1);
           dummy.updateMatrix();
           dryGroundCubeInstance.setMatrixAt(count, dummy.matrix);
-          dryGroundCubeInstance.setColorAt(count, colorFromHex(ISLAND_DRY_GROUND_TINT));
+          dryGroundCubeInstance.setColorAt(count, colorFromHex(mapId?.startsWith('vale-') ? '#d2dac2' : ISLAND_DRY_GROUND_TINT));
 
           count += 1;
         }
@@ -2167,6 +2176,7 @@ export function createThreeBoardView({ state }) {
       loadGltfAsset(modelConfig.modelUrl),
       ...modelConfig.animations.map((url) => loadGltfAsset(url)),
     ]).then(async ([modelGltf, ...animationGltfs]) => {
+      if (unitMeshes.get(entityId) !== group) return;
       const model = cloneSkeleton(modelGltf.scene);
       model.scale.setScalar(modelConfig.scale);
       centerModelOnGround(model);
@@ -2179,6 +2189,7 @@ export function createThreeBoardView({ state }) {
         typeId: isPlayer ? playerModelKey(unit) : null,
         palette: isPlayer ? unit?.characterPalette : null,
       });
+      if (unitMeshes.get(entityId) !== group) return;
       group.add(model);
       attachModelEquipment(group, model, modelConfig, entityId);
 
@@ -2282,9 +2293,11 @@ export function createThreeBoardView({ state }) {
       boardGroup.add(group);
 
       loadGltfAsset(type.modelUrl).then(async (gltf) => {
+        if (objectMeshes.get(object.id) !== group) return;
         const model = cloneSkeleton(gltf.scene);
         centerModelOnGround(model);
         await prepareGltfModel(gltf, model, { url: type.modelUrl });
+        if (objectMeshes.get(object.id) !== group) return;
 
         // Setup Animations
         if (gltf.animations && gltf.animations.length > 0) {
@@ -3471,7 +3484,61 @@ export function createThreeBoardView({ state }) {
     syncConnectionBridgeWaterAccentInstances(0, 0);
   }
 
+
+  const campaignRoadGeometry = new THREE.PlaneGeometry(1.015, 1.015);
+  campaignRoadGeometry.rotateX(-Math.PI / 2);
+  const campaignRoadMaterial = new THREE.MeshStandardMaterial({color:'#8c754b', roughness:1});
+  const campaignRoad = new THREE.InstancedMesh(campaignRoadGeometry, campaignRoadMaterial, 1600);
+  campaignRoad.count=0; campaignRoad.receiveShadow=true; boardGroup.add(campaignRoad);
+  const campaignMarks = new THREE.Group(); boardGroup.add(campaignMarks);
+  const blastGeometry=new THREE.PlaneGeometry(.94,.94);blastGeometry.rotateX(-Math.PI/2);
+  const blastMaterial=new THREE.MeshBasicMaterial({color:'#ee5636',transparent:true,opacity:.64,depthWrite:false});
+  const blastMarks=new THREE.InstancedMesh(blastGeometry,blastMaterial,5);blastMarks.count=0;boardGroup.add(blastMarks);
+  let campaignMapSignature='';
+  function clearCampaignMarks() {
+    for(const child of [...campaignMarks.children]) {
+      campaignMarks.remove(child);child.material?.map?.dispose();child.material?.dispose();
+    }
+  }
+  function campaignLabel(text,x,y,color='#e2bc6b') {
+    const canvas=document.createElement('canvas');canvas.width=512;canvas.height=96;
+    const ctx=canvas.getContext('2d');ctx.fillStyle='rgba(12,17,10,.9)';ctx.fillRect(0,8,512,80);
+    ctx.strokeStyle=color;ctx.lineWidth=3;ctx.strokeRect(2,10,508,76);ctx.fillStyle=color;ctx.textAlign='center';ctx.font='600 28px sans-serif';ctx.fillText(text,256,59,485);
+    const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;
+    const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,depthTest:false}));
+    const center=tileCenter(x,y,currentBoard.width,currentBoard.height);sprite.position.set(center.x,1.05,center.z);sprite.scale.set(2.6,.49,1);sprite.renderOrder=10;campaignMarks.add(sprite);
+  }
+  function updateCampaignScenery(now) {
+    const map=state.game.mode===GAME_MODES.OVERWORLD?getCurrentWorldMap(state.game.overworld):null;
+    const signature=map?.campaign?map.id:'';
+    campaignRoad.visible=!!signature;campaignMarks.visible=!!signature;
+    if(signature!==campaignMapSignature) {
+      campaignMapSignature=signature;clearCampaignMarks();campaignRoad.count=0;
+      if(map?.campaign) {
+        campaignRoadMaterial.color.set(map.biome==='stonefields'?'#797766':'#9a8056');
+        const cells=map.terrainPatches.find(p=>p.terrain==='dirt')?.cells||[];
+        for(const [x,y] of cells) {
+          if(campaignRoad.count>=1600)break;
+          const center=tileCenter(x,y,currentBoard.width,currentBoard.height);
+          dummy.position.set(center.x,.018,center.z);dummy.rotation.set(0,0,0);dummy.scale.set(1,1,1);dummy.updateMatrix();
+          campaignRoad.setMatrixAt(campaignRoad.count++,dummy.matrix);
+        }
+        campaignRoad.instanceMatrix.needsUpdate=true;campaignRoad.computeBoundingSphere();
+        for(const p of map.points)campaignLabel((p.kind==='camp'?'♨ ':p.kind==='chest'?'◇ ':'')+p.name,p.x,p.y);
+        for(const c of map.connections)campaignLabel('→ '+(getWorldMap(c.targetMapId)?.name||'Passagem'),c.x,c.y,'#bbcf99');
+      }
+    }
+    const cells=state.game.mode===GAME_MODES.COMBAT?state.game.bossTelegraph?.cells||[]:[];
+    blastMarks.count=cells.length;blastMarks.visible=cells.length>0;
+    blastMaterial.opacity=.45+Math.sin(now*.006)*.15;
+    cells.forEach((p,i)=>{const center=tileCenter(p.x,p.y,currentBoard.width,currentBoard.height);dummy.position.set(center.x,.085,center.z);dummy.rotation.set(0,0,0);dummy.scale.set(1,1,1);dummy.updateMatrix();blastMarks.setMatrixAt(i,dummy.matrix);});
+    if(cells.length){blastMarks.instanceMatrix.needsUpdate=true;blastMarks.computeBoundingSphere();}
+  }
+
   function updateConnections(connections) {
+    if (state.game.mode === GAME_MODES.OVERWORLD && getCurrentWorldMap(state.game.overworld)?.campaign) {
+      clearConnectionBridgeInstances(); syncConnectionRampInstance(0); return;
+    }
     let deckCount = 0;
     let railCount = 0;
     let postCount = 0;
@@ -3856,6 +3923,8 @@ export function createThreeBoardView({ state }) {
   }
 
   function disposeThreeBoard() {
+    clearCampaignMarks();
+    campaignRoadGeometry.dispose();campaignRoadMaterial.dispose();blastGeometry.dispose();blastMaterial.dispose();
     mixers.clear();
     textureCache.forEach((texture) => texture.dispose?.());
     textureCache.clear();
@@ -3946,6 +4015,7 @@ export function createThreeBoardView({ state }) {
       updateUnits(now);
       updateProjectiles(now);
       updateConnections(connections);
+      updateCampaignScenery(now);
       updateCutsceneSpotlight(now);
 
       // Atualizar animações 3D

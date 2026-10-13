@@ -21,6 +21,7 @@ export const MAP_VISUAL_SETTINGS_BY_MAP = Object.freeze({
 });
 
 export function getOverworldWaterEnabled({ mapId = null, baseValues = DEFAULT_VISUAL_SETTINGS, runtimeValues = null } = {}) {
+  if (mapId?.startsWith('vale-')) return false;
   if (typeof runtimeValues?.overworldWater === 'boolean') return runtimeValues.overworldWater;
   const mapValues = mapId ? MAP_VISUAL_SETTINGS_BY_MAP[mapId] : null;
   if (typeof mapValues?.overworldWater === 'boolean') return mapValues.overworldWater;

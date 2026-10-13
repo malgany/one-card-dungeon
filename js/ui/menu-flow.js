@@ -837,7 +837,10 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     menuRoot.innerHTML = `
       <section class="menu-home-panel menu-glass" aria-label="Menu principal">
         <img class="menu-logo" src="${MENU_ASSETS.logo}" alt="Logo do jogo">
-        <button class="menu-primary-button" type="button" data-menu-action="start-flow">Jogar</button>
+        <p class="campaign-menu-eyebrow">CRÔNICAS DO VALE</p>
+        <p class="campaign-menu-copy">Um refúgio. Dois selos perdidos.<br>Um guardião sob as raízes.</p>
+        <button class="menu-primary-button" type="button" data-menu-action="start-flow">Entrar no vale</button>
+        <p class="campaign-menu-hint">Explore • Prepare-se • Lute por turnos</p>
       </section>
     `;
   }
