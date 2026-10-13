@@ -43,6 +43,7 @@ import {
   createDungeonLegacyGame,
   createGame,
   createOverworldGame,
+  createOverworldEnemy,
   ensureOverworldMapState,
   levelMonsters,
   leveledMonsterStats,
@@ -643,10 +644,23 @@ function playerAttackModelActionFor(attack) {
 
 export function createGameActions(state) {
 
-  function interactCampaign() {
-    const result = interactCampaignPoint(getGame());
+  function interactCampaign(point) {
+    const result = interactCampaignPoint(getGame(), point);
     if (!result) return false;
-    setEvent(result.text); showBanner(result.title, result.text, 4500); autoSaveGame(); return true;
+    autoSaveGame(); return true;
+  }
+  function interactCampaignAt(tile) {
+    const game = getGame();
+    if (game.mode !== 'overworld' || game.busy || game.activeModal || game.cutscene) return false;
+    const point = getCurrentWorldMap(game.overworld)?.points?.find(p => p.x === tile.x && p.y === tile.y);
+    if (!point) return false;
+    if (Math.abs(point.x-game.player.x)+Math.abs(point.y-game.player.y)<=1) { interactCampaign(point); return true; }
+    const reachable = getOverworldReachableTiles();
+    const neighbors = [[1,0],[-1,0],[0,1],[0,-1]].map(([dx,dy])=>({x:point.x+dx,y:point.y+dy})).filter(p=>reachable.has(posKey(p))).sort((a,b)=>reachable.get(posKey(a)).cost-reachable.get(posKey(b)).cost);
+    if (!neighbors.length) { setEvent('Não há caminho livre até este objeto.'); return true; }
+    game.pendingCampaignPoint = { id:point.id,mapId:game.overworld.currentMapId };
+    if (!moveOverworldPlayer(neighbors[0], { activateConnection:false, interaction:true })) game.pendingCampaignPoint=null;
+    return true;
   }
   function drinkPotion() {
     if (!useCampaignPotion(getGame())) return false;
@@ -1007,7 +1021,7 @@ export function createGameActions(state) {
 
   function getAttackDamage(attack, player = getGame().player) {
     const baseDamage = toNonNegativeInteger(attack?.damage);
-    return baseDamage + getElementalDamageBonus(attack?.element, player);
+    return baseDamage + getElementalDamageBonus(attack?.element, player) + Math.min(3, Math.max(0, getGame().campaign?.runeRank || 0)) * 2;
   }
 
   function getMitigatedDamage(rawDamage, defense) {
@@ -1433,12 +1447,26 @@ export function createGameActions(state) {
     }, TIMING.HERO_TURN_DURATION);
   }
 
+  function tickHeroTurnPause(now = performance.now()) {
+    const game = getGame();
+    if (!isCombatMode(game) || game.phase !== PHASES.HERO || !Number.isFinite(game.heroTurnEndsAt)) { game.heroTurnPausedAt = null; return; }
+    const pause = game.menuOpen || !!game.activeModal || document.visibilityState === 'hidden';
+    if (pause && !Number.isFinite(game.heroTurnPausedAt)) {
+      game.heroTurnPausedAt = now;
+      if (heroTurnTimeoutId !== null) { window.clearTimeout(heroTurnTimeoutId); heroTurnTimeoutId = null; }
+    } else if (!pause && Number.isFinite(game.heroTurnPausedAt)) {
+      game.heroTurnEndsAt += Math.max(0, now - game.heroTurnPausedAt);
+      game.heroTurnPausedAt = null;
+    }
+    if (!pause && !game.busy && now >= game.heroTurnEndsAt) endHeroPhase();
+  }
+
   function getHeroTurnTimer(now = performance.now()) {
     const game = getGame();
     if (!isCombatMode(game) || game.phase !== PHASES.HERO) return null;
     if (!Number.isFinite(game.heroTurnEndsAt)) return null;
 
-    const remainingMs = Math.max(0, game.heroTurnEndsAt - now);
+    const remainingMs = Math.max(0, game.heroTurnEndsAt - (Number.isFinite(game.heroTurnPausedAt) ? game.heroTurnPausedAt : now));
 
     return {
       remainingMs,
@@ -1513,6 +1541,7 @@ export function createGameActions(state) {
 
   function startHeroTurn(message = null) {
     const game = getGame();
+    game.heroTurnPausedAt = null;
 
     game.phase = PHASES.HERO;
     game.roll = [];
@@ -2156,6 +2185,7 @@ export function createGameActions(state) {
       return false;
     }
 
+    if (!options.interaction) game.pendingCampaignPoint = null;
     const canActivateConnection = shouldActivateOverworldConnection(options);
     const isCurrentTile = samePos(target, game.player);
     const isConnectionTarget = canActivateConnection && !!getWorldConnectionAt(game.overworld, target);
@@ -2197,6 +2227,8 @@ export function createGameActions(state) {
       if (!connection) {
         collectOverworldPickupAt(target);
         game.busy = false;
+        const pending=game.pendingCampaignPoint; game.pendingCampaignPoint=null;
+        if(getGame()===game && pending?.mapId===game.overworld.currentMapId) interactCampaign({id:pending.id});
         return;
       }
 
@@ -2246,7 +2278,7 @@ export function createGameActions(state) {
         game.busy = false;
       }, overworldMapTransitionDuration());
     }, duration);
-    setEvent(`Movendo pelo mapa: ${data.cost} passos.`);
+    // Movement is conveyed by the path animation, not a permanent debug log.
     return true;
   }
 
@@ -2382,7 +2414,12 @@ export function createGameActions(state) {
     game.heroTurnStartedAt = null;
     game.heroTurnEndsAt = null;
 
-    const map = getWorldMap(START_WORLD_MAP_ID);
+    const campaignDefeat = !!getWorldMap(context.mapId)?.campaign;
+    const checkpoint = campaignDefeat ? ensureCampaign(game).lastCamp : null;
+    const checkpointMap = getWorldMap(checkpoint?.mapId);
+    const checkpointPoint = checkpointMap?.points?.find(p=>p.id===checkpoint?.pointId&&p.kind==='camp');
+    const validCheckpoint = checkpointPoint && Math.abs(checkpointPoint.x-checkpoint.x)+Math.abs(checkpointPoint.y-checkpoint.y)===1;
+    const map = validCheckpoint ? checkpointMap : getWorldMap(START_WORLD_MAP_ID);
     if (game.overworld && map) {
       ensureOverworldMapState(game.overworld, map.id);
       game.overworld.currentMapId = map.id;
@@ -2393,9 +2430,9 @@ export function createGameActions(state) {
     game.phase = PHASES.HERO;
     game.nextOverworldHealthRegenAt = null;
     game.bossTelegraph = null;
-    game.player.health = 0;
-    game.player.x = map?.playerStart?.x ?? 0;
-    game.player.y = map?.playerStart?.y ?? 0;
+    game.player.health = campaignDefeat ? game.player.maxHealth : 0;
+    game.player.x = validCheckpoint ? checkpoint.x : map?.playerStart?.x ?? 0;
+    game.player.y = validCheckpoint ? checkpoint.y : map?.playerStart?.y ?? 0;
     game.player.facing = { x: 0, y: 1 };
     game.monsters = [];
     game.combatContext = null;
@@ -2411,9 +2448,10 @@ export function createGameActions(state) {
     game.animations = [];
     game.busy = false;
 
-    setEvent('Seu aventureiro caiu e voltou ao mapa 0,0 sem vida.');
+    const defeatText = campaignDefeat ? 'Você recuperou as forças no abrigo. Seus itens foram preservados.' : 'Seu aventureiro caiu e voltou ao mapa 0,0 sem vida.';
+    setEvent(defeatText);
     syncGameMusic(game);
-    showBanner('Derrota', 'Voce voltou ao mapa 0,0 sem vida.', 2000, null, {
+    showBanner('Derrota', defeatText, 2000, null, {
       cardKey: 'player',
       accent: '#b94735',
     });
@@ -3052,6 +3090,9 @@ export function createGameActions(state) {
       activeModal: null,
       levelUpNotice: null,
       combatLogoutDefeat: false,
+      heroTurnPausedAt: null,
+      pendingCampaignPoint: null,
+      campaignInteraction: null,
     };
   }
 
@@ -3069,6 +3110,7 @@ export function createGameActions(state) {
       for (const key of saveKeys) {
         localStorage.setItem(key, serialized);
       }
+      persistPlayerProgress(game.player);
       if (!silent) {
         game.menuOpen = false;
         game.activeModal = null;
@@ -3088,6 +3130,15 @@ export function createGameActions(state) {
 
   function normalizeLoadedEnemyUnit(unit) {
     if (!unit || typeof unit !== 'object') return unit;
+    const authoredMap = getWorldMap(unit.mapId);
+    const authored = authoredMap?.campaign && unit.balanceVersion !== 2
+      ? authoredMap.encounters.find(e => e.id === unit.encounterId || e.groupId === unit.groupId)
+      : null;
+    if (authored) {
+      const updated = createOverworldEnemy(authored, 0, authoredMap.id);
+      const ratio = Number.isFinite(unit.hp) && unit.maxHp > 0 ? Math.min(1, unit.hp / unit.maxHp) : 1;
+      unit = { ...unit, ...updated, id:unit.id, x:unit.x, y:unit.y, hp:Math.max(0,Math.ceil(updated.maxHp * ratio)) };
+    }
 
     const type = normalizeMonsterType(unit.type);
     const template = MONSTER_TEMPLATES[type];
@@ -3454,6 +3505,8 @@ export function createGameActions(state) {
     attackMonster,
     attackTile,
     interactCampaign,
+    tickHeroTurnPause,
+    interactCampaignAt,
     drinkPotion,
     autoSaveGame,
     advanceCutscene,

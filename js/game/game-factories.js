@@ -245,6 +245,7 @@ export function createOverworldEnemy(typeOrEncounter, x, y, groupId, index, mapI
   return {
     id: `${idPrefix}-${group}-${encounterIndex}`,
     encounterId: normalizeMonsterId(encounter.id || `${group}-${encounterIndex}`),
+    balanceVersion: activeMap?.campaign ? 2 : undefined,
     mapId: activeMapId,
     type: normalizedType,
     x: encounter.x,

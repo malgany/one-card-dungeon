@@ -953,7 +953,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     }
   }
 
-  function applyCharacter(character) {
+  function applyCharacter(character, preserveSavedProgress = false) {
     if (!state?.game?.player) return;
 
     const normalized = normalizeCharacter(character);
@@ -964,7 +964,7 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
     state.game.player.characterPalette = normalized.palette;
     state.game.player.characterPortrait = normalized.image;
     state.game.player.characterLabel = normalized.typeLabel;
-    applyCharacterProgressToPlayer(state.game.player, normalized.progress);
+    if (!preserveSavedProgress) applyCharacterProgressToPlayer(state.game.player, normalized.progress);
     state.game.apRemaining = Math.min(state.game.player.apMax, state.game.apRemaining ?? state.game.player.apMax);
     state.game.speedRemaining = Math.min(state.game.player.speedBase, state.game.speedRemaining ?? state.game.player.speedBase);
     state.game.selectedCharacter = {
@@ -995,16 +995,17 @@ export function createMenuFlow({ state, actions, root = null } = {}) {
 
   function playCharacter(character, options = {}) {
     const normalized = normalizeCharacter(character);
+    let loadedCharacterSave = false;
     setSelectedCharacterId(normalized.id);
     if (options.startNurseryIntro) {
       actions?.startOverworldAtMap?.(NURSERY_INTRO_MAP_ID);
     } else {
-      const loadedCharacterSave = actions?.loadGame?.({ silent: true, characterId: normalized.id }) === true;
+      loadedCharacterSave = actions?.loadGame?.({ silent: true, characterId: normalized.id }) === true;
       if (!loadedCharacterSave && shouldResetWorldForCharacter(normalized.id)) {
         actions?.startOverworldAtMap?.(START_WORLD_MAP_ID);
       }
     }
-    applyCharacter(normalized);
+    applyCharacter(normalized, loadedCharacterSave);
     if (options.startNurseryIntro) {
       actions?.startNurseryCutscene?.();
     }

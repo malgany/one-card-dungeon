@@ -1,4 +1,6 @@
 import { createMobileUI } from './ui/mobile-ui.js';
+import { createInteractionUI } from './ui/interaction-ui.js';
+import { createWorldPanels } from './ui/world-panels.js';
 import { createCampaignUI } from './ui/campaign-ui.js';
 import { createGameActions } from './game/game-actions.js';
 import { createGame, loadCardImages } from './game/game-factories.js';
@@ -80,6 +82,7 @@ function autoSaveCurrentGame() {
 }
 
 function autoSaveWhenHidden() {
+  actions.tickHeroTurnPause?.();
   if (document.visibilityState === 'hidden') autoSaveCurrentGame();
 }
 
@@ -111,11 +114,15 @@ else menuFlow.show();
 renderer.start();
 const campaignUI = createCampaignUI(state, actions);
 const mobileUI = createMobileUI(state, actions);
+const interactionUI = createInteractionUI(state, actions);
+const worldPanels = createWorldPanels(state, actions, menuFlow.show);
 
 if (import.meta.hot) {
   import.meta.hot.dispose(() => {
     campaignUI.dispose();
     mobileUI.dispose();
+    interactionUI.dispose();
+    worldPanels.dispose();
     renderer.dispose?.();
     menuFlow.dispose?.();
     unregisterCanvasInput?.();

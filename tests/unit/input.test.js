@@ -66,6 +66,13 @@ function createInputHarness() {
 }
 
 describe('canvas input', () => {
+  it('allows camera zoom outside debug mode and leaves open dialogs unchanged',()=>{
+    const {listeners,state}=createInputHarness();state.debugZoom=1.15;
+    const event={deltaY:1,preventDefault:vi.fn()};listeners.get('wheel')(event);
+    expect(state.debugZoom).toBeLessThan(1.15);
+    const zoom=state.debugZoom;state.game.activeModal='worldMap';listeners.get('wheel')(event);
+    expect(state.debugZoom).toBe(zoom);
+  });
   it('handles a touch tap exactly once and discards a swipe or cancelled gesture', () => {
     const { listeners, state } = createInputHarness();
     const onClick=vi.fn();

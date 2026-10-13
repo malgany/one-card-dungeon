@@ -39,7 +39,7 @@ export function createMobileUI(state, actions) {
     end.hidden = !combat;
     end.disabled = !ownTurn;
     const timer = actions.getHeroTurnTimer?.();
-    end.textContent = ownTurn ? `Fim de turno${timer ? ` · ${timer.remainingSeconds}s` : ''}` : 'Turno dos inimigos';
+    end.textContent = ownTurn ? `Fim de turno${timer ? ` · ${timer.remainingSeconds}s` : ''}` : g.phase === PHASES.HERO ? 'Executando ação…' : 'Turno dos inimigos';
     if (combat && ownTurn && timer?.remainingMs <= 0) actions.endHeroPhase();
     const attacks = combat ? actions.getAvailableAttacks(g) : [];
     const html = attacks.map(a => `<button data-attack="${escape(a.id)}" aria-pressed="${g.selectedAttackId === a.id}" ${!ownTurn || g.apRemaining < a.apCost ? 'disabled' : ''}>${escape(a.name)}<small>${a.apCost} AP</small></button>`).join('');

@@ -5,7 +5,7 @@ export function isMobileLayout(width, height) {
 // Reserve the touch controls before calculating the camera, including landscape.
 export function mobileBoardViewport(width, height) {
   const landscape = width > height;
-  const top = landscape ? 84 : 166;
+  const top = landscape ? 84 : 116;
   const bottom = landscape ? 116 : 164;
   return { x: 0, y: top, w: width, h: Math.max(80, height - top - bottom) };
 }

@@ -5,12 +5,42 @@ import { createGameActions } from '../../js/game/game-actions.js';
 import { ensureCampaign, campaignGateMessage, recordCampaignVictory, interactCampaignPoint, useCampaignPotion, bossBlastCells } from '../../js/game/campaign.js';
 import { getWorldObjectBlockedKeys } from '../../js/game/world-state.js';
 import { SAVE_KEY, TIMING, getWorldMap } from '../../js/config/game-data.js';
+import { chestItems, transferItem } from '../../js/game/inventory.js';
 
 beforeEach(()=>{vi.useFakeTimers();localStorage.clear();});
 afterEach(()=>{vi.clearAllTimers();vi.useRealTimers();});
 const harness=(id=CAMPAIGN_START)=>{const state={game:createOverworldGame(getWorldMap(id))};return{state,actions:createGameActions(state)};};
 function finishMove(){vi.advanceTimersByTime(30000);}
 describe('campaign progression',()=>{
+  it('migrates saved encounter balance without restoring defeated enemies or lost HP',()=>{
+    const {state,actions}=harness('vale-cripta');
+    const enemy=state.game.overworld.mapStates['vale-cripta'].enemies[0];
+    delete enemy.balanceVersion;enemy.level=1;enemy.hp=18;enemy.maxHp=36;
+    actions.autoSaveGame();actions.loadGame({silent:true});
+    const loaded=state.game.overworld.mapStates['vale-cripta'].enemies[0];
+    expect(loaded.level).toBe(4);expect(loaded.maxHp).toBe(52);expect(loaded.hp).toBe(26);
+  });
+  it('returns a defeated adventurer to the last camp with health and inventory intact',()=>{
+    const {state,actions}=harness('vale-bosque');const g=state.game;
+    const camp=getWorldMap('vale-bosque').points.find(p=>p.kind==='camp');
+    g.player.x=camp.x+1;g.player.y=camp.y;interactCampaignPoint(g,camp);actions.closeActiveModal();
+    ensureCampaign(g).potions=4;
+    actions.startOverworldEncounter(g.overworld.mapStates['vale-bosque'].enemies[0].id);
+    g.player.health=1;g.combatWalls=[];g.monsters[0].x=g.player.x+1;g.monsters[0].y=g.player.y;g.monsters[0].attack=20;g.monsters[0].range=5;
+    actions.endHeroPhase();vi.advanceTimersByTime(5000);
+    expect(g.mode).toBe('overworld');expect(g.overworld.currentMapId).toBe('vale-bosque');
+    expect(g.player.health).toBe(g.player.maxHealth);expect(g.player.x).toBe(camp.x+1);expect(g.campaign.potions).toBe(4);
+  });
+  it('pauses the hero clock while a modal is open and resumes without spending the paused time',()=>{
+    const {state,actions}=harness();const g=state.game;
+    actions.startOverworldEncounter(g.overworld.mapStates[CAMPAIGN_START].enemies[0].id);
+    const started=g.heroTurnStartedAt;g.menuOpen=true;actions.tickHeroTurnPause(started+1000);
+    const before=actions.getHeroTurnTimer(started+1000).remainingMs;
+    vi.advanceTimersByTime(120000);expect(g.turnQueue[0]).toBe('player');
+    expect(actions.getHeroTurnTimer(started+121000).remainingMs).toBe(before);
+    g.menuOpen=false;actions.tickHeroTurnPause(started+121000);
+    expect(actions.getHeroTurnTimer(started+121000).remainingMs).toBe(before);
+  });
   it('preserves the named seal guardian in the world, combat and saved game',()=>{
     const {state,actions}=harness('vale-ruinas');
     const guardian=state.game.overworld.mapStates['vale-ruinas'].enemies.find(e=>e.groupId==='seal-stone');
@@ -30,7 +60,11 @@ describe('campaign progression',()=>{
         if(p.x<0||p.y<0||p.x>=map.size.width||p.y>=map.size.height||blocked.has(key)||seen.has(key))continue;
         seen.add(key);queue.push(p);
       }
-      for(const p of [...map.connections,...map.points,...map.encounters])expect(seen.has(`${p.x},${p.y}`),`${map.id}: ${p.id}`).toBe(true);
+      for(const p of [...map.connections,...map.encounters])expect(seen.has(`${p.x},${p.y}`),`${map.id}: ${p.id}`).toBe(true);
+      for(const p of map.points) {
+        expect(blocked.has(`${p.x},${p.y}`)).toBe(true);
+        expect([[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy])=>seen.has(`${p.x+dx},${p.y+dy}`)),`${map.id}: adjacent to ${p.id}`).toBe(true);
+      }
       for(const c of map.connections){const target=CAMPAIGN_MAPS[c.targetMapId];expect(target.connections.some(back=>back.targetMapId===map.id)).toBe(true);expect(getWorldObjectBlockedKeys(createOverworldGame(target).overworld).has(`${c.spawn.x},${c.spawn.y}`)).toBe(false);}
       expect(map.objects.length).toBeLessThan(150);
     }
@@ -72,12 +106,26 @@ describe('campaign progression',()=>{
   it('lets camps heal, limits loot to one claim, rejects remote interactions and persists inventory',()=>{
     const {state,actions}=harness();const g=state.game,c=ensureCampaign(g),map=getWorldMap(CAMPAIGN_START);
     const chest=map.points.find(p=>p.kind==='chest');
-    expect(interactCampaignPoint(g,chest)).toBeNull();g.player.x=chest.x;g.player.y=chest.y;
-    const before=c.potions;interactCampaignPoint(g,chest);interactCampaignPoint(g,chest);expect(c.potions).toBe(before+2);
-    const camp=map.points.find(p=>p.kind==='camp');g.player.x=camp.x;g.player.y=camp.y;g.player.health=1;
+    expect(interactCampaignPoint(g,chest)).toBeNull();g.player.x=chest.x+1;g.player.y=chest.y;
+    const before=c.potions;interactCampaignPoint(g,chest);chestItems(g,chest.id);
+    expect(c.potions).toBe(before);
+    expect(transferItem(g,chest.id,'potion','chest')).toBe(true);expect(transferItem(g,chest.id,'potion','chest')).toBe(true);
+    expect(transferItem(g,chest.id,'potion','chest')).toBe(false);expect(c.potions).toBe(before+2);
+    const camp=map.points.find(p=>p.kind==='camp');g.player.x=camp.x+1;g.player.y=camp.y;g.player.health=1;
     interactCampaignPoint(g,camp);expect(g.player.health).toBe(g.player.maxHealth);
     actions.autoSaveGame();expect(JSON.parse(localStorage.getItem(SAVE_KEY)).campaign.claimed).toContain(chest.id);
     actions.loadGame({silent:true});expect(state.game.campaign.potions).toBe(before+2);
+  });
+  it('walks beside a clicked object, opens it on arrival, and cannot walk through it',()=>{
+    const {state,actions}=harness();const g=state.game;
+    const point=getWorldMap(CAMPAIGN_START).points.find(p=>p.kind==='chest');
+    expect(actions.moveOverworldPlayer(point)).toBe(false);
+    expect(actions.interactCampaignAt(point)).toBe(true);
+    expect(g.busy).toBe(true);expect(g.activeModal).not.toBe('campaignInteraction');
+    finishMove();
+    expect(g.activeModal).toBe('campaignInteraction');
+    expect(Math.abs(g.player.x-point.x)+Math.abs(g.player.y-point.y)).toBe(1);
+    expect(g.campaignInteraction.pointId).toBe(point.id);
   });
   it('charges potions only for a valid hero turn and caps healing',()=>{
     const g=harness().state.game,c=ensureCampaign(g);c.potions=3;g.player.health=50;

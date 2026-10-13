@@ -1,9 +1,9 @@
 import { WORLD_ASSETS } from './assets.js';
 
 export const WORLD_OBJECT_TYPES = {
-  campfire: { id: 'campfire', name: 'Fogueira', shape: 'model', modelUrl: './assets/models/campaign/campfire.glb', scale: 1, blocksMovement: false },
-  waystone: { id: 'waystone', name: 'Marco de viagem', shape: 'model', modelUrl: './assets/models/campaign/waystone.glb', scale: 1, blocksMovement: false },
-  'supply-chest': { id: 'supply-chest', name: 'Baú', shape: 'model', modelUrl: './assets/models/dungeon-pack/chest.gltf', scale: 0.48, blocksMovement: false },
+  campfire: { id: 'campfire', name: 'Fogueira', shape: 'model', modelUrl: './assets/models/campaign/campfire.glb', scale: 1, blocksMovement: true },
+  waystone: { id: 'waystone', name: 'Marco de viagem', shape: 'model', modelUrl: './assets/models/campaign/waystone.glb', scale: 1, blocksMovement: true },
+  'supply-chest': { id: 'supply-chest', name: 'Baú', shape: 'model', modelUrl: './assets/models/dungeon-pack/chest.gltf', scale: 0.48, blocksMovement: true },
   'dungeon-column': { id: 'dungeon-column', name: 'Coluna antiga', shape: 'model', modelUrl: './assets/models/dungeon-pack/column.gltf', scale: 0.5, blocksMovement: true },
   'dungeon-rubble': { id: 'dungeon-rubble', name: 'Pedras caídas', shape: 'model', modelUrl: './assets/models/dungeon-pack/rubble_half.gltf', scale: 0.7, blocksMovement: true },
   'dungeon-barrel': { id: 'dungeon-barrel', name: 'Barril', shape: 'model', modelUrl: './assets/models/dungeon-pack/barrel_large.gltf', scale: 0.5, blocksMovement: true },

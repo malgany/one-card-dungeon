@@ -2,11 +2,11 @@
 export const CAMPAIGN_START = 'vale-refugio';
 const regions = [
   ['vale-refugio', 'Refúgio do Vale', 20, 0, 0, 'meadow', 1, 'O último abrigo entre as árvores. Recupere os dois selos e abra a Cripta das Raízes.'],
-  ['vale-bosque', 'Bosque dos Sussurros', 24, 0, 1, 'meadow', 1, 'A seiva despertou. O Guardião de Musgo protege o selo da floresta.'],
-  ['vale-estrada', 'Estrada dos Peregrinos', 24, 1, 0, 'meadow', 1, 'Caravanas abandonadas e sentinelas de osso guardam o caminho das ruínas.'],
-  ['vale-ruinas', 'Ruínas do Farol', 20, 1, 1, 'stonefields', 2, 'O último vigia carrega o selo de pedra. As duas rotas se encontram aqui.'],
-  ['vale-cripta', 'Cripta das Raízes', 18, 2, 1, 'stonefields', 2, 'As raízes romperam o antigo santuário. Vença os sentinelas para alcançar o trono.'],
-  ['vale-trono', 'Câmara do Guardião', 16, 3, 1, 'stonefields', 2, 'O Guardião do Eclipse prepara golpes no chão. Saia das marcas antes da próxima vez dele.'],
+  ['vale-bosque', 'Bosque dos Sussurros', 24, 0, 1, 'meadow', 2, 'A seiva despertou. O Guardião de Musgo protege o selo da floresta.'],
+  ['vale-estrada', 'Estrada dos Peregrinos', 24, 1, 0, 'meadow', 2, 'Caravanas abandonadas e sentinelas de osso guardam o caminho das ruínas.'],
+  ['vale-ruinas', 'Ruínas do Farol', 20, 1, 1, 'stonefields', 3, 'O último vigia carrega o selo de pedra. As duas rotas se encontram aqui.'],
+  ['vale-cripta', 'Cripta das Raízes', 18, 2, 1, 'stonefields', 4, 'As raízes romperam o antigo santuário. Vença os sentinelas para alcançar o trono.'],
+  ['vale-trono', 'Câmara do Guardião', 16, 3, 1, 'stonefields', 5, 'O Guardião do Eclipse prepara golpes no chão. Saia das marcas antes da próxima vez dele.'],
 ];
 const key = (x, y) => `${x},${y}`;
 const maps = Object.fromEntries(regions.map(([id, name, n, gx, gy, biome, enemyLevel, description]) => [id, {
@@ -50,19 +50,19 @@ point('vale-cripta', 'camp-cripta', 'Vigília subterrânea', 'camp', 4, 9, 'Um �
 point('vale-cripta', 'cache-cripta', 'Reserva do santuário', 'chest', 6, 5, 'Duas poções aguardavam alguém que ainda pudesse lutar.', 'supply-chest');
 point('vale-trono', 'camp-trono', 'Chama da coragem', 'camp', 3, 8, 'Prepare-se. A marca vermelha anuncia onde o próximo golpe vai cair.', 'campfire');
 function encounter(mapId, type, x, y, id, options = {}) {
-  maps[mapId].encounters.push({ id, type, x, y, groupId: id, level: 1, ...options });
+  maps[mapId].encounters.push({ id, type, x, y, groupId: id, level: maps[mapId].enemyLevel, ...options });
 }
-encounter('vale-refugio', 'mossSlime', 14, 7, 'slime-practice');
-encounter('vale-bosque', 'mossSlime', 8, 12, 'bosque-slime');
-encounter('vale-bosque', 'specter', 17, 14, 'bosque-echo');
-encounter('vale-bosque', 'rootGuardian', 12, 5, 'seal-forest', { hp: 42, maxHp: 42, xp: 35 });
-encounter('vale-estrada', 'skeletonMinion', 12, 7, 'road-patrol');
-encounter('vale-estrada', 'skeletonRogue', 17, 12, 'road-archer');
-encounter('vale-ruinas', 'skeletonWarrior', 6, 7, 'ruins-watch');
-encounter('vale-ruinas', 'skeletonMage', 13, 5, 'seal-stone', { name: 'Vigia do Farol', hp: 40, maxHp: 40, xp: 35, attack: 4, range: 4 });
-encounter('vale-cripta', 'rootGuardian', 9, 6, 'crypt-roots', { hp: 36, maxHp: 36 });
-encounter('vale-cripta', 'specter', 13, 11, 'crypt-echo', { hp: 30, maxHp: 30 });
-encounter('vale-trono', 'eclipseWarden', 10, 7, 'eclipse-warden', { hp: 90, maxHp: 90, xp: 100, visualScale: 1.25 });
+encounter('vale-refugio', 'mossSlime', 14, 7, 'slime-practice', { hp:14,maxHp:14,attack:2,defense:0,xp:20 });
+encounter('vale-bosque', 'mossSlime', 8, 12, 'bosque-slime', { hp:22,maxHp:22,attack:3,defense:0,xp:18 });
+encounter('vale-bosque', 'specter', 17, 14, 'bosque-echo', { hp:26,maxHp:26,attack:4,defense:1,range:3,xp:24 });
+encounter('vale-bosque', 'rootGuardian', 12, 5, 'seal-forest', { level:3,hp:44,maxHp:44,attack:5,defense:2,xp:45 });
+encounter('vale-estrada', 'skeletonMinion', 12, 7, 'road-patrol', { hp:24,maxHp:24,attack:3,defense:1,xp:20 });
+encounter('vale-estrada', 'skeletonRogue', 17, 12, 'road-archer', { hp:26,maxHp:26,attack:4,defense:1,xp:24 });
+encounter('vale-ruinas', 'skeletonWarrior', 6, 7, 'ruins-watch', { hp:36,maxHp:36,attack:5,defense:2,xp:30 });
+encounter('vale-ruinas', 'skeletonMage', 13, 5, 'seal-stone', { name: 'Vigia do Farol', hp:48,maxHp:48,xp:50,attack:6,defense:2, range: 4 });
+encounter('vale-cripta', 'rootGuardian', 9, 6, 'crypt-roots', { hp:52,maxHp:52,attack:7,defense:2,xp:40 });
+encounter('vale-cripta', 'specter', 13, 11, 'crypt-echo', { hp:42,maxHp:42,attack:7,defense:2,xp:40 });
+encounter('vale-trono', 'eclipseWarden', 10, 7, 'eclipse-warden', { hp:100,maxHp:100,attack:8,defense:3,xp:100, visualScale: 1.25 });
 
 for (const map of Object.values(maps)) {
   const n = map.size.width, center = n / 2;

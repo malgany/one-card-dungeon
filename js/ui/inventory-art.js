@@ -1,0 +1,5 @@
+export const itemArt={
+    potion:'<path fill="#302824" d="M10 2h12v4h-2v5l6 5v12H6V16l6-5V6h-2z"/><path fill="#b78953" d="M12 2h8v5h-8z"/><path fill="#cbd7cb" d="M12 8h8v5l4 4v9H8v-9l4-4z"/><path fill="#ad3943" d="M9 18h14v7H9z"/><path fill="#eb6970" d="M10 18h4v5h-4z"/><path fill="#f8f1c4" d="M13 9h3v6h-3z"/>',
+    herb:'<path fill="#263621" d="M5 5h10v6h3V5h10v12h-5v5h-6v8h-5V20H6v-5H3V8h2z"/><path fill="#608d48" d="M5 8h9v9H8v-4H5zM19 7h7v8h-4v5h-6v-6h3z"/><path fill="#a5c575" d="M6 8h5v4H6zM20 7h5v4h-5z"/><path fill="#c3ac70" d="M13 18h3v11h-3z"/>',
+    shard:'<path fill="#353044" d="M14 1h7v5h4v5h4v9h-5v5h-5v6h-8v-5H7v-6H3v-7h5V7h6z"/><path fill="#8666a8" d="m16 4 9 10-9 14-9-12z"/><path fill="#c0a5e3" d="m16 4 3 12-12 0z"/><path fill="#694c8e" d="m19 16 6-2-9 14z"/><path fill="#eee3fb" d="M15 7h3v5h-3z"/>'
+  };

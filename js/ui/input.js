@@ -166,7 +166,7 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
   }
  
   function handleWheel(event) {
-    if (!DEBUG_CONFIG.SHOW_STATS) return;
+    if (state.game.activeModal || state.game.menuOpen || state.game.cutscene) return;
     if (
       state.debugPanelOpen &&
       state.debugPanelTab === 'editor' &&
@@ -378,6 +378,7 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     }
 
     if (state.game.mode === GAME_MODES.OVERWORLD) {
+      if (actions.interactCampaignAt?.(tile)) return;
       const enemy = actions.getOverworldEnemyAt(tile);
       const isPlayer = state.game.player.x === tile.x && state.game.player.y === tile.y;
 
@@ -488,10 +489,13 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     cancelTouch();
     canvas.releasePointerCapture?.(event.pointerId);
     // A touch has no persistent hover; stale coordinates can select the wrong unit.
+    state.worldHover = null;
     state.mouse.x = -1;
     state.mouse.y = -1;
   }
   const mouseClick = event => { if (Date.now() >= ignoreMouseUntil) handleClick(event); };
+  const leave = () => { state.worldHover = null; state.mouse.x = -1; state.mouse.y = -1; };
+  canvas.addEventListener('mouseleave', leave);
   canvas.addEventListener('pointerdown', pointerDown);
   canvas.addEventListener('pointermove', pointerMove);
   canvas.addEventListener('pointerup', pointerUp);
@@ -509,6 +513,7 @@ export function registerCanvasInput({ canvas, state, actions, layout }) {
     canvas.removeEventListener('mousedown', handleMouseDown);
     canvas.removeEventListener('mouseup', handleMouseUp);
     canvas.removeEventListener('click', mouseClick);
+    canvas.removeEventListener('mouseleave', leave);
     canvas.removeEventListener('pointerdown', pointerDown);
     canvas.removeEventListener('pointermove', pointerMove);
     canvas.removeEventListener('pointerup', pointerUp);

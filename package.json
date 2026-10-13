@@ -13,6 +13,7 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "test:unit": "vitest run",
+    "test:inventory": "node --test --test-isolation=none tests/inventory-layout.node.test.mjs",
     "test:e2e": "playwright test",
     "test": "npm run test:unit && npm run test:e2e"
   },

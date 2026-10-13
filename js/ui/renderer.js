@@ -1,3 +1,4 @@
+import { drawRegionMiniMap } from './map-cartography.js';
 import {
   ATTACK_PATTERNS,
   ACTION_RULES,
@@ -17,6 +18,7 @@ import { levelWallsSet, posKey, samePos } from '../game/board-logic.js';
 import { ensureOverworldMapState } from '../game/game-factories.js';
 import {
   getCurrentWorldBounds,
+  getCurrentWorldEnemies,
   getCurrentWorldMap,
   getCurrentWorldMapState,
   getCurrentWorldObjects,
@@ -1013,7 +1015,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const iconCy = y + h / 2;
     const iconSize = Math.min(18 * scale, h * 0.72);
 
-    draw.roundRect(x, y, w, h, 5 * scale, 'rgba(7,8,7,0.42)', 'rgba(111,99,66,0.48)');
+    drawVoxelPanel(x, y, w, h, true);
     ctx.save();
     ctx.lineWidth = Math.max(1.5, 1.8 * scale);
     ctx.fillStyle = isAction ? UI_THEME.accentDark : UI_THEME.successDark;
@@ -1439,6 +1441,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   }
 
   function drawMenu(currentLayout) {
+    if (state.enhancedPanels) return;
     if (!state.game.menuOpen) return;
 
     const menuView = state.game.menuView || 'main';
@@ -1979,6 +1982,13 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     drawHeroTurnControl(btnX, bottomY + 68, btnW, now, true);
   }
 
+  function drawVoxelPanel(x,y,w,h,inset=false,selected=false){
+    ctx.save();ctx.fillStyle=inset?'#727664':'#aaa48b';ctx.fillRect(x,y,w,h);
+    const light=selected?'#f2d77e':'#d8d0b7',dark='#444a3b';
+    ctx.fillStyle=inset?dark:light;ctx.fillRect(x,y,w,3);ctx.fillRect(x,y,3,h);
+    ctx.fillStyle=inset?light:dark;ctx.fillRect(x,y+h-3,w,3);ctx.fillRect(x+w-3,y,3,h);
+    if(selected){ctx.strokeStyle='#f2d77e';ctx.lineWidth=2;ctx.strokeRect(x+3,y+3,w-6,h-6);}ctx.restore();
+  }
   function drawPlayerResourceHud(x, y, scale = 1) {
     const game = state.game;
     const width = 166 * scale;
@@ -1990,7 +2000,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const chipW = width - 88 * scale;
     const chipH = 24 * scale;
 
-    draw.roundRect(x, y, width, height, 7 * scale, 'rgba(7,8,7,0.46)', 'rgba(111,99,66,0.58)');
+    drawVoxelPanel(x, y, width, height, true);
     drawHeartMeter(heartCx, heartCy, heartSize, game.player.health, game.player.maxHealth);
     drawResourceChip(chipX, y + 12 * scale, chipW, chipH, 'action', game.apRemaining ?? game.player.apMax, scale);
     drawResourceChip(chipX, y + 42 * scale, chipW, chipH, 'move', game.speedRemaining ?? game.player.speedBase, scale);
@@ -2027,7 +2037,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       ctx.fill();
       draw.drawText('AÇÕES', x + 20, y + 13, {
         font: '800 12px Inter, sans-serif',
-        color: UI_THEME.textMuted,
+        color: '#30352a',
       });
     }
 
@@ -2059,13 +2069,13 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
             ? POWER_BUTTON_COLORS.readyStroke
             : UI_THEME.border0;
 
-      draw.roundRect(sx, slotsY, slotSize, slotSize, Math.min(6, slotSize * 0.18), fill, stroke);
+      drawVoxelPanel(sx, slotsY, slotSize, slotSize, true, typeof selected !== 'undefined' && selected);
 
       if (filled) {
         const attackDamage = actions.getAttackDamage(attack, game.player);
         if (hovered) hoveredAttackSlot = { ...slot, attack, attackDamage, lacksAp };
 
-        const iconPad = Math.max(2, Math.floor(slotSize * 0.06));
+        const iconPad = Math.max(5, Math.floor(slotSize * 0.1));
         ctx.save();
         ctx.globalAlpha = attackDisabled ? 0.68 : 1;
         const drewIcon = draw.drawImageCover(
@@ -2115,7 +2125,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       const screenW = layout.getLayout?.().sw || window.innerWidth || 9999;
       const xPos = clamp(hoveredAttackSlot.x + hoveredAttackSlot.w / 2 - tipW / 2, 8, screenW - tipW - 8);
       const yPos = Math.max(8, hoveredAttackSlot.y - tipH - 8);
-      draw.roundRect(xPos, yPos, tipW, tipH, 5, 'rgba(7,8,7,0.94)', lacksAp ? UI_THEME.danger : UI_THEME.accent);
+      draw.roundRect(xPos, yPos, tipW, tipH, 0, 'rgba(23,18,34,0.97)', lacksAp ? UI_THEME.danger : UI_THEME.accent);
       draw.drawText(text, xPos + tipW / 2, yPos + 16, {
         align: 'center',
         font: '800 11px Inter, sans-serif',
@@ -2150,7 +2160,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const xPos = clamp(anchor.x + anchor.w / 2 - tipW / 2, 8, screenW - tipW - 8);
     const yPos = Math.max(8, anchor.y - tipH - 8);
 
-    draw.roundRect(xPos, yPos, tipW, tipH, 5, 'rgba(7,8,7,0.94)', accent);
+    draw.roundRect(xPos, yPos, tipW, tipH, 0, 'rgba(23,18,34,0.97)', accent);
     draw.drawText(text, xPos + tipW / 2, yPos + 16, {
       align: 'center',
       font: '800 11px Inter, sans-serif',
@@ -2185,7 +2195,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       ctx.fill();
       draw.drawText('MENU', x + 20, y + 13, {
         font: '800 12px Inter, sans-serif',
-        color: UI_THEME.textMuted,
+        color: '#30352a',
       });
     }
 
@@ -2202,11 +2212,11 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
           : UI_THEME.surface1;
       const stroke = filled ? UI_THEME.accent : UI_THEME.border0;
 
-      draw.roundRect(sx, slotsY, slotSize, slotSize, Math.min(6, slotSize * 0.18), fill, stroke);
+      drawVoxelPanel(sx, slotsY, slotSize, slotSize, true, typeof selected !== 'undefined' && selected);
 
       if (filled) {
         if (hovered) hoveredMenuSlot = { ...slot, label: item.label };
-        const iconPad = Math.max(2, Math.floor(slotSize * 0.06));
+        const iconPad = Math.max(5, Math.floor(slotSize * 0.1));
         drawIconImage(
           item.iconKey,
           sx + iconPad,
@@ -2266,7 +2276,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const hudX = contentX;
     const menuX = hudX + hudW + hudGap;
 
-    draw.roundRect(panelX, panelY, panelW, panelH, 10, UI_THEME.surface0, UI_THEME.border0);
+    drawVoxelPanel(panelX, panelY, panelW, panelH);
     drawPlayerResourceHud(hudX, centerY - hudH / 2, hudScale);
     drawOverworldMenuBar(menuX, centerY - slotSize / 2 - (currentLayout.compact ? 0 : 22), menuW, slotSize, slotCount, !currentLayout.compact);
 
@@ -2875,6 +2885,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   }
 
   function drawActiveModal(currentLayout) {
+    if (state.enhancedPanels && state.game.activeModal === 'worldMap' && getCurrentWorldMap(state.game.overworld)?.campaign) return;
     if (currentLayout.compact && ['characteristics', 'spells'].includes(state.game.activeModal)) return;
     if (!state.game.activeModal) return;
     state.game.buttons = [];
@@ -3116,7 +3127,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const spellX = hudX + hudW + hudGap;
     const btnX = spellX + spellW + buttonGap;
 
-    draw.roundRect(panelX, panelY, panelW, panelH, 10, UI_THEME.surface0, UI_THEME.border0);
+    drawVoxelPanel(panelX, panelY, panelW, panelH);
     drawPlayerResourceHud(hudX, centerY - hudH / 2, hudScale);
     drawSpellBar(spellX, centerY - slotSize / 2 - 22, spellW, slotSize, slotCount, true);
     drawHeroTurnControl(btnX, centerY - 35, btnW, now, false);
@@ -3249,7 +3260,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
     const enemy = layout.hoveredOverworldEnemy();
     if (!enemy || state.game.activeModal || state.game.menuOpen || state.game.busy) return;
 
-    const label = `Nível ${enemy.level || 1}`;
+    const label = `${enemy.name || 'Inimigo'} · Nível ${enemy.level || 1}`;
     const point = screenPointForTile(currentLayout, enemy.x, enemy.y, 1.52);
 
     ctx.save();
@@ -3447,6 +3458,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   }
 
   function drawOverworldChat(currentLayout, bottomInset = 0) {
+    if (getCurrentWorldMap(state.game.overworld)?.campaign) return;
     const game = state.game;
     const log = (game.eventLog || []).slice(-4);
     if (!log || log.length === 0) return;
@@ -3857,6 +3869,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   }
 
   function render() {
+    actions.tickHeroTurnPause?.();
     if (disposed) return;
     renderFrameId = requestAnimationFrame(render);
 
@@ -4126,7 +4139,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
       fill: UI_THEME.surface0, hoverFill: UI_THEME.surface1, stroke: UI_THEME.border1, font: '16px Inter, sans-serif',
     });
 
-    drawCarriedAttack();
+    if (!currentLayout.compact) drawCarriedAttack();
     
     drawEnergyFocusMask(currentLayout);
     drawBanner(currentLayout);
@@ -5201,7 +5214,7 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
   }
 
   function drawCurrentWorldCoordinate(currentLayout) {
-    if (currentLayout.compact) return;
+    if (!DEBUG_CONFIG.SHOW_STATS || currentLayout.compact) return;
     const activeMap = getCurrentWorldMap(state.game.overworld);
     const text = worldMapCoordinateText(activeMap);
     if (!text) return;
@@ -5224,6 +5237,17 @@ export function createRenderer({ canvas, ctx, cardImages, state, actions, layout
 
     const activeMap = getCurrentWorldMap(state.game.overworld);
     if (!activeMap?.gridPosition) return;
+    if (activeMap.campaign) {
+      const size=156, x=currentLayout.sw-size-24, y=currentLayout.sh-size-66;
+      draw.roundRect(x-10,y-32,size+20,size+72,7,'rgba(13,15,11,.94)','#6f6342');
+      draw.drawText(`REGIÃO · NV. ${activeMap.enemyLevel}`,x,y-13,{font:'800 11px Inter, sans-serif',color:'#d3bb84'});
+      draw.drawText('N ↗',x+size,y-13,{align:'right',font:'800 11px Inter, sans-serif',color:'#c9bea5'});
+      drawRegionMiniMap(ctx,activeMap,state.game,x,y,size);
+      draw.drawText('● Você  ·  ● Inimigos',x,y+size+17,{font:'10px Inter, sans-serif',color:'#c9bea5'});
+      draw.drawText('Ampliar mapa',x+size/2,y+size+32,{align:'center',font:'800 11px Inter, sans-serif',color:'#d3bb84'});
+      state.game.buttons.push({x:x-10,y:y-32,w:size+20,h:size+72,onClick:actions.openWorldMapModal});
+      return;
+    }
 
     const maps = Object.values(WORLD_MAPS).filter((map) => map.gridPosition && (activeMap?.campaign ? map.campaign : !map.campaign));
     if (maps.length === 0) return;

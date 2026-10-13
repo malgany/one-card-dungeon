@@ -100,6 +100,15 @@ describe('menu flow', () => {
     flow.dispose();
   });
 
+  it('preserves healed HP from the world save instead of applying an older character-list snapshot',()=>{
+    localStorage.setItem(CHARACTERS_KEY,JSON.stringify([{id:'healed',name:'Aria',type:'mage',progress:{level:1,health:0,maxHealth:60}}]));
+    localStorage.setItem(SELECTED_CHARACTER_KEY,'healed');
+    const {actions,flow,root,state}=createMenuHarness();
+    actions.loadGame.mockImplementation(()=>{state.game.player.health=60;state.game.player.maxHealth=60;return true;});
+    flow.show();root.querySelector('[data-menu-action="start-flow"]').click();root.querySelector('[data-menu-action="play-selected"]').click();
+    expect(state.game.player.health).toBe(60);flow.dispose();
+  });
+
   it('does not reuse another character combat state when entering without a save', () => {
     window.localStorage.setItem(CHARACTERS_KEY, JSON.stringify([
       { id: 'char-a', name: 'A', type: 'mage' },

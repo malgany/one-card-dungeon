@@ -1,3 +1,4 @@
+import { ambientMotion } from './ambient-motion.js';
 import { mobileBoardViewport, mobileCameraHeight } from './mobile-layout.js';
 import { getWorldMap } from '../config/world/index.js';
 import * as THREE from 'three';
@@ -1592,8 +1593,9 @@ export function createThreeBoardView({ state }) {
     const height = Math.max(1, Math.floor(layout.sh));
     const drawingBuffer = renderer.getSize(new THREE.Vector2());
 
-    if (drawingBuffer.x !== width || drawingBuffer.y !== height) {
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, state.pixelRatioLimit || 2);
+    if (drawingBuffer.x !== width || drawingBuffer.y !== height || renderer.getPixelRatio() !== pixelRatio) {
+      renderer.setPixelRatio(pixelRatio);
       renderer.setSize(width, height, false);
     }
   }
@@ -2095,7 +2097,8 @@ export function createThreeBoardView({ state }) {
     }
 
     group.userData.activeModelActionKey = null;
-    const isMoving = isMovementActive(movement, now);
+    const ambient=group.userData.ambientMotion;
+    const isMoving = isMovementActive(movement, now) || ambient?.moving;
     playModelUnitAnimation(
       group,
       isMoving ? modelConfig.walkAnimation : modelConfig.idleAnimation,
@@ -2107,7 +2110,7 @@ export function createThreeBoardView({ state }) {
       return;
     }
 
-    const direction = movementDirection(movement, now);
+    const direction = ambient?.moving ? ambient.direction : movementDirection(movement, now);
     faceDirection(group, direction);
   }
 
@@ -2412,6 +2415,7 @@ export function createThreeBoardView({ state }) {
         : height / 2 + (type.groundOffset ?? 0.05);
 
       mesh.position.set(posX, posY, posZ);
+      mesh.userData.campaignPoint = getCurrentWorldMap(state.game.overworld)?.points?.find(p=>`${p.id}-model`===object.id) || null;
     }
 
     for (const [objectId, mesh] of objectMeshes.entries()) {
@@ -3354,7 +3358,9 @@ export function createThreeBoardView({ state }) {
     const { drawX, drawY } = movementPosition(unit, entityId, animations, now);
     const bump = bumpOffset(unit, entityId, animations, now);
     const center = tileCenter(drawX, drawY, currentBoard.width, currentBoard.height);
-    group.position.set(center.x + bump.x, 0.02, center.z + bump.z);
+    const ambient=ambientMotion(entityId,now,!isPlayer&&unit.hp>0&&state.game.mode===GAME_MODES.OVERWORLD&&!movement&&!modelAction&&!state.game.cutscene);
+    group.userData.ambientMotion=ambient;
+    group.position.set(center.x + bump.x + ambient.x, 0.02, center.z + bump.z + ambient.y);
     group.scale.setScalar(unitVisualScale(unit, isPlayer));
     group.userData.tileX = unit.x;
     group.userData.tileY = unit.y;
@@ -3500,13 +3506,13 @@ export function createThreeBoardView({ state }) {
       campaignMarks.remove(child);child.material?.map?.dispose();child.material?.dispose();
     }
   }
-  function campaignLabel(text,x,y,color='#e2bc6b') {
+  function campaignLabel(text,x,y,color='#e2bc6b',kind='object') {
     const canvas=document.createElement('canvas');canvas.width=512;canvas.height=96;
     const ctx=canvas.getContext('2d');ctx.fillStyle='rgba(12,17,10,.9)';ctx.fillRect(0,8,512,80);
     ctx.strokeStyle=color;ctx.lineWidth=3;ctx.strokeRect(2,10,508,76);ctx.fillStyle=color;ctx.textAlign='center';ctx.font='600 28px sans-serif';ctx.fillText(text,256,59,485);
     const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;
     const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,depthTest:false}));
-    const center=tileCenter(x,y,currentBoard.width,currentBoard.height);sprite.position.set(center.x,1.05,center.z);sprite.scale.set(2.6,.49,1);sprite.renderOrder=10;campaignMarks.add(sprite);
+    const center=tileCenter(x,y,currentBoard.width,currentBoard.height);sprite.position.set(center.x,1.05,center.z);sprite.scale.set(2.6,.49,1);sprite.renderOrder=10;sprite.userData.tile={x,y,kind};sprite.visible=false;campaignMarks.add(sprite);
   }
   function updateCampaignScenery(now) {
     const map=state.game.mode===GAME_MODES.OVERWORLD?getCurrentWorldMap(state.game.overworld):null;
@@ -3525,9 +3531,11 @@ export function createThreeBoardView({ state }) {
         }
         campaignRoad.instanceMatrix.needsUpdate=true;campaignRoad.computeBoundingSphere();
         for(const p of map.points)campaignLabel((p.kind==='camp'?'♨ ':p.kind==='chest'?'◇ ':'')+p.name,p.x,p.y);
-        for(const c of map.connections)campaignLabel('→ '+(getWorldMap(c.targetMapId)?.name||'Passagem'),c.x,c.y,'#bbcf99');
+        for(const c of map.connections)campaignLabel('→ '+(getWorldMap(c.targetMapId)?.name||'Passagem'),c.x,c.y,'#bbcf99','exit');
       }
     }
+    const hover=state.worldHover;
+    for(const mark of campaignMarks.children) mark.visible = !state.game.activeModal && !state.game.menuOpen && hover?.mapId===map?.id && hover?.x===mark.userData.tile.x && hover?.y===mark.userData.tile.y && (mark.userData.tile.kind==='exit'||hover?.kind==='campaignObject');
     const cells=state.game.mode===GAME_MODES.COMBAT?state.game.bossTelegraph?.cells||[]:[];
     blastMarks.count=cells.length;blastMarks.visible=cells.length>0;
     blastMaterial.opacity=.45+Math.sin(now*.006)*.15;
@@ -3833,6 +3841,13 @@ export function createThreeBoardView({ state }) {
 
     const unitPoint = unitPointAt(layout, px, py);
     if (unitPoint) return unitPoint;
+    const interactiveObjects=Array.from(objectMeshes.values()).filter(m=>m.userData.campaignPoint);
+    for(const hit of raycaster.intersectObjects(interactiveObjects,true)) {
+      let object=hit.object;
+      while(object && !object.userData.campaignPoint) object=object.parent;
+      const point=object?.userData.campaignPoint;
+      if(point) return {x:point.x,y:point.y,kind:'campaignObject',worldX:hit.point.x,worldZ:hit.point.z};
+    }
 
     if (!raycaster.ray.intersectPlane(boardPlane, rayHit)) return null;
 
